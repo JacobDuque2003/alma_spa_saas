@@ -1,0 +1,90 @@
+﻿<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ALMA Spa CRM</title>
+    <link rel="icon" type="image/png" href="assets/logo-oficial.png" />
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegacion principal">
+        <div class="brand">
+          <img src="assets/logo-oficial.png" alt="ALMA Spa Belleza y Bienestar Holistica" class="brand-mark" />
+          <div><strong>ALMA Spa</strong><span>Belleza y Bienestar Holistica</span></div>
+        </div>
+        <nav class="main-nav">
+          <button class="nav-item active" data-view="dashboard" type="button" title="Panel"><span class="icon">⌂</span><span>Panel</span></button>
+          <button class="nav-item" data-view="inbox" type="button" title="Bandeja"><span class="icon">✉</span><span>Bandeja</span></button>
+          <button class="nav-item" data-view="calendar" type="button" title="Agenda"><span class="icon">□</span><span>Agenda</span></button>
+          <button class="nav-item" data-view="clients" type="button" title="Clientes"><span class="icon">◇</span><span>Clientes</span></button>
+          <button class="nav-item" data-view="services" type="button" title="Servicios"><span class="icon">✦</span><span>Servicios</span></button>
+          <button class="nav-item" data-view="campaigns" type="button" title="Campanas"><span class="icon">◎</span><span>Campañas</span></button>
+          <button class="nav-item" data-view="bot" type="button" title="Bot"><span class="icon">◌</span><span>Bot IA</span></button>
+        </nav>
+        <div class="sidebar-status"><span class="status-dot"></span><div><strong>Atencion activa</strong><span>WhatsApp listo</span></div></div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div><p class="eyebrow">CRM omnicanal</p><h1 id="viewTitle">Panel de control</h1></div>
+          <div class="topbar-actions">
+            <button class="icon-button" type="button" title="Buscar">⌕</button>
+            <button class="icon-button" type="button" title="Notificaciones">!</button>
+            <button class="primary-action" id="newBookingBtn" type="button">Nueva cita</button>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboard" aria-label="Panel de control">
+          <div class="metrics-grid">
+            <article class="metric"><span>Mensajes hoy</span><strong>38</strong><small>12 sin cerrar</small></article>
+            <article class="metric"><span>Citas agendadas</span><strong>14</strong><small>+4 vs ayer</small></article>
+            <article class="metric"><span>Conversion</span><strong>42%</strong><small>WhatsApp lidera</small></article>
+            <article class="metric"><span>Seguimientos</span><strong>9</strong><small>3 clientes tibios</small></article>
+          </div>
+          <div class="dashboard-grid">
+            <section class="panel"><div class="panel-header"><h2>Pipeline de conversaciones</h2><span>Tiempo real</span></div><div class="pipeline" id="pipeline"></div></section>
+            <section class="panel"><div class="panel-header"><h2>Proximas citas</h2><button class="ghost-button" data-view-shortcut="calendar" type="button">Ver agenda</button></div><div class="appointment-list" id="appointmentList"></div></section>
+            <section class="panel wide"><div class="panel-header"><h2>Oportunidades calientes</h2><span>Responder primero</span></div><div class="lead-table" id="hotLeads"></div></section>
+          </div>
+        </section>
+
+        <section class="view" id="inbox" aria-label="Bandeja omnicanal">
+          <div class="inbox-layout">
+            <section class="conversation-list-panel">
+              <div class="search-row"><input id="conversationSearch" type="search" placeholder="Buscar cliente o servicio" /></div>
+              <div class="channel-tabs" role="tablist" aria-label="Canales">
+                <button class="channel-tab active" data-channel="Todos" type="button">Todos</button>
+                <button class="channel-tab" data-channel="WhatsApp" type="button">WhatsApp</button>
+                <button class="channel-tab" data-channel="Instagram" type="button">Instagram</button>
+                <button class="channel-tab" data-channel="TikTok" type="button">TikTok</button>
+                <button class="channel-tab" data-channel="Facebook" type="button">Facebook</button>
+              </div>
+              <div class="conversation-list" id="conversationList"></div>
+            </section>
+            <section class="chat-panel" id="chatPanel"><div class="empty-state"><strong>Selecciona una conversacion</strong><span>Las respuestas sugeridas se preparan con la base de ALMA Spa.</span></div></section>
+            <aside class="client-panel" id="clientPanel" aria-label="Ficha del cliente"></aside>
+          </div>
+        </section>
+
+        <section class="view" id="calendar" aria-label="Agenda"><div class="agenda-toolbar"><div class="segmented"><button class="active" type="button">Hoy</button><button type="button">Semana</button><button type="button">Mes</button></div><button class="primary-action" type="button" id="quickBookingBtn">Agendar</button></div><div class="calendar-grid" id="calendarGrid"></div></section>
+
+        <section class="view" id="clients" aria-label="Clientes"><div class="section-toolbar"><input id="clientSearch" type="search" placeholder="Buscar cliente" /><button class="primary-action" type="button" id="addClientBtn">Agregar cliente</button></div><div class="client-grid" id="clientGrid"></div></section>
+
+        <section class="view" id="services" aria-label="Servicios"><div class="section-toolbar"><div><h2>Catalogo de servicios</h2><p>Precios, duracion y mensajes base para el bot.</p></div><button class="primary-action" type="button" id="addServiceBtn">Nuevo servicio</button></div><div class="services-grid" id="servicesGrid"></div></section>
+
+        <section class="view" id="campaigns" aria-label="Campanas"><div class="campaign-layout"><section class="panel"><div class="panel-header"><h2>Campañas activas</h2><button class="ghost-button" type="button">Crear</button></div><div id="campaignList"></div></section><section class="panel"><div class="panel-header"><h2>Automatizaciones</h2><span>Seguimiento</span></div><div class="automation-list" id="automationList"></div></section></div></section>
+
+        <section class="view" id="bot" aria-label="Configuracion del bot"><div class="bot-layout"><section class="panel"><div class="panel-header"><h2>Personalidad del bot</h2><span>ALMA Spa</span></div><form class="settings-form"><label>Tono de marca<textarea id="brandTone" rows="5">Calido, sereno, profesional y cercano. Responde con claridad, sin prometer resultados medicos, y siempre invita a agendar cuando el cliente muestre interes.</textarea></label><label>Reglas de seguridad<textarea id="botRules" rows="5">Escalar a una asesora cuando haya embarazo, alergias, piel sensible, quejas, dolor fuerte, tratamientos medicos o dudas sobre contraindicaciones.</textarea></label><button class="primary-action" type="button" id="saveBotBtn">Guardar cambios</button></form></section><section class="panel"><div class="panel-header"><h2>Prueba de respuesta</h2><span>Simulador</span></div><div class="bot-test"><textarea id="botPrompt" rows="4">Hola, cuanto cuesta una limpieza facial y tienen cita el sabado?</textarea><button class="primary-action" type="button" id="generateReplyBtn">Generar respuesta</button><div class="suggested-reply" id="botPreview"></div></div></section></div></section>
+      </main>
+    </div>
+
+    <dialog class="modal" id="bookingModal"><form method="dialog" class="modal-body"><div class="modal-header"><h2>Nueva cita</h2><button class="icon-button" value="cancel" type="submit" title="Cerrar">x</button></div><label>Cliente<input id="bookingClient" type="text" placeholder="Nombre del cliente" /></label><label>Servicio<select id="bookingService"></select></label><div class="form-grid"><label>Fecha<input id="bookingDate" type="date" /></label><label>Hora<input id="bookingTime" type="time" /></label></div><label>Nota<textarea id="bookingNote" rows="3" placeholder="Preferencias, canal o detalle importante"></textarea></label><menu class="modal-actions"><button class="ghost-button" value="cancel" type="submit">Cancelar</button><button class="primary-action" id="saveBookingBtn" value="default" type="button">Guardar cita</button></menu></form></dialog>
+    <script src="assets/app.js"></script>
+  </body>
+</html>
+
+
+
+

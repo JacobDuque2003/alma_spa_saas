@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  superadmin
+  dueno    @map("dueño")
+  personal
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  config    Json     @default("{}")
+  plan      String   @default("trial")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String?
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  isProtected  Boolean  @default(false)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant         Tenant?         @relation(fields: [tenantId], references: [id])
+  rolePermission RolePermission?
+
+  @@index([tenantId])
+}
+
+model RolePermission {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  agenda        Boolean @default(false)
+  gabinetes     Boolean @default(false)
+  clientes      Boolean @default(false)
+  crm           Boolean @default(false)
+  reportes      Boolean @default(false)
+  configuracion Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

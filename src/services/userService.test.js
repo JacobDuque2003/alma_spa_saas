@@ -1,0 +1,73 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const prisma = require('../utils/prisma');
+const userService = require('./userService');
+
+function mockPrisma({ user = {}, rolePermission = {} } = {}) {
+  prisma.user = user;
+  prisma.rolePermission = rolePermission;
+}
+
+test('updateUser rechaza con 403 si el usuario objetivo es isProtected', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u1', isProtected: true, tenantId: 't1' }),
+    },
+  });
+
+  await assert.rejects(
+    () => userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u1', { name: 'x' }),
+    (err) => err instanceof userService.ProtectedAccountError && err.status === 403
+  );
+});
+
+test('deleteUser rechaza con 403 si el usuario objetivo es isProtected, incluso siendo superadmin', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u1', isProtected: true, tenantId: null }),
+    },
+  });
+
+  await assert.rejects(
+    () => userService.deleteUser({ role: 'superadmin', tenantId: null }, 'u1'),
+    (err) => err instanceof userService.ProtectedAccountError
+  );
+});
+
+test('updateUser rechaza con 403 si el actor (dueno) intenta tocar un usuario de otro tenant', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u2', isProtected: false, tenantId: 'tenant-otro' }),
+      update: async () => ({ id: 'u2' }),
+    },
+  });
+
+  await assert.rejects(
+    () => userService.updateUser({ role: 'dueno', tenantId: 'tenant-propio' }, 'u2', { name: 'x' }),
+    (err) => err instanceof userService.ForbiddenTenantError
+  );
+});
+
+test('updateUser permite a superadmin (sin tenant) operar sobre cualquier tenant', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u2', isProtected: false, tenantId: 'tenant-cualquiera' }),
+      update: async (args) => ({ id: 'u2', ...args.data }),
+    },
+  });
+
+  const result = await userService.updateUser({ role: 'superadmin', tenantId: null }, 'u2', { name: 'Nuevo Nombre' });
+  assert.equal(result.name, 'Nuevo Nombre');
+});
+
+test('updateUser aplica cambios normalmente cuando no hay conflicto', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u3', isProtected: false, tenantId: 't1' }),
+      update: async (args) => ({ id: 'u3', ...args.data }),
+    },
+  });
+
+  const result = await userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u3', { active: false });
+  assert.equal(result.active, false);
+});
