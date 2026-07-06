@@ -23,20 +23,30 @@ function assertTenantScope(actor, targetTenantId) {
   }
 }
 
+function omitPasswordHash(user) {
+  if (!user) return user;
+  const { passwordHash, ...rest } = user;
+  return rest;
+}
+
 async function createUser(actor, data) {
-  const { email, password, name, role, tenantId, permissions } = data;
+  const { email, password, name, role, permissions } = data;
 
   if (role === 'superadmin') {
     throw new Error('No se pueden crear cuentas superadmin vía API');
   }
+
+  // tenantId SIEMPRE se deriva del JWT del actor — cualquier tenantId que
+  // el cliente mande en el body se ignora por completo (no se lee ni se
+  // valida). Solo superadmin, que no tiene tenant propio, puede asignar uno.
+  const tenantId = actor.role === 'superadmin' ? data.tenantId : actor.tenantId;
   if (!tenantId) {
     throw new Error('tenantId es requerido para roles dueno/personal');
   }
-  assertTenantScope(actor, tenantId);
 
   const passwordHash = await hashPassword(password);
 
-  return prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       email,
       passwordHash,
@@ -61,6 +71,7 @@ async function createUser(actor, data) {
     },
     include: { rolePermission: true },
   });
+  return omitPasswordHash(created);
 }
 
 async function updateUser(actor, targetUserId, changes) {
@@ -78,7 +89,8 @@ async function updateUser(actor, targetUserId, changes) {
   if (changes.active !== undefined) data.active = changes.active;
   if (changes.password) data.passwordHash = await hashPassword(changes.password);
 
-  return prisma.user.update({ where: { id: targetUserId }, data });
+  const updated = await prisma.user.update({ where: { id: targetUserId }, data });
+  return omitPasswordHash(updated);
 }
 
 async function deleteUser(actor, targetUserId) {

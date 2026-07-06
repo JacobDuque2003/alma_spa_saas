@@ -8,11 +8,12 @@
 - [x] Autorización (`requirePermission`, `requireRole`, `protectSuperadmin`) + `userService` con guard de `isProtected`
 - [x] Rutas `auth.js` + `users.js` montadas en `app.js`
 - [x] `prisma/seed.js` (tenant alma-spa, superadmin, dueño, 2 personal)
-- [x] 15 tests unitarios de las reglas de seguridad
+- [x] 19 tests unitarios de las reglas de seguridad (mock de Prisma)
 - [x] Verificación manual del servidor levantado localmente (sin DB real disponible en el entorno)
+- [x] `git init` + primer commit
+- [x] Verificación end-to-end contra PostgreSQL real (Railway, DB dedicada `alma_spa`, no barbershop): `migrate dev` + `db:seed` + walkthrough completo de curl (login por rol, 403 real sobre superadmin, tenantId forjado ignorado) — ver `CHANGELOG.md` [0.1.1] para el detalle exacto de cada paso
 - [ ] **Bloqueante**: esperar aprobación del usuario del esquema `Tenant`/`User`/`RolePermission` antes de Fase 2
-- [ ] Verificación end-to-end contra PostgreSQL real (Railway): `migrate dev` + `db:seed` + curl de login/403/tenant-aislado
-- [ ] `git init` + primer commit (repo aún no inicializado)
+- [ ] **Pendiente de higiene**: rotar la password de la DB Railway `alma_spa` (quedó expuesta en texto plano en el chat de esta sesión)
 
 ## Fase 2 — Configuración (catálogo base) — NO INICIADA
 

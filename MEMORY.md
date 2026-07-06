@@ -14,13 +14,15 @@ Backend recién iniciado. Antes de esta sesión solo existía la demo estática 
 - **is_protected**: se aplica el guard a nivel de `userService` (no solo middleware), así ninguna ruta puede saltárselo por error. Ver `src/services/userService.js`.
 - Se reutilizó el patrón de `barbershop/prisma/schema.prisma` (ids `cuid()`, tabla raíz + `tenantId` FK indexado en cada tabla dependiente).
 
-## Limitación conocida de esta sesión
+## Verificación end-to-end (2026-07-06)
 
-No hay PostgreSQL local ni Docker disponible en el entorno donde se construyó esto. La verificación se hizo con:
-- 8 tests unitarios con Prisma mockeado (`npm test`) — cubren is_protected, aislamiento de tenant, bypass de permisos.
-- Servidor real levantado localmente contra un `DATABASE_URL` inexistente, confirmando que el error handling no crashea el proceso ni filtra detalles internos (dos bugs reales encontrados y corregidos en esta sesión, ver `CHANGELOG.md`).
+No hay PostgreSQL local ni Docker en este entorno, pero el usuario creó una base Railway dedicada (`alma_spa`, separada de barbershop/FibraNet). Se corrió `prisma migrate dev` + `db:seed` contra esa base real (`hayabusa.proxy.rlwy.net:42587/railway`) y se repitió el walkthrough completo de curl (login por rol, 403 real sobre superadmin, tenantId forjado ignorado, personal bloqueado). Detalle exacto de cada paso en `CHANGELOG.md` [0.1.1].
 
-**Falta hacer contra una base de datos real** (Railway): `npx prisma migrate dev`, `npm run db:seed`, y repetir la verificación manual de curl descrita en el plan (login por rol, PATCH 403 sobre superadmin, tenantId forjado ignorado).
+Esa verificación encontró y corrigió dos bugs reales más: `createUser` rechazaba un `tenantId` forjado en vez de ignorarlo (debía derivarse siempre del JWT), y `POST/PATCH /users` filtraban el `passwordHash` en la respuesta.
+
+**Pendiente de higiene**: la password de esa DB Railway quedó pegada en texto plano en el chat — rotarla en Railway antes de dar por cerrado este ciclo.
+
+Lo que sigue validado solo con mock (no hay endpoint real de Fase 1 que lo ejercite todavía): bypass de `requirePermission` para dueño/superadmin y la negación/permiso para personal — porque los módulos agenda/gabinetes/clientes/crm/reportes/configuracion son de Fase 2 en adelante.
 
 ## Próximo paso
 

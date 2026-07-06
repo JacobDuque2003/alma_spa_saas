@@ -71,3 +71,64 @@ test('updateUser aplica cambios normalmente cuando no hay conflicto', async () =
   const result = await userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u3', { active: false });
   assert.equal(result.active, false);
 });
+
+test('createUser ignora por completo un tenantId forjado en el body y usa el del JWT del actor', async () => {
+  mockPrisma({
+    user: {
+      create: async (args) => ({ id: 'nuevo', ...args.data }),
+    },
+  });
+
+  const result = await userService.createUser(
+    { role: 'dueno', tenantId: 'tenant-real-del-jwt' },
+    {
+      email: 'x@x.com',
+      password: 'x',
+      name: 'X',
+      role: 'personal',
+      tenantId: 'tenant-forjado-por-el-cliente',
+    }
+  );
+
+  assert.equal(result.tenantId, 'tenant-real-del-jwt');
+});
+
+test('createUser nunca devuelve passwordHash en el objeto resultante', async () => {
+  mockPrisma({
+    user: {
+      create: async (args) => ({ id: 'nuevo', passwordHash: 'hash-secreto', ...args.data }),
+    },
+  });
+
+  const result = await userService.createUser(
+    { role: 'dueno', tenantId: 't1' },
+    { email: 'x@x.com', password: 'x', name: 'X', role: 'personal' }
+  );
+
+  assert.equal('passwordHash' in result, false);
+});
+
+test('updateUser nunca devuelve passwordHash en el objeto resultante', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u4', isProtected: false, tenantId: 't1' }),
+      update: async (args) => ({ id: 'u4', passwordHash: 'hash-secreto', ...args.data }),
+    },
+  });
+
+  const result = await userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u4', { password: 'nueva-clave' });
+  assert.equal('passwordHash' in result, false);
+});
+
+test('createUser exige tenantId en el body cuando el actor es superadmin (sin tenant propio)', async () => {
+  mockPrisma({ user: {} });
+
+  await assert.rejects(() =>
+    userService.createUser({ role: 'superadmin', tenantId: null }, {
+      email: 'x@x.com',
+      password: 'x',
+      name: 'X',
+      role: 'dueno',
+    })
+  );
+});
