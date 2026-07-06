@@ -134,3 +134,23 @@ Limpieza posterior: se borraron los `Client`/`ClientIntake`/`Appointment` de pru
 
 ### Fuera de alcance de esta sesión
 - Google Calendar (Fase 3b — los `TODO` ya están en `appointmentService.js`), edición de `ClientIntake` desde el panel/historial de tratamientos/planes de cliente/saldo (Fase 4), CRM/WhatsApp real (Fase 5), reportes (Fase 6), Excel (Fase 7), auditoría final (Fase 8).
+
+## [Decisión de alcance] Fase 3b (Google Calendar) descartada — 2026-07-06
+
+No es una entrega de código — es un registro de decisión de producto. **Fase 3b queda descartada, no pospuesta.**
+
+### Contexto
+El diseño se completó con 3 agentes invocados explícitamente (Backend Architect: flujo OAuth2 + sincronización con `Appointment`; Security Architect: cifrado de tokens con clave separada `GOOGLE_TOKEN_ENCRYPTION_KEY`; Application Security Engineer: revisión del flujo OAuth — encontró y corrigió que el documento de Security Architect no se había persistido a disco en la primera pasada, y señaló 4 hallazgos ALTO: falta de especificación del disparador de refresh de `access_token`, distinción imprecisa entre `invalid_grant` real y errores transitorios, riesgo de reusar el mismo secret JWT para el `state` de OAuth que para sesiones de usuario, y riesgo de fuga de `access_token` en logs de error sin sanear). El plan consolidado, con las 4 correcciones ya incorporadas, quedó completo y aprobable — pero el usuario decidió no implementarlo.
+
+### Razones de la decisión
+1. **Verificación de Google**: mientras el proyecto no esté verificado por Google, los refresh tokens de cuentas de prueba expiran cada 7 días — dependencia operativa fuera del control del proyecto para un piloto en producción.
+2. **Fuente de verdad única**: la sincronización diseñada era unidireccional (Alma Spa → Google, nunca al revés); un evento editado o borrado directamente en Google Calendar por el dueño generaría una falsa sensación de cancelación sin que el sistema se enterara. Alma Spa (la Agenda propia, construida y funcionando desde Fase 3a) debe seguir siendo la única fuente de verdad del calendario.
+3. **Simplicidad de expansión**: crecer a futuros spas sin depender de una cuenta externa de Google por tenant simplifica el modelo operativo de NUVIO Platform.
+
+### Qué queda
+- El documento de diseño completo permanece en `C:\Users\59399\.claude\plans\cozy-crafting-acorn.md`, marcado `[DESCARTADO]` al inicio, como referencia histórica por si se reconsidera en el futuro con otro enfoque (ej. una vez el proyecto esté verificado por Google).
+- El comentario `// TODO Fase 3b: crear evento en Google Calendar` en `src/services/appointmentService.js` fue reemplazado por `// Descartado: no se integra Google Calendar (decisión de alcance, ver CHANGELOG/MEMORY.md)`, para que ninguna sesión futura lo reactive sin este contexto.
+- No se agregó ninguna dependencia (`googleapis`), tabla, ni ruta nueva al proyecto — cero superficie de código añadida y luego revertida.
+
+### Próximo paso
+Fase 4: Clientes (edición de ficha de anamnesis desde el panel, historial de tratamientos, planes de cliente y saldo) — orden original del brief.

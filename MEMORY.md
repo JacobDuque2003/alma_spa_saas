@@ -4,7 +4,7 @@
 
 ## Estado actual (2026-07-06)
 
-Fase 1, Fase 2 y Fase 3a construidas y verificadas contra Postgres real. Fases 1 y 2 ya aprobadas por el usuario con evidencia real. Fase 3a (reserva pública + `Client`/`ClientIntake`/`Appointment`, sin Google Calendar) está pendiente de esa misma aprobación. Fases 3b–8 (Google Calendar, resto de clientes/CRM, reportes, Excel, auditoría) **no se han tocado**.
+Fase 1, Fase 2 y Fase 3a construidas, verificadas contra Postgres real, y **aprobadas** por el usuario. **Fase 3b (Google Calendar) fue descartada, no pospuesta** — ver sección dedicada más abajo. Próximo paso real: Fase 4 (Clientes). Fases 5–8 (CRM/WhatsApp, reportes, Excel, auditoría) **no se han tocado**.
 
 Desde Fase 3a el usuario empezó a nombrar explícitamente qué agente/skill invocar en vez de dejarlo genérico — ver `AGENTS.md` (creado en esa sesión) para el mapeo completo de agentes/skills/MCP disponibles y cuál corresponde a cada tipo de tarea futura.
 
@@ -54,6 +54,17 @@ Bug real encontrado en la verificación: `serviceService.js` (Fase 2) nunca leí
 
 Detalle exacto del walkthrough de 9 pasos contra Postgres real en `CHANGELOG.md` [0.3.0].
 
+## Fase 3b (Google Calendar) — DESCARTADA, no pospuesta (2026-07-06)
+
+El usuario decidió no integrar Google Calendar en absoluto, tras completar el diseño con 3 agentes (Backend Architect, Security Architect, Application Security Engineer — ver `AGENTS.md`, el usuario agregó Security Architect al roster fijo para esta fase). El diseño llegó a estar completo y consolidado en el plan (`GoogleCalendarConnection` cifrada con clave separada, OAuth2 con `state` firmado con secret propio, sync unidireccional pendiente→confirmado→cancelado), pero nunca se implementó.
+
+Razones de la decisión (no son un problema del diseño en sí, que quedó sólido — son de producto/operación):
+1. Mientras el proyecto no esté verificado por Google, los refresh tokens de cuentas de prueba expiran cada 7 días — dependencia operativa frágil para un piloto.
+2. Un evento editado/borrado directamente en Google Calendar por el dueño generaría una falsa sensación de cancelación, ya que la sync es unidireccional (Alma Spa → Google, nunca al revés) — Alma Spa (la Agenda propia, ya construida en Fase 3a) debe seguir siendo la única fuente de verdad.
+3. Expandir a futuros spas sin depender de una cuenta externa de Google por tenant simplifica el modelo de negocio de NUVIO Platform.
+
+El documento de diseño completo queda en `C:\Users\59399\.claude\plans\cozy-crafting-acorn.md` marcado `[DESCARTADO]` como referencia histórica, por si en algún momento futuro se reconsidera con otro enfoque (ej. cuando el proyecto esté verificado por Google). El comentario `TODO Fase 3b` en `src/services/appointmentService.js` fue reemplazado por un comentario explícito de que se descartó, para que ninguna sesión futura lo reactive sin este contexto.
+
 ## Próximo paso
 
-No avanzar a Fase 3b (Google Calendar) hasta que el usuario revise y apruebe el esquema `Client`/`ClientIntake`/`Appointment` de esta sesión.
+Fase 4: Clientes — edición de ficha de anamnesis desde el panel de staff, historial de tratamientos, planes de cliente y saldo. Orden original del brief, retomado tras descartar Fase 3b.

@@ -40,12 +40,21 @@
 - [x] Rutas públicas (`/public/:tenantSlug/...`, `/public/bookings/:token`) y autenticadas (`/appointments`, `requirePermission('agenda')`)
 - [x] 54 tests unitarios (35 previos sin regresión + 19 nuevos, mock de Prisma)
 - [x] Migración + walkthrough completo contra Postgres real (Railway) — ver `CHANGELOG.md` [0.3.0] para el detalle exacto de cada paso
-- [ ] **Bloqueante**: esperar aprobación del usuario de este esquema antes de Fase 3b (Google Calendar)
+- [x] **Aprobado por el usuario** el esquema `Client`/`ClientIntake`/`Appointment`
 
-## Fases 3b–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+## Fase 3b — Google Calendar — DESCARTADA (no pospuesta)
 
-- [ ] Fase 3b: Integración Google Calendar (los ganchos `TODO` ya están en `appointmentService.js`)
-- [ ] Fase 4: Clientes (edición de anamnesis desde el panel, historial de tratamientos, planes de cliente, saldo)
+Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, Application Security Engineer) — ver `CHANGELOG.md` "[Decisión de alcance] Fase 3b descartada" y `MEMORY.md` para el razonamiento completo. **No hay tareas pendientes de esta fase**: no se implementa, el documento de diseño queda solo como referencia histórica en `C:\Users\59399\.claude\plans\cozy-crafting-acorn.md` (marcado `[DESCARTADO]`). El comentario `TODO Fase 3b` en `appointmentService.js` ya fue reemplazado por un comentario explícito de descarte.
+
+## Fase 4 — Clientes (SIGUIENTE PASO) — NO INICIADA
+
+- [ ] Edición de `ClientIntake` desde el panel de staff (crear/leer/actualizar ficha de anamnesis para un cliente ya existente — hoy solo se crea una vez durante la reserva pública de Fase 3a)
+- [ ] Historial de tratamientos por cliente
+- [ ] Planes de cliente (vincular `Plan` de Fase 2 a un `Client`, sesiones usadas/disponibles)
+- [ ] Saldo de cliente
+
+## Fases 5–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+
 - [ ] Fase 5: CRM (bandeja WhatsApp + recordatorios, el gancho `TODO` ya está en `appointmentService.js`)
 - [ ] Fase 6: Reportes
 - [ ] Fase 7: Import/Export Excel

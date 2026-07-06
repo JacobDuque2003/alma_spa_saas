@@ -188,7 +188,8 @@ async function createPublicBooking(tenantId, payload) {
       appointments.push(appointment);
     }
 
-    // TODO Fase 3b: crear evento en Google Calendar por cada appointment
+    // Descartado: no se integra Google Calendar (decisión de alcance, ver CHANGELOG/MEMORY.md).
+    // Alma Spa (esta Agenda) es la única fuente de verdad del calendario.
     // TODO Fase 5: enviar WhatsApp con link de confirmación (confirmationToken)
 
     return { client, appointments };
