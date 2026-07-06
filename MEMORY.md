@@ -34,6 +34,12 @@ Regla de integridad simétrica agregada a pedido del usuario (no estaba en el pl
 
 Nota sobre la DB Railway: el usuario reportó haber rotado la password, pero la nueva connection string mostrada en pantalla tenía la misma password que ya había quedado expuesta en el chat. Se le avisó explícitamente; confirmó que quería seguir usando esa misma password. Sigue siendo la misma desde Fase 1.
 
+## DB Railway recreada (2026-07-06, mismo día)
+
+El usuario borró esa instancia (el problema de rotación no se resolvía) y creó una nueva, vacía: `hayabusa.proxy.rlwy.net:22777/railway` (puerto e id distintos a la anterior, `:42587`). Se corrió `prisma migrate dev` (aplicó las 2 migraciones existentes — `init` + `catalog_base` — sin generar ninguna nueva, porque el schema no cambió) y `db:seed` desde cero. Checks rápidos confirmaron paridad con lo ya documentado en `CHANGELOG.md` [0.1.1]/[0.2.0]: login de los 4 roles con `tenantId` correcto y `GET /services` en `[]` (base limpia). No se repitió el walkthrough completo — ya está en verde y documentado, esto solo confirmó que la base nueva responde igual.
+
+`.env` local actualizado con la URL nueva (no versionado, como siempre).
+
 ## Próximo paso
 
 No avanzar a Fase 3 (reserva pública) hasta que el usuario revise y apruebe el esquema `Service`/`Room`/`Plan` de esta sesión.
