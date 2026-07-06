@@ -92,3 +92,45 @@ Limpieza posterior: se borraron los servicios desechables creados solo para las 
 
 ### Fuera de alcance de esta sesión
 - Reserva pública, Google Calendar, clientes/anamnesis, CRM/WhatsApp, reportes, Excel — Fase 3 en adelante.
+
+## [0.3.0] - 2026-07-06
+
+Fase 3a del brief: reserva pública + modelo de citas (`Client`, `ClientIntake`, `Appointment`), sin Google Calendar (Fase 3b). Diseñado con tres agentes invocados explícitamente (Backend Architect, Application Security Engineer, Database Optimizer — consultado dos veces) siguiendo el mapeo de `AGENTS.md`, no delegación automática.
+
+### Agregado
+- `Client` (`@@unique([tenantId, whatsapp])`, clave de cliente nuevo vs. recurrente), `ClientIntake` (alergias/condiciones cifradas AES-256-GCM en columnas `Bytes` separadas: ciphertext/IV/auth-tag), `Appointment` (`AppointmentStatus`, `AppointmentModality`, `confirmationToken` único, `priceUsd` como snapshot).
+- `Service.offersHomeService` y `User.canAttendAppointments` (+ índices `(tenantId, category, active)`, `(tenantId, specialty, active)`, `(tenantId, role, active, canAttendAppointments)`) — distinguen qué servicios se ofrecen a domicilio y qué personal puede quedar asignado a una cita (no todo `role=personal` es terapeuta).
+- `src/utils/intakeCrypto.js`: `encryptField`/`decryptField` con `node:crypto` nativo (no pgcrypto, para que la clave nunca viaje a Postgres), más `assertEncryptionKeyOrExit()` — el servidor se niega a arrancar si `INTAKE_ENCRYPTION_KEY` falta o no decodifica a 32 bytes.
+- `src/middleware/resolvePublicTenant.js`: deriva el tenant exclusivamente del `slug` en la URL para las rutas públicas (sin JWT), nunca de body/query; 404 genérico si el slug no existe o el tenant está inactivo.
+- `src/middleware/publicRateLimit.js`: rate limit propio para HTTP público (no se reusó `barbershop/src/middleware/rateLimit.js` tal cual — su `getClientKey()` está hardcodeado al shape del webhook de WhatsApp). Dos estrategias: IP simple (lectura) e IP+tenantSlug agresivo (escritura y el oráculo de `/clients/lookup`).
+- Auto-asignación de `roomId`/`staffId`: el cliente público nunca elige terapeuta, solo servicio/horario/modalidad. `appointmentService.js` resuelve candidatos en 3 queries (2 para `domicilio`), cruza en memoria, e inserta con reintento ante conflicto `P2002` contra los `@@unique([roomId, startsAt])`/`@@unique([staffId, startsAt])`.
+- Modalidad `domicilio`: `roomId` nullable (Postgres no compara `NULL` como duplicado, así que varias citas domicilio conviven sin chocar por gabinete), `homeAddress` requerido en el service. `Room.status = a_domicilio` (enum de Fase 2) **no** se deriva automáticamente — explícitamente fuera de alcance.
+- Rutas públicas bajo `/public/:tenantSlug/...` (services, availability, clients/lookup, bookings) y `/public/bookings/:token` (ver/cancelar, sin slug). Rutas autenticadas bajo `/appointments` con `requirePermission('agenda')`.
+- 19 tests unitarios nuevos (54 en total).
+
+### Corregido (encontrado durante la verificación contra DB real)
+- `serviceService.createService`/`updateService` (Fase 2) nunca leían `offersHomeService` del body — el campo se agregó al schema en esta fase pero se olvidó wire-earlo en el service ya existente. Confirmado en vivo: se creó un servicio con `offersHomeService: true` en el body y la respuesta devolvía `false`. Corregido y cubierto con 2 tests de regresión.
+
+### Verificado — PostgreSQL real (Railway, misma DB dedicada `alma_spa`)
+
+`npx prisma migrate dev --name booking_flow` aplicada sin errores. `npm test` → 54/54 en verde. Seed actualizado: `terapeuta@almaspa.test` con `canAttendAppointments: true`, el resto en `false` (default).
+
+Walkthrough de curl (catálogo de prueba: `Masaje relajante` con `offersHomeService:true`, `Limpieza facial` con `offersHomeService:false`, un `Room` de masajes):
+
+1. `GET /public/alma-spa/availability?serviceId=masaje&date=2026-08-10` → `200`, 10 slots en punto (09:00–18:00).
+2. `POST /public/alma-spa/bookings` con cliente nuevo + anamnesis (`allergies`, `conditions`, `consentSigned:true`) → `201`. Confirmado por lectura directa en DB: `allergiesEnc` es binario opaco (no el texto original), `allergiesIv` de 12 bytes, `allergiesTag` de 16 bytes. El `Appointment` creado tiene `roomId`/`staffId` asignados aunque el payload nunca los mandó.
+3. Reservar el **mismo slot exacto** con otro cliente (mismo servicio, único room+staff elegible) → `409 {"error":"Este horario ya no está disponible"}`.
+4. `GET /public/bookings/:token` → `200`, resumen sin exponer `ClientIntake` ni qué staff quedó asignado.
+5. `POST /bookings` con `serviceId` inexistente/de otro tenant → `400 {"error":"serviceId inválido para este tenant"}`.
+6. `modality: "domicilio"` sobre el servicio con `offersHomeService:false` → `400 {"error":"Este servicio no ofrece modalidad a domicilio"}`.
+7. `modality: "domicilio"` sobre el servicio con `offersHomeService:true` → `201`; confirmado en DB `roomId: null`, `homeAddress` guardado.
+8. `POST /clients/lookup` repetido rápido → dispara `429` tras superar el límite agresivo IP+tenantSlug (compartido con las escrituras de booking sobre el mismo tenant, por diseño).
+9. Confirmado en DB: en **todas** las citas creadas durante la verificación, el `staffId` asignado fue siempre la cuenta `terapeuta` (`canAttendAppointments:true`) — nunca `recepcion`.
+
+Limpieza posterior: se borraron los `Client`/`ClientIntake`/`Appointment` de prueba (2 clientes, 1 intake, 2 citas). Quedó el catálogo base (2 `Service`, 1 `Room`) para continuidad de fases futuras.
+
+### Qué queda validado solo con mock
+- Los 19 tests nuevos (`appointmentService.test.js`, `clientService.test.js`, `intakeCrypto.test.js`) cubren los mismos casos que el walkthrough real, con Prisma mockeado, para correr en CI sin DB.
+
+### Fuera de alcance de esta sesión
+- Google Calendar (Fase 3b — los `TODO` ya están en `appointmentService.js`), edición de `ClientIntake` desde el panel/historial de tratamientos/planes de cliente/saldo (Fase 4), CRM/WhatsApp real (Fase 5), reportes (Fase 6), Excel (Fase 7), auditoría final (Fase 8).

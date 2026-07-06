@@ -23,28 +23,33 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users    User[]
-  services Service[]
-  rooms    Room[]
-  plans    Plan[]
+  users         User[]
+  services      Service[]
+  rooms         Room[]
+  plans         Plan[]
+  clients       Client[]
+  clientIntakes ClientIntake[]
+  appointments  Appointment[]
 }
 
 model User {
-  id           String   @id @default(cuid())
-  tenantId     String?
-  email        String   @unique
-  passwordHash String
-  name         String
-  role         Role
-  isProtected  Boolean  @default(false)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  tenantId              String?
+  email                 String   @unique
+  passwordHash          String
+  name                  String
+  role                  Role
+  isProtected           Boolean  @default(false)
+  active                Boolean  @default(true)
+  canAttendAppointments Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   tenant         Tenant?         @relation(fields: [tenantId], references: [id])
   rolePermission RolePermission?
+  appointments   Appointment[]
 
-  @@index([tenantId])
+  @@index([tenantId, role, active, canAttendAppointments])
 }
 
 model RolePermission {
@@ -61,20 +66,22 @@ model RolePermission {
 }
 
 model Service {
-  id           String   @id @default(cuid())
-  tenantId     String
-  name         String
-  category     String
-  durationMins Int      @default(60)
-  priceUsd     Decimal  @db.Decimal(10, 2)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(cuid())
+  tenantId          String
+  name              String
+  category          String
+  durationMins      Int      @default(60)
+  priceUsd          Decimal  @db.Decimal(10, 2)
+  offersHomeService Boolean  @default(false)
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id])
-  plans  Plan[]  @relation("PlanServices")
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  plans        Plan[]        @relation("PlanServices")
+  appointments Appointment[]
 
-  @@index([tenantId])
+  @@index([tenantId, category, active])
 }
 
 enum RoomStatus {
@@ -93,9 +100,10 @@ model Room {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
 
-  @@index([tenantId])
+  @@index([tenantId, specialty, active])
 }
 
 model Plan {
@@ -115,4 +123,84 @@ model Plan {
   services Service[] @relation("PlanServices")
 
   @@index([tenantId])
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  tenantId  String
+  fullName  String
+  whatsapp  String
+  email     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  intake       ClientIntake?
+  appointments Appointment[]
+
+  @@unique([tenantId, whatsapp])
+  @@index([tenantId])
+}
+
+model ClientIntake {
+  id              String    @id @default(cuid())
+  tenantId        String
+  clientId        String    @unique
+  allergiesEnc    Bytes?
+  allergiesIv     Bytes?
+  allergiesTag    Bytes?
+  conditionsEnc   Bytes?
+  conditionsIv    Bytes?
+  conditionsTag   Bytes?
+  consentSigned   Boolean   @default(false)
+  consentSignedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([tenantId])
+}
+
+enum AppointmentStatus {
+  pendiente
+  confirmado
+  cancelado
+  no_show
+}
+
+enum AppointmentModality {
+  spa
+  domicilio
+}
+
+model Appointment {
+  id                String              @id @default(cuid())
+  tenantId          String
+  clientId          String
+  serviceId         String
+  modality          AppointmentModality @default(spa)
+  roomId            String?
+  homeAddress       String?
+  staffId           String
+  startsAt          DateTime
+  endsAt            DateTime
+  status            AppointmentStatus   @default(pendiente)
+  confirmationToken String              @unique @default(cuid())
+  priceUsd          Decimal             @db.Decimal(10, 2)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  client  Client  @relation(fields: [clientId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+  room    Room?   @relation(fields: [roomId], references: [id])
+  staff   User    @relation(fields: [staffId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, startsAt])
+  @@unique([roomId, startsAt])
+  @@unique([staffId, startsAt])
 }

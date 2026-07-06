@@ -5,6 +5,10 @@ const userRoutes = require('./routes/users');
 const serviceRoutes = require('./routes/services');
 const roomRoutes = require('./routes/rooms');
 const planRoutes = require('./routes/plans');
+const publicBookingRoutes = require('./routes/public/booking');
+const publicBookingConfirmationRoutes = require('./routes/public/bookingConfirmation');
+const appointmentRoutes = require('./routes/appointments');
+const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 
 const app = express();
 app.use(express.json());
@@ -15,6 +19,11 @@ app.use('/users', userRoutes);
 app.use('/services', serviceRoutes);
 app.use('/rooms', roomRoutes);
 app.use('/plans', planRoutes);
+app.use('/appointments', appointmentRoutes);
+// Orden importa: la ruta literal /public/bookings debe montarse ANTES que
+// /public/:tenantSlug, o Express la interpretaría como tenantSlug="bookings".
+app.use('/public/bookings', publicBookingConfirmationRoutes);
+app.use('/public/:tenantSlug', publicBookingRoutes);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
@@ -27,6 +36,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
+  assertEncryptionKeyOrExit();
   const port = process.env.PORT || 3001;
   app.listen(port, () => console.log(`Alma Spa backend escuchando en :${port}`));
 }

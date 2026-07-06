@@ -5,4 +5,11 @@ class BadRequestError extends Error {
   }
 }
 
-module.exports = { BadRequestError };
+class SlotUnavailableError extends Error {
+  constructor(message = 'Este horario ya no está disponible') {
+    super(message);
+    this.status = 409;
+  }
+}
+
+module.exports = { BadRequestError, SlotUnavailableError };

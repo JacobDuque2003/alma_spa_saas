@@ -4,7 +4,9 @@
 
 ## Estado actual (2026-07-06)
 
-Fase 1 (Tenant/User/RolePermission, auth JWT, permisos) y Fase 2 (Service/Room/Plan, catálogo base) construidas y verificadas contra Postgres real. Fase 1 ya fue aprobada por el usuario con evidencia real; Fase 2 está pendiente de esa misma aprobación (esquema + endpoints ya revisados en modo plan antes de escribir código). Fases 3–8 (reserva pública, clientes/CRM, reportes, Excel, auditoría) **no se han tocado**.
+Fase 1, Fase 2 y Fase 3a construidas y verificadas contra Postgres real. Fases 1 y 2 ya aprobadas por el usuario con evidencia real. Fase 3a (reserva pública + `Client`/`ClientIntake`/`Appointment`, sin Google Calendar) está pendiente de esa misma aprobación. Fases 3b–8 (Google Calendar, resto de clientes/CRM, reportes, Excel, auditoría) **no se han tocado**.
+
+Desde Fase 3a el usuario empezó a nombrar explícitamente qué agente/skill invocar en vez de dejarlo genérico — ver `AGENTS.md` (creado en esa sesión) para el mapeo completo de agentes/skills/MCP disponibles y cuál corresponde a cada tipo de tarea futura.
 
 ## Decisiones de diseño confirmadas con el usuario
 
@@ -40,6 +42,18 @@ El usuario borró esa instancia (el problema de rotación no se resolvía) y cre
 
 `.env` local actualizado con la URL nueva (no versionado, como siempre).
 
+## Fase 3a — reserva pública + citas (2026-07-06)
+
+`Client`, `ClientIntake` (cifrado AES-256-GCM en `src/utils/intakeCrypto.js`, clave `INTAKE_ENCRYPTION_KEY` con fail-fast al arrancar), `Appointment` (con `AppointmentModality` spa/domicilio). Diseño hecho con tres agentes invocados explícitamente (Backend Architect, Application Security Engineer, Database Optimizer x2), no delegación automática — el usuario lo pidió así tras notar que un agente relevante (Database Optimizer) no había participado en la primera pasada del diseño.
+
+Dos decisiones de negocio confirmadas antes de programar: horarios siempre en punto (habilita `@@unique` simple contra doble-reserva) y el cliente público nunca elige terapeuta (auto-asignación de `roomId`/`staffId`, resuelta en `appointmentService.js` con reintento ante conflicto `P2002`).
+
+Dos vacíos de diseño que el usuario detectó y se resolvieron antes de aprobar: (1) no todo `role=personal` es terapeuta — se agregó `User.canAttendAppointments` (booleano simple, no relación M:N con `Service`, por sobrediseño para un piloto de 3 cuentas de staff); (2) faltaba la modalidad a domicilio del mockup de Gabinetes ya aprobado — se agregó `Service.offersHomeService` + `Appointment.roomId` nullable, sin automatizar `Room.status=a_domicilio` (fuera de alcance explícito).
+
+Bug real encontrado en la verificación: `serviceService.js` (Fase 2) nunca leía el nuevo campo `offersHomeService` del body — corregido, con test de regresión.
+
+Detalle exacto del walkthrough de 9 pasos contra Postgres real en `CHANGELOG.md` [0.3.0].
+
 ## Próximo paso
 
-No avanzar a Fase 3 (reserva pública) hasta que el usuario revise y apruebe el esquema `Service`/`Room`/`Plan` de esta sesión.
+No avanzar a Fase 3b (Google Calendar) hasta que el usuario revise y apruebe el esquema `Client`/`ClientIntake`/`Appointment` de esta sesión.

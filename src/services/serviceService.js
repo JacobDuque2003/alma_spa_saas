@@ -37,6 +37,7 @@ async function createService(actor, data) {
       category: data.category,
       durationMins: FIXED_DURATION_MINS,
       priceUsd: data.priceUsd,
+      offersHomeService: !!data.offersHomeService,
       active: true,
     },
   });
@@ -51,6 +52,7 @@ async function updateService(actor, id, changes) {
   if (changes.name !== undefined) data.name = changes.name;
   if (changes.category !== undefined) data.category = changes.category;
   if (changes.priceUsd !== undefined) data.priceUsd = changes.priceUsd;
+  if (changes.offersHomeService !== undefined) data.offersHomeService = !!changes.offersHomeService;
   // durationMins nunca se acepta del cliente: siempre fijo en 60.
 
   return prisma.service.update({ where: { id }, data });

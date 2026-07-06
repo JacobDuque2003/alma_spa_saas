@@ -6,12 +6,12 @@ const prisma = new PrismaClient();
 
 const SEED_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD || 'CambiarEnProduccion123!';
 
-async function upsertUser({ email, name, role, tenantId, isProtected }) {
+async function upsertUser({ email, name, role, tenantId, isProtected, canAttendAppointments = false }) {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   return prisma.user.upsert({
     where: { email },
-    update: { name, role, tenantId, isProtected },
-    create: { email, name, role, tenantId, isProtected, passwordHash },
+    update: { name, role, tenantId, isProtected, canAttendAppointments },
+    create: { email, name, role, tenantId, isProtected, canAttendAppointments, passwordHash },
   });
 }
 
@@ -71,6 +71,7 @@ async function main() {
     role: 'personal',
     tenantId: tenant.id,
     isProtected: false,
+    canAttendAppointments: true,
   });
   await prisma.rolePermission.upsert({
     where: { userId: terapeuta.id },

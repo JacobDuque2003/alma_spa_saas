@@ -30,6 +30,28 @@ test('createService siempre fuerza durationMins a 60 sin importar lo que mande e
   assert.equal(result.durationMins, 60);
 });
 
+test('createService guarda offersHomeService del body (bug real encontrado en verificación de Fase 3a: no se leía)', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+
+  const result = await serviceService.createService(
+    { role: 'dueno', tenantId: 't1' },
+    { name: 'Masaje relajante', category: 'masajes', priceUsd: 45, offersHomeService: true }
+  );
+
+  assert.equal(result.offersHomeService, true);
+});
+
+test('createService por defecto offersHomeService=false si no se manda', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+
+  const result = await serviceService.createService(
+    { role: 'dueno', tenantId: 't1' },
+    { name: 'Limpieza facial', category: 'faciales', priceUsd: 30 }
+  );
+
+  assert.equal(result.offersHomeService, false);
+});
+
 test('updateService rechaza con 403 si el actor intenta tocar un servicio de otro tenant', async () => {
   mockPrisma({
     service: { findUnique: async () => ({ id: 's1', tenantId: 'tenant-otro' }) },

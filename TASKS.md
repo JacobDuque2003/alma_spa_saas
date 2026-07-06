@@ -26,13 +26,27 @@
 - [x] Todos los endpoints bajo `authenticate` + `requirePermission('configuracion')`
 - [x] 33 tests unitarios (19 Fase 1 sin regresión + 14 nuevos de Fase 2, mock de Prisma)
 - [x] Migración + walkthrough completo contra Postgres real (Railway) — ver `CHANGELOG.md` [0.2.0] para el detalle exacto de cada paso, incluyendo la primera prueba real (no mock) de `requirePermission('configuracion')`
-- [ ] **Bloqueante**: esperar aprobación del usuario de este esquema antes de Fase 3
+- [x] **Aprobado por el usuario** el esquema `Service`/`Room`/`Plan`
 
-## Fases 3–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+## Fase 3a — Reserva pública + modelo de citas (sin Google Calendar) — COMPLETADA
 
-- [ ] Fase 3: Flujo de reserva pública + Google Calendar
-- [ ] Fase 4: Clientes (anamnesis, historial, planes, saldo)
-- [ ] Fase 5: CRM (bandeja WhatsApp + recordatorios)
+- [x] Diseño hecho con 3 agentes invocados explícitamente (Backend Architect, Application Security Engineer, Database Optimizer x2) — ver `AGENTS.md` para el mapeo que originó esta invocación explícita
+- [x] `Client`, `ClientIntake` (cifrada AES-256-GCM), `Appointment` (+ enums `AppointmentStatus`/`AppointmentModality`) en `prisma/schema.prisma`
+- [x] `Service.offersHomeService`, `User.canAttendAppointments` + índices nuevos (`(tenantId, category, active)`, `(tenantId, specialty, active)`, `(tenantId, role, active, canAttendAppointments)`)
+- [x] `src/utils/intakeCrypto.js` (AES-256-GCM nativo) + fail-fast de `INTAKE_ENCRYPTION_KEY` al arrancar (`process.exit(1)` si falta/inválida)
+- [x] `src/middleware/resolvePublicTenant.js` (tenant por slug, nunca por body/query) + `src/middleware/publicRateLimit.js` (IP simple / IP+tenantSlug agresivo)
+- [x] Auto-asignación de `roomId`/`staffId` (el cliente nunca elige terapeuta) con reintento ante `P2002` — `src/services/appointmentService.js`
+- [x] Modalidad `domicilio`: `roomId` nullable, `Service.offersHomeService` como opt-in, sin tocar `Room.status=a_domicilio` (explícitamente fuera de alcance)
+- [x] Rutas públicas (`/public/:tenantSlug/...`, `/public/bookings/:token`) y autenticadas (`/appointments`, `requirePermission('agenda')`)
+- [x] 54 tests unitarios (35 previos sin regresión + 19 nuevos, mock de Prisma)
+- [x] Migración + walkthrough completo contra Postgres real (Railway) — ver `CHANGELOG.md` [0.3.0] para el detalle exacto de cada paso
+- [ ] **Bloqueante**: esperar aprobación del usuario de este esquema antes de Fase 3b (Google Calendar)
+
+## Fases 3b–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+
+- [ ] Fase 3b: Integración Google Calendar (los ganchos `TODO` ya están en `appointmentService.js`)
+- [ ] Fase 4: Clientes (edición de anamnesis desde el panel, historial de tratamientos, planes de cliente, saldo)
+- [ ] Fase 5: CRM (bandeja WhatsApp + recordatorios, el gancho `TODO` ya está en `appointmentService.js`)
 - [ ] Fase 6: Reportes
 - [ ] Fase 7: Import/Export Excel
 - [ ] Fase 8: Auditoría de seguridad + testing + despliegue
