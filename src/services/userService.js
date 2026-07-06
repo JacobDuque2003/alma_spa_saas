@@ -1,25 +1,12 @@
 const prisma = require('../utils/prisma');
 const { hashPassword } = require('./authService');
+const { assertTenantScope, resolveTenantId, ForbiddenTenantError } = require('../utils/tenantScope');
+const { BadRequestError } = require('../utils/errors');
 
 class ProtectedAccountError extends Error {
   constructor() {
     super('Esta cuenta está protegida y no puede editarse ni eliminarse');
     this.status = 403;
-  }
-}
-
-class ForbiddenTenantError extends Error {
-  constructor() {
-    super('No tiene acceso a este recurso');
-    this.status = 403;
-  }
-}
-
-function assertTenantScope(actor, targetTenantId) {
-  // superadmin (sin tenant) puede operar sobre cualquier tenant.
-  if (actor.role === 'superadmin') return;
-  if (actor.tenantId !== targetTenantId) {
-    throw new ForbiddenTenantError();
   }
 }
 
@@ -33,15 +20,12 @@ async function createUser(actor, data) {
   const { email, password, name, role, permissions } = data;
 
   if (role === 'superadmin') {
-    throw new Error('No se pueden crear cuentas superadmin vía API');
+    throw new BadRequestError('No se pueden crear cuentas superadmin vía API');
   }
 
-  // tenantId SIEMPRE se deriva del JWT del actor — cualquier tenantId que
-  // el cliente mande en el body se ignora por completo (no se lee ni se
-  // valida). Solo superadmin, que no tiene tenant propio, puede asignar uno.
-  const tenantId = actor.role === 'superadmin' ? data.tenantId : actor.tenantId;
+  const tenantId = resolveTenantId(actor, data.tenantId);
   if (!tenantId) {
-    throw new Error('tenantId es requerido para roles dueno/personal');
+    throw new BadRequestError('tenantId es requerido para roles dueno/personal');
   }
 
   const passwordHash = await hashPassword(password);
@@ -115,7 +99,7 @@ async function updatePermissions(actor, targetUserId, permissions) {
     throw new ProtectedAccountError();
   }
   if (target.role !== 'personal') {
-    throw new Error('Solo las cuentas de personal tienen permisos por módulo');
+    throw new BadRequestError('Solo las cuentas de personal tienen permisos por módulo');
   }
   assertTenantScope(actor, target.tenantId);
 

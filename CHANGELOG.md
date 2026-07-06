@@ -51,3 +51,44 @@ Las dos cuentas creadas durante el paso 6 (`nuevo.forjado@almaspa.test`, `nuevo.
 
 ### Higiene de seguridad pendiente
 - La password de la DB Railway `alma_spa` quedó pegada en texto plano en el chat de esta sesión. Rotarla en Railway → base de datos → Variables antes de considerar cerrado este ciclo.
+
+## [0.2.0] - 2026-07-06
+
+Fase 2 del brief: catálogo base (`services`, `rooms`, `plans`). Esquema y endpoints revisados en modo plan y aprobados por el usuario antes de escribir código.
+
+### Agregado
+- `Service` (`category`, `durationMins` fijo en 60, `priceUsd` en `Decimal`), `Room` (`specialty`, enum `RoomStatus`: libre/ocupado/a_domicilio), `Plan` (`sessionsIncluded`, `period`, `appliesToAllServices`, `includesHomeService`, relación many-to-many opcional con `Service`). Relaciones inversas agregadas a `Tenant` (`services`/`rooms`/`plans`) — campos virtuales de Prisma, sin columnas nuevas en la tabla `tenants`.
+- `src/utils/tenantScope.js`: `assertTenantScope`, `resolveTenantId`, `ForbiddenTenantError` extraídos de `userService.js` para reutilizar en los 3 servicios nuevos sin duplicar lógica (`userService.js` refactorizado para importarlo, sin cambio de comportamiento — los 19 tests de Fase 1 siguen en verde).
+- `src/utils/errors.js` (`BadRequestError`, status 400) — también retrofiteado a validaciones de `userService.js` que antes lanzaban `Error` plano y caían como 500 en vez de 400.
+- CRUD de `services`/`rooms`/`plans`, todos bajo `authenticate` + `requirePermission('configuracion')`. `tenantId` siempre derivado del JWT (mismo patrón de Fase 1); listados filtrados por tenant salvo para superadmin.
+- Validación `Room.specialty` contra `Service.category` activa del tenant (400 si no coincide).
+- Validación de `Plan.serviceIds` contra el tenant del actor (400 si algún id pertenece a otro tenant o no existe).
+- **Regla de integridad simétrica** (pedida explícitamente antes de implementar): `DELETE /services/:id` rechaza con 400 si el servicio es la última service activa de su `category` y algún `Room` activo depende de esa `category` — evita dejar gabinetes sin ninguna especialidad activa que los respalde.
+- `DELETE` en los 3 recursos es soft delete (`active:false`), no borrado físico — Fase 3 (citas) y Fase 4 (planes de cliente) van a referenciar estos ids.
+- 14 tests unitarios nuevos (33 en total: 19 de Fase 1 + 14 de Fase 2).
+
+### Verificado — PostgreSQL real (Railway, misma DB dedicada `alma_spa`)
+
+`npx prisma migrate dev --name catalog_base` aplicada sin errores. `npm test` → 33/33 en verde contra el cliente generado de esta migración.
+
+Walkthrough de curl contra la base real:
+
+1. Crear 3 `Service` (categorías `masajes`, `faciales`, `reflexologia`) con token de dueño → `201` los tres. El primero mandó `durationMins: 999` en el body → quedó guardado en `60` (ignorado, como se esperaba).
+2. Crear `Room` con `specialty: "categoria-inventada"` (sin ninguna `Service` activa de esa categoría) → `400 {"error":"specialty \"categoria-inventada\" no coincide con ninguna categoría de servicio activa de este tenant"}`.
+3. Crear `Room` con `specialty: "masajes"` (coincide con el `Service` del paso 1) → `201`.
+4. Crear `Room` con `specialty: "reflexologia"` (coincide con el único `Service` de esa categoría) → `201` — preparado para la prueba de integridad.
+5. **`DELETE /services/:id`** sobre el `Service` de reflexología (única de su categoría, con el `Room` del paso 4 activo dependiendo de ella) → `400 {"error":"No se puede desactivar: el gabinete \"Sala de reflexologia\" depende de la categoría \"reflexologia\" y quedaría sin ningún servicio activo que la respalde"}`.
+6. `DELETE /rooms/:id` sobre ese mismo gabinete → `204`.
+7. Reintentar el `DELETE /services/:id` del paso 5, ya sin room activo dependiendo → `204` (soft delete exitoso).
+8. Crear `Plan` con `serviceIds` que incluye un id de un tenant distinto (creado ex profeso para esta prueba, `spa-ajeno`) → `400 {"error":"Alguno de los serviceIds no existe o no pertenece a este tenant"}`.
+9. Crear `Plan` válido con `serviceIds` del propio tenant → `201`.
+10. `POST /services` con `tenantId` forjado en el body → `201`, `tenantId` real usado fue el del JWT del dueño, el forjado nunca se leyó.
+11. **`requirePermission('configuracion')` contra endpoint real por primera vez** (antes solo probado con mock): `POST /services` con token de `personal` (recepción, `configuracion:false`) → `403 {"error":"Sin permiso para el módulo: configuracion"}`. Se hizo un flip temporal de `configuracion:true` en esa misma cuenta (vía script directo a la DB, sin tocar `prisma/seed.js`) → el mismo `POST /services` con el mismo token → `201`. Se revirtió el flip a `false` inmediatamente después.
+
+Limpieza posterior: se borraron los servicios desechables creados solo para las pruebas (`tenantId` forjado, permiso temporal) y el tenant `spa-ajeno` con su servicio. Quedó en la DB el catálogo real de Alma Spa: 2 `Service` activos (masajes, faciales) + 1 inactivo (reflexología, soft-deleted como evidencia del ciclo completo), 1 `Room` activo (masajes) + 1 inactivo (reflexología), 1 `Plan` activo conectado al servicio de masajes.
+
+### Qué queda validado solo con mock
+- Los 14 tests de Fase 2 en `serviceService.test.js`/`roomService.test.js`/`planService.test.js` cubren los mismos casos que el walkthrough real, pero como suite rápida con Prisma mockeado para correr en CI sin DB.
+
+### Fuera de alcance de esta sesión
+- Reserva pública, Google Calendar, clientes/anamnesis, CRM/WhatsApp, reportes, Excel — Fase 3 en adelante.

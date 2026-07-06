@@ -23,7 +23,10 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  users    User[]
+  services Service[]
+  rooms    Room[]
+  plans    Plan[]
 }
 
 model User {
@@ -55,4 +58,61 @@ model RolePermission {
   configuracion Boolean @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Service {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  category     String
+  durationMins Int      @default(60)
+  priceUsd     Decimal  @db.Decimal(10, 2)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  plans  Plan[]  @relation("PlanServices")
+
+  @@index([tenantId])
+}
+
+enum RoomStatus {
+  libre
+  ocupado
+  a_domicilio
+}
+
+model Room {
+  id        String     @id @default(cuid())
+  tenantId  String
+  name      String
+  specialty String
+  status    RoomStatus @default(libre)
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Plan {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  sessionsIncluded     Int
+  period               String
+  priceUsd             Decimal  @db.Decimal(10, 2)
+  appliesToAllServices Boolean  @default(true)
+  includesHomeService  Boolean  @default(false)
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  services Service[] @relation("PlanServices")
+
+  @@index([tenantId])
 }

@@ -2,6 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const serviceRoutes = require('./routes/services');
+const roomRoutes = require('./routes/rooms');
+const planRoutes = require('./routes/plans');
 
 const app = express();
 app.use(express.json());
@@ -9,6 +12,9 @@ app.use(express.json());
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
+app.use('/services', serviceRoutes);
+app.use('/rooms', roomRoutes);
+app.use('/plans', planRoutes);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
