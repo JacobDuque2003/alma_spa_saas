@@ -23,13 +23,16 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users         User[]
-  services      Service[]
-  rooms         Room[]
-  plans         Plan[]
-  clients       Client[]
-  clientIntakes ClientIntake[]
-  appointments  Appointment[]
+  users             User[]
+  services          Service[]
+  rooms             Room[]
+  plans             Plan[]
+  clients           Client[]
+  clientIntakes     ClientIntake[]
+  appointments      Appointment[]
+  treatmentHistories TreatmentHistory[]
+  clientPlans       ClientPlan[]
+  ledgerEntries     ClientLedgerEntry[]
 }
 
 model User {
@@ -45,9 +48,13 @@ model User {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  tenant         Tenant?         @relation(fields: [tenantId], references: [id])
-  rolePermission RolePermission?
-  appointments   Appointment[]
+  tenant             Tenant?           @relation(fields: [tenantId], references: [id])
+  rolePermission     RolePermission?
+  appointments       Appointment[]
+  therapistSessions  TreatmentHistory[] @relation("TherapistSessions")
+  recordedTreatments TreatmentHistory[] @relation("RecordedTreatments")
+  editedTreatments   TreatmentHistory[] @relation("EditedTreatments")
+  ledgerEntries      ClientLedgerEntry[] @relation("LedgerEntriesCreated")
 
   @@index([tenantId, role, active, canAttendAppointments])
 }
@@ -80,6 +87,7 @@ model Service {
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   plans        Plan[]        @relation("PlanServices")
   appointments Appointment[]
+  treatmentHistories TreatmentHistory[]
 
   @@index([tenantId, category, active])
 }
@@ -119,8 +127,9 @@ model Plan {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  services Service[] @relation("PlanServices")
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  services    Service[]    @relation("PlanServices")
+  clientPlans ClientPlan[]
 
   @@index([tenantId])
 }
@@ -135,9 +144,12 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  intake       ClientIntake?
-  appointments Appointment[]
+  tenant             Tenant             @relation(fields: [tenantId], references: [id])
+  intake             ClientIntake?
+  appointments       Appointment[]
+  treatmentHistories TreatmentHistory[]
+  clientPlans        ClientPlan[]
+  ledgerEntries      ClientLedgerEntry[]
 
   @@unique([tenantId, whatsapp])
   @@index([tenantId])
@@ -198,9 +210,115 @@ model Appointment {
   service Service @relation(fields: [serviceId], references: [id])
   room    Room?   @relation(fields: [roomId], references: [id])
   staff   User    @relation(fields: [staffId], references: [id])
+  treatmentHistory TreatmentHistory?
 
   @@index([tenantId])
   @@index([tenantId, startsAt])
   @@unique([roomId, startsAt])
   @@unique([staffId, startsAt])
+}
+
+model TreatmentHistory {
+  id             String   @id @default(cuid())
+  tenantId       String
+  clientId       String
+  serviceId      String
+  therapistId    String
+  createdById    String
+  updatedById    String?
+  appointmentId  String?  @unique
+  sessionDate    DateTime
+  notesEnc       Bytes?
+  notesIv        Bytes?
+  notesTag       Bytes?
+  productsUsed   String[]
+  photoBeforeUrl String?
+  photoAfterUrl  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  client      Client       @relation(fields: [clientId], references: [id])
+  service     Service      @relation(fields: [serviceId], references: [id])
+  therapist   User         @relation("TherapistSessions", fields: [therapistId], references: [id])
+  createdBy   User         @relation("RecordedTreatments", fields: [createdById], references: [id])
+  updatedBy   User?        @relation("EditedTreatments", fields: [updatedById], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, clientId, sessionDate(sort: Desc)])
+  @@index([tenantId, therapistId, sessionDate])
+}
+
+model ClientPlan {
+  id               String   @id @default(cuid())
+  tenantId         String
+  clientId         String
+  planId           String
+  sessionsIncluded Int
+  priceUsd         Decimal  @db.Decimal(10, 2)
+  periodMonths     Int
+  sessionsUsed     Int      @default(0)
+  periodStart      DateTime @default(now())
+  renewsAt         DateTime
+  isComplimentary  Boolean  @default(false)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, clientId, active])
+}
+
+enum LedgerEntryType {
+  cargo
+  pago
+}
+
+model ClientLedgerEntry {
+  id                 String          @id @default(cuid())
+  tenantId           String
+  clientId           String
+  type               LedgerEntryType
+  amountUsd          Decimal         @db.Decimal(10, 2)
+  description        String?
+  method             String?
+  createdById        String
+  appointmentId      String?
+  treatmentHistoryId String?
+  clientPlanId       String?
+  reversalOfId       String?         @unique
+  createdAt          DateTime        @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  client    Client @relation(fields: [clientId], references: [id])
+  createdBy User   @relation("LedgerEntriesCreated", fields: [createdById], references: [id])
+
+  @@index([tenantId, clientId, createdAt])
+}
+
+enum IntakeAuditField {
+  allergies
+  conditions
+  consent
+}
+
+enum IntakeAuditAction {
+  read
+  update
+}
+
+model ClientIntakeAuditLog {
+  id        String            @id @default(cuid())
+  tenantId  String
+  clientId  String
+  actorId   String
+  field     IntakeAuditField
+  action    IntakeAuditAction
+  createdAt DateTime          @default(now())
+
+  @@index([tenantId, clientId, createdAt])
+  @@index([tenantId, actorId, createdAt])
 }

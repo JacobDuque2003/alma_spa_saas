@@ -1,4 +1,19 @@
 const prisma = require('../utils/prisma');
+const { assertTenantScope } = require('../utils/tenantScope');
+
+/**
+ * Carga el Client (siempre existe, a diferencia de ClientIntake) para derivar
+ * el tenant y validar acceso ANTES de cualquier operación sobre sub-recursos
+ * del cliente (anamnesis, tratamientos, planes, saldo). Devuelve null si no
+ * existe (la ruta responde 404); lanza ForbiddenTenantError (403) si el
+ * cliente es de otro tenant. Helper compartido por los servicios de Fase 4.
+ */
+async function loadClientForActor(actor, clientId) {
+  const client = await prisma.client.findUnique({ where: { id: clientId } });
+  if (!client) return null;
+  assertTenantScope(actor, client.tenantId);
+  return client;
+}
 
 async function lookupClient(tenantId, whatsapp) {
   const client = await prisma.client.findUnique({
@@ -27,4 +42,4 @@ async function upsertClient(tx, tenantId, { fullName, whatsapp, email }) {
   });
 }
 
-module.exports = { lookupClient, upsertClient };
+module.exports = { lookupClient, upsertClient, loadClientForActor };

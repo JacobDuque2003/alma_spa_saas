@@ -65,6 +65,20 @@ Razones de la decisión (no son un problema del diseño en sí, que quedó sóli
 
 El documento de diseño completo queda en `C:\Users\59399\.claude\plans\cozy-crafting-acorn.md` marcado `[DESCARTADO]` como referencia histórica, por si en algún momento futuro se reconsidera con otro enfoque (ej. cuando el proyecto esté verificado por Google). El comentario `TODO Fase 3b` en `src/services/appointmentService.js` fue reemplazado por un comentario explícito de que se descartó, para que ninguna sesión futura lo reactive sin este contexto.
 
+## Fase 4 — Clientes (2026-07-08)
+
+Edición/lectura auditada de anamnesis, historial de tratamientos, planes de cliente y saldo. Diseño con 4 agentes (Backend Architect, Database Optimizer, Security Architect, Application Security Engineer) + Code Reviewer antes del walkthrough. Docs en `.claude/plans/fase4-*.md`.
+
+Modelos nuevos: `TreatmentHistory` (notas cifradas), `ClientPlan` (contador + renovación explícita), `ClientLedgerEntry` (ledger append-only, saldo derivado), `ClientIntakeAuditLog` (append-only, log de accesos a la anamnesis).
+
+Decisiones de negocio: terapeuta seleccionable con default al actor (D1), pago/cargo con permiso `clientes` pero reversa/borrado con dueño/superadmin (D4), cargo automático al contratar/renovar plan salvo cortesía autorizada (D7), notas de tratamiento cifradas (D6/elección del usuario).
+
+Seguridad de la anamnesis: la auditoría vive en el service (no en la ruta), orden fail-closed (auditar antes de descifrar), tenant-scope vía `Client`. Guard H1 (test) prohíbe usar encryptField/decryptField fuera de los 2 servicios sancionados.
+
+**Bug encontrado en el walkthrough (no en los tests con mock)**: montar el router de clientes en `/` con `authenticate` global rompía las rutas públicas — corregido con authenticate por-ruta. Lección: los unit tests con Prisma mockeado no ejercitan el montaje real de Express; el walkthrough contra el servidor real sigue siendo necesario.
+
+**Pendiente de despliegue**: el grant append-only de DB sobre `ClientIntakeAuditLog` no está activo porque la app conecta como superusuario `postgres` (ignora GRANT/REVOKE). Hoy el append-only está garantizado solo en la capa de aplicación. SQL para el rol de privilegios mínimos en `docs/append-only-audit-grant.sql`, a aplicar en Fase 8. Detalle completo del walkthrough (21 pasos) en `CHANGELOG.md` [0.4.0].
+
 ## Próximo paso
 
-Fase 4: Clientes — edición de ficha de anamnesis desde el panel de staff, historial de tratamientos, planes de cliente y saldo. Orden original del brief, retomado tras descartar Fase 3b.
+Fase 5: CRM — bandeja de WhatsApp manual + recordatorios. El gancho `TODO Fase 5` ya está en `appointmentService.js`.

@@ -46,12 +46,21 @@
 
 Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, Application Security Engineer) — ver `CHANGELOG.md` "[Decisión de alcance] Fase 3b descartada" y `MEMORY.md` para el razonamiento completo. **No hay tareas pendientes de esta fase**: no se implementa, el documento de diseño queda solo como referencia histórica en `C:\Users\59399\.claude\plans\cozy-crafting-acorn.md` (marcado `[DESCARTADO]`). El comentario `TODO Fase 3b` en `appointmentService.js` ya fue reemplazado por un comentario explícito de descarte.
 
-## Fase 4 — Clientes (SIGUIENTE PASO) — NO INICIADA
+## Fase 4 — Clientes — COMPLETADA
 
-- [ ] Edición de `ClientIntake` desde el panel de staff (crear/leer/actualizar ficha de anamnesis para un cliente ya existente — hoy solo se crea una vez durante la reserva pública de Fase 3a)
-- [ ] Historial de tratamientos por cliente
-- [ ] Planes de cliente (vincular `Plan` de Fase 2 a un `Client`, sesiones usadas/disponibles)
-- [ ] Saldo de cliente
+- [x] Diseño con 4 agentes (Backend Architect + Database Optimizer + Security Architect + Application Security Engineer) — ver `fase4-plan.md` y los docs `fase4-*.md`
+- [x] `TreatmentHistory`, `ClientPlan`, `ClientLedgerEntry`, `ClientIntakeAuditLog` (+ 3 enums) en `prisma/schema.prisma`
+- [x] Edición/lectura auditada de `ClientIntake` desde el panel (`getIntakeForActor`/`updateIntakeForActor`/`getIntakeAuditLog`) con orden fail-closed (H2) y tenant-scope vía `Client` (H3)
+- [x] `treatmentHistoryService` — notas cifradas, terapeuta seleccionable con default al actor (validado `canAttendAppointments`), `updatedById` en edición (D8)
+- [x] `clientPlanService` — contratar/renovar con auto-cargo en la misma transacción (D7), cortesía solo dueño/superadmin; consume atómico
+- [x] `ledgerService` — cargos/pagos/reversa (append-only), saldo derivado, refs validadas contra tenant/cliente (M1)
+- [x] Rutas en `routes/clients.js` con gating correcto (`clientes` general; `dueño/superadmin` para reversa/borrado/lector de auditoría)
+- [x] Guard H1 (test) que prohíbe usar encryptField/decryptField fuera de los servicios sancionados
+- [x] 75 tests unitarios (54 previos + 21 nuevos, mock de Prisma)
+- [x] Code Reviewer: confirmó los 4 requisitos críticos; hallazgos M1/B1/B2/B3/B4 aplicados
+- [x] Migración + walkthrough completo (21 pasos) contra Postgres real — ver `CHANGELOG.md` [0.4.0]
+- [x] Bug de wiring encontrado en el walkthrough (router de clientes en `/` con authenticate global rompía las rutas públicas) — corregido con authenticate por-ruta
+- [ ] **Pendiente de despliegue (Fase 8)**: aplicar el grant de DB restringido sobre `ClientIntakeAuditLog` con un rol de app de privilegios mínimos (hoy la app conecta como superusuario `postgres`; el append-only está garantizado en la capa de aplicación). SQL en `docs/append-only-audit-grant.sql`.
 
 ## Fases 5–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
 

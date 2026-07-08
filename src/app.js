@@ -8,6 +8,7 @@ const planRoutes = require('./routes/plans');
 const publicBookingRoutes = require('./routes/public/booking');
 const publicBookingConfirmationRoutes = require('./routes/public/bookingConfirmation');
 const appointmentRoutes = require('./routes/appointments');
+const clientRoutes = require('./routes/clients');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 
 const app = express();
@@ -20,6 +21,10 @@ app.use('/services', serviceRoutes);
 app.use('/rooms', roomRoutes);
 app.use('/plans', planRoutes);
 app.use('/appointments', appointmentRoutes);
+// Fase 4: rutas de clientes (intake, tratamientos, planes, saldo). El router
+// define rutas completas (/clients/..., /treatments/..., /client-plans/...,
+// /ledger/...), por eso se monta en la raíz.
+app.use('/', clientRoutes);
 // Orden importa: la ruta literal /public/bookings debe montarse ANTES que
 // /public/:tenantSlug, o Express la interpretaría como tenantSlug="bookings".
 app.use('/public/bookings', publicBookingConfirmationRoutes);

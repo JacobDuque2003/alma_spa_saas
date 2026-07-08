@@ -154,3 +154,42 @@ El diseño se completó con 3 agentes invocados explícitamente (Backend Archite
 
 ### Próximo paso
 Fase 4: Clientes (edición de ficha de anamnesis desde el panel, historial de tratamientos, planes de cliente y saldo) — orden original del brief.
+
+## [0.4.0] - 2026-07-08
+
+Fase 4 del brief: Clientes — edición/lectura auditada de la anamnesis, historial de tratamientos, planes de cliente y saldo. Diseñada con 4 agentes invocados explícitamente (Backend Architect, Database Optimizer, Security Architect, Application Security Engineer) y revisada por Code Reviewer antes del walkthrough.
+
+### Agregado
+- Modelos `TreatmentHistory`, `ClientPlan`, `ClientLedgerEntry`, `ClientIntakeAuditLog` (+ enums `LedgerEntryType`, `IntakeAuditField`, `IntakeAuditAction`) + relaciones inversas. `ClientIntake` sin cambios de schema.
+- Anamnesis editable desde el panel (`GET`/`PUT /clients/:clientId/intake`, permiso `clientes`) con **auditoría a nivel de service**: cada lectura y edición fuera del flujo público registra actor/cliente/campo/acción/timestamp. Orden **fail-closed** (H2): cargar Client → validar tenant → escribir auditoría → recién ahí descifrar. Tenant-scope vía `Client` (H3), nunca vía `ClientIntake` (que puede no existir). Lector del log (`GET .../intake/audit`) restringido a dueño/superadmin.
+- Historial de tratamientos con **notas cifradas** (mismo AES-256-GCM que la anamnesis, D6), terapeuta seleccionable con default al actor y validado `canAttendAppointments`, `createdById`/`updatedById` separados (D8).
+- Planes de cliente: contratar/renovar generan el **cargo automáticamente en la misma transacción** (D7), cortesía (`isComplimentary`) solo honrada para dueño/superadmin. Consumo de sesiones atómico (no sobrepasa el límite bajo concurrencia).
+- Saldo como **ledger append-only** (`ClientLedgerEntry`, tipo cargo/pago): saldo = suma derivada, reversa = contra-asiento (nunca borra), cobros con `clientes` y reversa con dueño/superadmin.
+- Guard H1: test que prohíbe usar `encryptField`/`decryptField` fuera de `clientIntakeService`/`treatmentHistoryService` (falla el CI si alguien lo intenta; se eligió test en vez de ESLint porque el proyecto no tiene ESLint y traerlo por una sola regla era desproporcionado).
+- 21 tests unitarios nuevos (75 en total).
+
+### Corregido
+- **Bug de wiring encontrado en el walkthrough (no lo atraparon los tests con mock)**: el router de clientes se montó en `/` con `router.use(authenticate)` global; al estar registrado antes de las rutas públicas, interceptaba **todas** las requests (incluida la reserva pública) exigiendo token. Corregido aplicando `authenticate` por-ruta. Los tests con Prisma mockeado no ejercitan el montaje real de Express — por eso el walkthrough contra el servidor real sigue siendo necesario aunque los unit tests estén en verde.
+- Hallazgos de Code Reviewer aplicados: **M1** refs del ledger (`appointmentId`/`treatmentHistoryId`/`clientPlanId`) ahora validadas contra el tenant/cliente antes de crear el asiento; **B1** `amountUsd` no numérico → 400 (antes 500); **B2** reversa concurrente → 400 amable en vez de P2002 crudo; **B3** consumo de sesiones atómico vía `updateMany` condicional; **B4** `loadClientForActor` extraído a `clientService` (dejaba de estar duplicado en 4 servicios).
+
+### Verificado — PostgreSQL real (Railway)
+
+`npx prisma migrate dev --name client_module` aplicada. `npm test` → 75/75. Walkthrough de 21 pasos contra la base real, todos OK:
+- Lectura de anamnesis (200, descifrada) → fila `read` en el audit log; edición → fila `update`; lector del log 403 para personal-con-clientes / 200 para dueño (3 filas en orden correcto).
+- Notas de tratamiento y anamnesis confirmadas cifradas en reposo (binario, IV 12 / tag 16).
+- Tratamiento cargado por recepción en nombre del terapeuta → `therapistId`=terapeuta, `createdById`=recepción; `therapistId` no-terapeuta → 400; `PATCH` → `updatedById` seteado.
+- Cross-tenant: dueño de alma-spa leyendo intake de otro tenant → 403, registrado en log de seguridad, **cero** filas en el audit log del cliente ajeno.
+- Contratar plan → auto-cargo (saldo 80); cortesía por dueño → sin cargo; cortesía por recepción → bandera ignorada, cargo generado (saldo 160).
+- Consumir 4/4 sesiones → 5a rechazada (400); renovar → contador a 0 + nuevo cargo.
+- Pago 100 → saldo 140; reversa por recepción → 403; por dueño → 201 (contra-asiento), saldo vuelve a 240; segunda reversa del mismo asiento → 400.
+
+Limpieza posterior: se borraron el cliente de prueba y el segundo tenant; quedó el catálogo (1 tenant, 2 servicios, 1 gabinete, 1 plan), sin clientes.
+
+### Seguridad — grant append-only pendiente de despliegue
+La app conecta como el rol `postgres` (superusuario), que **ignora los GRANT/REVOKE**, así que el append-only del audit log está hoy garantizado solo en la capa de aplicación (ningún servicio/ruta expone UPDATE/DELETE sobre `ClientIntakeAuditLog`). La garantía a nivel de DB requiere un rol de app de privilegios mínimos — SQL exacto documentado en `docs/append-only-audit-grant.sql`, a aplicar como paso de despliegue (Fase 8).
+
+### Diferido con nota explícita
+Logging de *acceso* a notas de tratamiento (solo el cifrado entró en esta fase), URLs firmadas para fotos before/after, historial de periodos pasados de `ClientPlan`, política de retención del audit log, y el tradeoff de hard-delete de `TreatmentHistory` (borrar un registro clínico deja `ledger.treatmentHistoryId` colgando; gated a dueño/superadmin).
+
+### Próximo paso
+Fase 5: CRM (bandeja de WhatsApp manual + recordatorios) — el gancho `TODO Fase 5` ya está en `appointmentService.js`.
