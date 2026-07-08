@@ -1,0 +1,348 @@
+{
+  "info": {
+    "name": "Alma Spa Backend (Fases 1-3a)",
+    "description": "Colección de todos los endpoints implementados hasta Fase 3a.\n\nREQUISITO: el backend NO está desplegado todavía. Hay que correrlo localmente:\n1. En alma_spa_saas/: `npm install`\n2. Tener el .env con DATABASE_URL (Railway), JWT_SECRET e INTAKE_ENCRYPTION_KEY\n3. `npm start` → escucha en http://localhost:3001\n4. `npm run db:seed` si la base está vacía (crea el tenant alma-spa y los 4 usuarios de prueba)\n\nCREDENCIALES DE PRUEBA (seed, misma password para los 4):\n- Superadmin:  admin@nuvio.tech\n- Dueño:       dueno@almaspa.test\n- Recepción:   recepcion@almaspa.test  (permisos: agenda, gabinetes, clientes, crm)\n- Terapeuta:   terapeuta@almaspa.test  (permisos: agenda, clientes; canAttendAppointments=true)\n- Password:    CambiarEnProduccion123!\n- Tenant slug: alma-spa\n\nCÓMO USAR: corre primero 'Auth > Login (dueño)' — el token se guarda solo en la variable {{token}} y el resto de las peticiones autenticadas lo usan automáticamente.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "tenantSlug", "value": "alma-spa" },
+    { "key": "token", "value": "" },
+    { "key": "password", "value": "CambiarEnProduccion123!" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (dueño)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('token', pm.response.json().token);",
+                  "  console.log('token guardado');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"dueno@almaspa.test\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Login (recepción)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["if (pm.response.code === 200) { pm.collectionVariables.set('token', pm.response.json().token); }"],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"recepcion@almaspa.test\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Login (superadmin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["if (pm.response.code === 200) { pm.collectionVariables.set('token', pm.response.json().token); }"],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@nuvio.tech\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users (superadmin/dueño)",
+      "item": [
+        {
+          "name": "POST /users (crear personal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"nueva.recepcion@almaspa.test\",\n  \"password\": \"Temporal123!\",\n  \"name\": \"Nueva Recepción\",\n  \"role\": \"personal\",\n  \"permissions\": { \"agenda\": true, \"clientes\": true }\n}" },
+            "url": "{{baseUrl}}/users"
+          }
+        },
+        {
+          "name": "PATCH /users/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nombre Actualizado\"\n}" },
+            "url": "{{baseUrl}}/users/REEMPLAZAR_USER_ID"
+          }
+        },
+        {
+          "name": "PATCH /users/:id/permissions",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"agenda\": true,\n  \"clientes\": true,\n  \"configuracion\": false\n}" },
+            "url": "{{baseUrl}}/users/REEMPLAZAR_USER_ID/permissions"
+          }
+        },
+        {
+          "name": "DELETE /users/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/users/REEMPLAZAR_USER_ID"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Services (permiso: configuracion)",
+      "item": [
+        {
+          "name": "GET /services",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/services"
+          }
+        },
+        {
+          "name": "POST /services",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Masaje relajante\",\n  \"category\": \"masajes\",\n  \"priceUsd\": 45,\n  \"offersHomeService\": true\n}" },
+            "url": "{{baseUrl}}/services"
+          }
+        },
+        {
+          "name": "PATCH /services/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"priceUsd\": 50\n}" },
+            "url": "{{baseUrl}}/services/REEMPLAZAR_SERVICE_ID"
+          }
+        },
+        {
+          "name": "DELETE /services/:id (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/services/REEMPLAZAR_SERVICE_ID"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rooms (permiso: configuracion)",
+      "item": [
+        {
+          "name": "GET /rooms",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/rooms"
+          }
+        },
+        {
+          "name": "POST /rooms",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Gabinete de masajes\",\n  \"specialty\": \"masajes\"\n}" },
+            "url": "{{baseUrl}}/rooms"
+          }
+        },
+        {
+          "name": "PATCH /rooms/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"ocupado\"\n}" },
+            "url": "{{baseUrl}}/rooms/REEMPLAZAR_ROOM_ID"
+          }
+        },
+        {
+          "name": "DELETE /rooms/:id (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/rooms/REEMPLAZAR_ROOM_ID"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Plans (permiso: configuracion)",
+      "item": [
+        {
+          "name": "GET /plans",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/plans"
+          }
+        },
+        {
+          "name": "POST /plans (todos los servicios)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Plan mensual\",\n  \"sessionsIncluded\": 4,\n  \"period\": \"mensual\",\n  \"priceUsd\": 80,\n  \"appliesToAllServices\": true,\n  \"includesHomeService\": false\n}" },
+            "url": "{{baseUrl}}/plans"
+          }
+        },
+        {
+          "name": "POST /plans (servicios específicos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Plan solo masajes\",\n  \"sessionsIncluded\": 4,\n  \"period\": \"mensual\",\n  \"priceUsd\": 70,\n  \"appliesToAllServices\": false,\n  \"serviceIds\": [\"REEMPLAZAR_SERVICE_ID\"]\n}" },
+            "url": "{{baseUrl}}/plans"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Appointments (permiso: agenda)",
+      "item": [
+        {
+          "name": "GET /appointments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/appointments?status=pendiente"
+          }
+        },
+        {
+          "name": "GET /appointments/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/appointments/REEMPLAZAR_APPOINTMENT_ID"
+          }
+        },
+        {
+          "name": "POST /appointments (carga manual)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"clientId\": \"REEMPLAZAR_CLIENT_ID\",\n  \"serviceId\": \"REEMPLAZAR_SERVICE_ID\",\n  \"roomId\": \"REEMPLAZAR_ROOM_ID\",\n  \"staffId\": \"REEMPLAZAR_STAFF_ID\",\n  \"startsAt\": \"2026-08-20T15:00:00.000Z\",\n  \"modality\": \"spa\"\n}" },
+            "url": "{{baseUrl}}/appointments"
+          }
+        },
+        {
+          "name": "PATCH /appointments/:id/status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"confirmado\"\n}" },
+            "url": "{{baseUrl}}/appointments/REEMPLAZAR_APPOINTMENT_ID/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reserva pública (sin auth)",
+      "item": [
+        {
+          "name": "GET /public/:slug/services",
+          "request": { "method": "GET", "url": "{{baseUrl}}/public/{{tenantSlug}}/services" }
+        },
+        {
+          "name": "GET /public/:slug/availability",
+          "request": { "method": "GET", "url": "{{baseUrl}}/public/{{tenantSlug}}/availability?serviceId=REEMPLAZAR_SERVICE_ID&date=2026-08-20&modality=spa" }
+        },
+        {
+          "name": "POST /public/:slug/clients/lookup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"whatsapp\": \"+593999111222\"\n}" },
+            "url": "{{baseUrl}}/public/{{tenantSlug}}/clients/lookup"
+          }
+        },
+        {
+          "name": "POST /public/:slug/bookings (cliente nuevo + anamnesis)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"María Pérez\",\n  \"whatsapp\": \"+593999111222\",\n  \"email\": \"maria@example.com\",\n  \"intake\": {\n    \"allergies\": \"Alergia a la lavanda\",\n    \"conditions\": \"Ninguna\",\n    \"consentSigned\": true\n  },\n  \"selections\": [\n    { \"serviceId\": \"REEMPLAZAR_SERVICE_ID\", \"startsAt\": \"2026-08-20T15:00:00.000Z\", \"modality\": \"spa\" }\n  ]\n}" },
+            "url": "{{baseUrl}}/public/{{tenantSlug}}/bookings"
+          }
+        },
+        {
+          "name": "GET /public/bookings/:token",
+          "request": { "method": "GET", "url": "{{baseUrl}}/public/bookings/REEMPLAZAR_CONFIRMATION_TOKEN" }
+        },
+        {
+          "name": "POST /public/bookings/:token/cancel",
+          "request": { "method": "POST", "url": "{{baseUrl}}/public/bookings/REEMPLAZAR_CONFIRMATION_TOKEN/cancel" }
+        }
+      ]
+    }
+  ]
+}
