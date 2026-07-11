@@ -23,16 +23,19 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  services          Service[]
-  rooms             Room[]
-  plans             Plan[]
-  clients           Client[]
-  clientIntakes     ClientIntake[]
-  appointments      Appointment[]
-  treatmentHistories TreatmentHistory[]
-  clientPlans       ClientPlan[]
-  ledgerEntries     ClientLedgerEntry[]
+  users                 User[]
+  services              Service[]
+  rooms                 Room[]
+  plans                 Plan[]
+  clients               Client[]
+  clientIntakes         ClientIntake[]
+  appointments          Appointment[]
+  treatmentHistories    TreatmentHistory[]
+  clientPlans           ClientPlan[]
+  ledgerEntries         ClientLedgerEntry[]
+  whatsappConnection    WhatsAppConnection?
+  whatsappConversations WhatsAppConversation[]
+  whatsappMessages      WhatsAppMessage[]
 }
 
 model User {
@@ -48,13 +51,14 @@ model User {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  tenant             Tenant?           @relation(fields: [tenantId], references: [id])
-  rolePermission     RolePermission?
-  appointments       Appointment[]
-  therapistSessions  TreatmentHistory[] @relation("TherapistSessions")
-  recordedTreatments TreatmentHistory[] @relation("RecordedTreatments")
-  editedTreatments   TreatmentHistory[] @relation("EditedTreatments")
-  ledgerEntries      ClientLedgerEntry[] @relation("LedgerEntriesCreated")
+  tenant               Tenant?             @relation(fields: [tenantId], references: [id])
+  rolePermission       RolePermission?
+  appointments         Appointment[]
+  therapistSessions    TreatmentHistory[]  @relation("TherapistSessions")
+  recordedTreatments   TreatmentHistory[]  @relation("RecordedTreatments")
+  editedTreatments     TreatmentHistory[]  @relation("EditedTreatments")
+  ledgerEntries        ClientLedgerEntry[] @relation("LedgerEntriesCreated")
+  whatsappMessagesSent WhatsAppMessage[]   @relation("WhatsAppMessagesSent")
 
   @@index([tenantId, role, active, canAttendAppointments])
 }
@@ -144,12 +148,13 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant             Tenant             @relation(fields: [tenantId], references: [id])
-  intake             ClientIntake?
-  appointments       Appointment[]
-  treatmentHistories TreatmentHistory[]
-  clientPlans        ClientPlan[]
-  ledgerEntries      ClientLedgerEntry[]
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  intake                ClientIntake?
+  appointments          Appointment[]
+  treatmentHistories    TreatmentHistory[]
+  clientPlans           ClientPlan[]
+  ledgerEntries         ClientLedgerEntry[]
+  whatsappConversations WhatsAppConversation[]
 
   @@unique([tenantId, whatsapp])
   @@index([tenantId])
@@ -214,6 +219,7 @@ model Appointment {
 
   @@index([tenantId])
   @@index([tenantId, startsAt])
+  @@index([tenantId, status, startsAt])
   @@unique([roomId, startsAt])
   @@unique([staffId, startsAt])
 }
@@ -321,4 +327,113 @@ model ClientIntakeAuditLog {
 
   @@index([tenantId, clientId, createdAt])
   @@index([tenantId, actorId, createdAt])
+}
+
+// ---- Fase 5: CRM / WhatsApp Cloud API ---------------------------------------
+
+enum WhatsAppConnStatus {
+  activo
+  desconectado
+  error
+}
+
+enum WhatsAppDirection {
+  inbound
+  outbound
+}
+
+enum WhatsAppMessageType {
+  text
+  template
+  image
+  document
+  audio
+  video
+  sticker
+  location
+  interactive
+  other
+}
+
+enum WhatsAppMessageStatus {
+  received
+  queued
+  sent
+  delivered
+  read
+  failed
+}
+
+model WhatsAppConnection {
+  id              String             @id @default(cuid())
+  tenantId        String             @unique
+  phoneNumberId   String             @unique
+  wabaId          String
+  displayPhone    String?
+  accessTokenEnc  Bytes
+  accessTokenIv   Bytes
+  accessTokenTag  Bytes
+  appSecretEnc    Bytes
+  appSecretIv     Bytes
+  appSecretTag    Bytes
+  verifyTokenHash Bytes              @unique
+  keyVersion      Int                @default(1)
+  status          WhatsAppConnStatus @default(activo)
+  lastError       String?
+  lastVerifiedAt  DateTime?
+  connectedAt     DateTime           @default(now())
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model WhatsAppConversation {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  clientId           String?
+  customerWaId       String
+  customerName       String?
+  lastInboundAt      DateTime?
+  lastOutboundAt     DateTime?
+  lastMessageAt      DateTime  @default(now())
+  lastMessagePreview String?
+  unreadCount        Int       @default(0)
+  lastReadAt         DateTime?
+  archived           Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id])
+  client   Client?           @relation(fields: [clientId], references: [id])
+  messages WhatsAppMessage[]
+
+  @@unique([tenantId, customerWaId])
+  @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@index([tenantId, clientId])
+}
+
+model WhatsAppMessage {
+  id             String                @id @default(cuid())
+  tenantId       String
+  conversationId String
+  direction      WhatsAppDirection
+  type           WhatsAppMessageType   @default(text)
+  status         WhatsAppMessageStatus
+  waMessageId    String?               @unique
+  body           String?
+  templateName   String?
+  templateLang   String?
+  mediaId        String?
+  errorCode      String?
+  errorTitle     String?
+  sentByUserId   String?
+  waTimestamp    DateTime?
+  createdAt      DateTime              @default(now())
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sentBy       User?                @relation("WhatsAppMessagesSent", fields: [sentByUserId], references: [id])
+
+  @@index([tenantId, conversationId, createdAt])
 }

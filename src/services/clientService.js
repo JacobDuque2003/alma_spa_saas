@@ -1,5 +1,6 @@
 const prisma = require('../utils/prisma');
 const { assertTenantScope } = require('../utils/tenantScope');
+const { normalizePhone } = require('../utils/phone');
 
 /**
  * Carga el Client (siempre existe, a diferencia de ClientIntake) para derivar
@@ -35,10 +36,11 @@ async function lookupClient(tenantId, whatsapp) {
  * su ClientIntake y sus Appointment.
  */
 async function upsertClient(tx, tenantId, { fullName, whatsapp, email }) {
+  const normalized = normalizePhone(whatsapp);
   return tx.client.upsert({
-    where: { tenantId_whatsapp: { tenantId, whatsapp } },
+    where: { tenantId_whatsapp: { tenantId, whatsapp: normalized } },
     update: { fullName, email },
-    create: { tenantId, fullName, whatsapp, email },
+    create: { tenantId, fullName, whatsapp: normalized, email },
   });
 }
 

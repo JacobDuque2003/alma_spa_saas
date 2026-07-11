@@ -3,6 +3,7 @@ const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError, SlotUnavailableError } = require('../utils/errors');
 const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
+const bookingNotifier = require('./bookingNotifier');
 
 const STAFF_ROLES = ['personal', 'dueno'];
 const OPEN_STATUSES = ['pendiente', 'confirmado'];
@@ -168,7 +169,7 @@ async function createPublicBooking(tenantId, payload) {
     throw new BadRequestError('selections es requerido y debe tener al menos un elemento');
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const client = await clientService.upsertClient(tx, tenantId, { fullName, whatsapp, email });
 
     if (intake) {
@@ -190,10 +191,17 @@ async function createPublicBooking(tenantId, payload) {
 
     // Descartado: no se integra Google Calendar (decisión de alcance, ver CHANGELOG/MEMORY.md).
     // Alma Spa (esta Agenda) es la única fuente de verdad del calendario.
-    // TODO Fase 5: enviar WhatsApp con link de confirmación (confirmationToken)
-
     return { client, appointments };
   });
+
+  // Fase 5: enviar plantilla de WhatsApp con link de confirmación. Fuera de la
+  // transacción a propósito — una API externa lenta no debe mantener el lock
+  // de la DB abierto, y un fallo de Meta jamás debe revertir un booking ya
+  // commiteado. Best-effort: bookingNotifier atrapa todo y loguea.
+  bookingNotifier.notifyBookingCreated(tenantId, result.client, result.appointments)
+    .catch((err) => console.warn('[BOOKING-NOTIFIER] catch externo:', err?.message));
+
+  return result;
 }
 
 async function getBookingByToken(confirmationToken) {
@@ -221,6 +229,21 @@ async function cancelBookingByToken(confirmationToken) {
     throw new BadRequestError('No se puede cancelar una cita que ya pasó');
   }
   return prisma.appointment.update({ where: { confirmationToken }, data: { status: 'cancelado' } });
+}
+
+async function confirmBookingByToken(confirmationToken) {
+  const appointment = await prisma.appointment.findUnique({ where: { confirmationToken } });
+  if (!appointment) return null;
+  if (appointment.startsAt.getTime() < Date.now()) {
+    throw new BadRequestError('No se puede confirmar una cita que ya pasó');
+  }
+  if (appointment.status === 'cancelado' || appointment.status === 'no_show') {
+    throw new BadRequestError('Esta cita ya no puede confirmarse');
+  }
+  if (appointment.status === 'confirmado') {
+    return appointment; // idempotente
+  }
+  return prisma.appointment.update({ where: { confirmationToken }, data: { status: 'confirmado' } });
 }
 
 // --- CRUD autenticado (panel de staff) ---
@@ -348,6 +371,7 @@ module.exports = {
   createPublicBooking,
   getBookingByToken,
   cancelBookingByToken,
+  confirmBookingByToken,
   listAppointments,
   getAppointment,
   createManualAppointment,

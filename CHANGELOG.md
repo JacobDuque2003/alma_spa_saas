@@ -193,3 +193,54 @@ Logging de *acceso* a notas de tratamiento (solo el cifrado entró en esta fase)
 
 ### Próximo paso
 Fase 5: CRM (bandeja de WhatsApp manual + recordatorios) — el gancho `TODO Fase 5` ya está en `appointmentService.js`.
+
+## [0.5.0] - 2026-07-11
+
+Fase 5 del brief: CRM (WhatsApp Cloud API). Bandeja multi-tenant con webhook real de Meta, credenciales cifradas por tenant con clave separada, envío de texto libre (dentro de ventana de 24h) y recordatorios de confirmación por plantilla pre-aprobada. Diseñada con 5 agentes (Backend Architect, Database Optimizer, Security Architect, Application Security Engineer, Code Reviewer).
+
+### Agregado
+- Modelos `WhatsAppConnection` (`@unique phoneNumberId`, token cifrado AES-256-GCM, appSecret cifrado, verifyToken hasheado SHA-256), `WhatsAppConversation` (`@@unique [tenantId, customerWaId]`, auto-link a `Client`, unreadCount, ventana 24h), `WhatsAppMessage` (dirección, tipo, status con transición monótona, `@unique waMessageId` para idempotencia). 5 enums: `WhatsAppConnStatus`, `WhatsAppDirection`, `WhatsAppMessageType`, `WhatsAppMessageStatus`. Índice `(tenantId, status, startsAt)` en `Appointment`.
+- `src/utils/fieldCrypto.js`: núcleo genérico AES-256-GCM con resolución LAZY de clave por operación. `intakeCrypto.js` refactorizado a wrapper delgado sobre `fieldCrypto` (superficie pública idéntica: `encryptField`/`decryptField`/`assertEncryptionKeyOrExit`). `whatsappCredentialCrypto.js`: wrapper con verbos distintos (`sealWhatsappSecret`/`openWhatsappSecret`) y su propio guard CI (`whatsappCredentialCryptoImport.guard.test.js`).
+- `WHATSAPP_TOKEN_ENCRYPTION_KEY` (env var separada, compartimentación por radio de daño). `assertKeysDifferOrExit` en `app.js` impide arrancar si ambas claves son iguales.
+- Endpoint `POST /settings/whatsapp/connect` (`requirePermission('configuracion')`): el dueño pega phoneNumberId, wabaId, accessToken, appSecret, verifyToken. Validación viva contra Meta API antes de guardar. Upsert por tenant (reconectar = reemplazar). `GET /status` devuelve metadata NO sensible (select explícito, exclusión física de `*Enc/*Iv/*Tag`). `DELETE /` desconecta.
+- Webhook `GET /webhooks/whatsapp/:tenantSlug` (challenge) + `POST` (payload). Verificación HMAC fail-closed en orden estricto: tenant por slug → conexión activa → descifrar appSecret (falla si vacío/nulo — H1) → header existe y tiene formato → HMAC sobre `req.rawBody` (bytes crudos, nunca re-serializados) → `timingSafeEqual`. Sin bypass, sin fallback. Responde 200 inmediatamente y procesa async vía `setImmediate`.
+- Procesamiento de payload: itera TODOS los `entry[].changes[]` (Meta puede batchear). Cross-check `phoneNumberId` del payload contra la conexión (defense-in-depth). Inbound: idempotencia por `waMessageId @unique` + catch P2002. Delivery status: transición monótona (queued→sent→delivered→read, failed sobrescribe cualquiera) con UPDATE atómico condicional (raw SQL, sin race condition read→check→write).
+- Bandeja CRM (`/crm`, `requirePermission('crm')`): 7 endpoints — listar conversaciones (con filtro `sin_confirmar_hoy` que cruza `WhatsAppConversation` con `Appointment.status='pendiente'` de hoy, reusando Fase 3a como fuente de verdad), ver conversación, listar mensajes, enviar texto (bloqueado fuera de ventana 24h con 422), enviar recordatorio (siempre plantilla pre-aprobada vía `tenant.config.whatsapp.confirmationTemplate`), marcar como leído, actualizar (enlazar clientId, archivar). Paginación con cursor compuesto (timestamp|id) para evitar saltar registros con timestamps iguales.
+- `bookingNotifier.js`: gancho post-booking (fuera de la transacción a propósito — Meta lenta no bloquea lock de DB, fallo no revierte booking). Siembra la conversación en la bandeja desde el minuto cero. Usa plantilla `bookingTemplate` de `tenant.config`.
+- `POST /public/bookings/:confirmationToken/confirm`: endpoint público para el CTA del recordatorio de WhatsApp. Idempotente, rechaza si la cita ya pasó o está cancelada/no_show.
+- `src/utils/phone.js`: normalización E.164 consistente (`normalizePhone`, `phoneToWaId`, `waIdToPhone`). Aplicada en `clientService.upsertClient` (normaliza al guardar), `bookingNotifier` (al convertir a waId para enviar), y webhook (al buscar Client por whatsapp).
+- 29 tests unitarios nuevos (104 en total).
+
+### Corregido (hallazgos del Code Reviewer)
+- **XSS reflejado en webhook challenge**: `res.send(String(challenge))` con Express seteaba `Content-Type: text/html`, permitiendo reflejar HTML/JS arbitrario si un atacante controlaba el challenge. Corregido con `res.type('text/plain')`.
+- **Race condition en delivery status**: read→check→update no era atómico; dos webhooks concurrentes (ej. `delivered` y `read`) podían regresar el status. Reemplazado con `UPDATE ... WHERE status::text = ANY(...)` (raw SQL, atómico).
+- **Cursor pagination con timestamp no-único**: dos registros con mismo `lastMessageAt`/`createdAt` en el boundary de una página podían saltarse. Corregido con cursor compuesto `timestamp|id` y `orderBy: [{timestamp: 'desc'}, {id: 'desc'}]`.
+- **TOCTOU en phoneNumberId uniqueness**: la verificación previa al upsert no era atómica; dos requests concurrentes de distintos tenants podían pasar la verificación y una recibir un P2002 crudo (500). Agregado catch de P2002 sobre `phoneNumberId` con el mismo mensaje amigable.
+- **Dedup race infla unreadCount**: el conversation upsert (con `unreadCount: { increment: 1 }`) se ejecutaba ANTES del message insert, así que dos entregas concurrentes del mismo `waMessageId` ambas incrementaban aunque solo un mensaje se persistiera. Movido el update de la conversación DESPUÉS del insert exitoso; si el insert es P2002 (duplicado), se hace `return` sin tocar la conversación.
+- **Formato de teléfono inconsistente**: el webhook buscaba `'+' + fromWaId` y el notifier hacía `.replace(/^\+/, '')` — asumían formato limpio. Centralizado en `phone.js` con strip de caracteres no-numéricos.
+- **Código muerto `!undefined`**: `client && !undefined` en `processInboundMessage` (siempre `true` por accidente) simplificado a `client`.
+
+### Verificado — PostgreSQL real (Railway)
+
+`npx prisma migrate dev --name fase5_crm_whatsapp` aplicada. `npm test` → 104/104. Walkthrough de 14 pasos contra la base real simulando a Meta con curl (HMAC calculado manualmente con `node:crypto`):
+
+1. `GET /health` → 200 (servidor arrancó con ambas claves, verificación `assertKeysDifferOrExit` pasó).
+2. Login como dueño → JWT con tenantId.
+3. `POST /settings/whatsapp/connect` con credenciales fake → 201, `status: "error"`, `lastError: "Meta rechazó las credenciales (HTTP 401)"`. Token NO aparece en la respuesta.
+4. `GET /settings/whatsapp/status` → respuesta sin `accessToken`, `appSecret`, ni `verifyToken`.
+5. Webhook GET con `verify_token` correcto → 200 + challenge devuelto como `text/plain`.
+6. Webhook GET con `verify_token` incorrecto → 403.
+7. Webhook POST sin header `X-Hub-Signature-256` → 401.
+8. Webhook POST con firma inválida → 401.
+9. Webhook POST con firma HMAC válida (calculada sobre bytes crudos con `appSecret` conocido) → 200, mensaje procesado async.
+10. `GET /crm/conversations` → conversación creada: `customerName: "Pedro García"`, `unreadCount: 1`, `withinWindow: true`, `clientId: null` (no había Client con ese número — auto-link solo funciona si el cliente ya existe).
+11. `GET /crm/conversations/:id/messages` → 1 mensaje inbound: `direction: "inbound"`, `type: "text"`, `body: "Hola, quiero reservar una cita"`, `waMessageId: "wamid.TEST_MSG_001"`.
+12. `POST /crm/conversations/:id/mark-read` → `unreadCount: 0`, `lastReadAt` seteado.
+13. `POST /crm/conversations/:id/messages` con texto libre (dentro de ventana) → `status: "failed"`, `errorCode: "190"` (token fake rechazado por Meta — esperado). Flujo completo: ventana validada → intento de envío → error registrado.
+14. Filtro `sin_confirmar_hoy`: creado Client con `whatsapp: "+593999000001"`, enlazado a la conversación, creada Appointment pendiente de hoy → `GET /crm/conversations?filter=sin_confirmar_hoy` devuelve exactamente esa conversación con `clientName: "Pedro García"`.
+
+### Fuera de alcance
+- Reportes (Fase 6), Import/Export Excel (Fase 7), auditoría de seguridad final + testing + despliegue (Fase 8).
+
+### Próximo paso
+Fase 6: Reportes — o lo que el usuario priorice.

@@ -62,9 +62,32 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 - [x] Bug de wiring encontrado en el walkthrough (router de clientes en `/` con authenticate global rompía las rutas públicas) — corregido con authenticate por-ruta
 - [ ] **Pendiente de despliegue (Fase 8)**: aplicar el grant de DB restringido sobre `ClientIntakeAuditLog` con un rol de app de privilegios mínimos (hoy la app conecta como superusuario `postgres`; el append-only está garantizado en la capa de aplicación). SQL en `docs/append-only-audit-grant.sql`.
 
-## Fases 5–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+## Fase 5 — CRM (WhatsApp) — COMPLETADA
 
-- [ ] Fase 5: CRM (bandeja WhatsApp + recordatorios, el gancho `TODO` ya está en `appointmentService.js`)
+- [x] Diseño con 5 agentes (Backend Architect, Database Optimizer, Security Architect, Application Security Engineer, Code Reviewer) — Modelo B confirmado. Plan en `fase5-plan.md`; docs `fase5-*` (agente)
+- [x] Schema: `WhatsAppConnection`/`WhatsAppConversation`/`WhatsAppMessage` + 5 enums + índice `(tenantId, status, startsAt)` en Appointment — migración `20260711133626_fase5_crm_whatsapp`
+- [x] `fieldCrypto.js` (generalización) + `intakeCrypto.js` → wrapper + `whatsappCredentialCrypto.js` + guard nuevo; clave `WHATSAPP_TOKEN_ENCRYPTION_KEY` con fail-fast + `assertKeysDifferOrExit`
+- [x] Webhook `/webhooks/whatsapp/:tenantSlug` (firma HMAC fail-closed, rawBody, sin bypass)
+- [x] Endpoints `/settings/whatsapp` (connect con validación viva, status sin token) y `/crm` (bandeja con 7 endpoints)
+- [x] Servicio de envío (fetch, texto vs plantilla según ventana 24h) + `POST /public/bookings/:token/confirm`
+- [x] Gancho de Fase 3a (bookingNotifier tras la tx, best-effort, fuera de transacción)
+- [x] `src/utils/phone.js` — normalización E.164 consistente (normalizePhone/phoneToWaId/waIdToPhone)
+- [x] Code Reviewer real: 2 blockers + 4 suggestions aplicados:
+  - B1: XSS reflejado en webhook challenge → `res.type('text/plain')`
+  - B2: Race condition en delivery status → UPDATE atómico con WHERE condicional (raw SQL)
+  - S3: Cursor pagination con timestamp no-único → composite cursor (timestamp|id)
+  - S4: TOCTOU en phoneNumberId → catch P2002 con mensaje amigable
+  - S5: Dedup race infla unreadCount → conversation update después del message insert
+  - S6: Formato de teléfono inconsistente → normalización centralizada en `phone.js`
+- [x] 104 tests unitarios (75 previos + 29 nuevos, 0 regresiones)
+- [x] Walkthrough completo (14 pasos) contra Postgres real (Railway) simulando a Meta con curl — ver `CHANGELOG.md` [0.5.0]
+
+## Fases 6–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+
 - [ ] Fase 6: Reportes
 - [ ] Fase 7: Import/Export Excel
 - [ ] Fase 8: Auditoría de seguridad + testing + despliegue
+
+## Hallazgos de seguridad en OTROS proyectos (no Alma Spa) — no perder de vista
+
+- [ ] **BarberBot / El Cubano Barbería (`barbershop/`, EN PRODUCCIÓN con cliente real)**: `src/routes/webhooks.js` tiene un bypass real de la verificación de firma del webhook de WhatsApp — `verifyWhatsAppSignature` hace `if (!appSecret) return true`, es decir **acepta webhooks sin firma válida** si `WHATSAPP_APP_SECRET` no está configurado. En un endpoint público esto permite que cualquiera inyecte payloads de webhook falsos (mensajes, cambios de estado). Además re-serializa el body (`Buffer.from(JSON.stringify(req.body))`) como fallback, que ni siquiera reproduce los bytes originales para el HMAC. Detectado al diseñar Fase 5 de Alma Spa (que deliberadamente NO copia este patrón). Revisar/corregir en barbershop cuando se retome ese proyecto.

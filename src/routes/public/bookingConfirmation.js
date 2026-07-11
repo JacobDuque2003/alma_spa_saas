@@ -24,4 +24,16 @@ router.post('/:confirmationToken/cancel', ipRateLimit, async (req, res, next) =>
   }
 });
 
+// Fase 5: confirmar por token (endpoint del CTA del recordatorio de WhatsApp).
+// Solo pendiente→confirmado; rechaza si ya pasó o está en otro estado.
+router.post('/:confirmationToken/confirm', ipRateLimit, async (req, res, next) => {
+  try {
+    const appointment = await appointmentService.confirmBookingByToken(req.params.confirmationToken);
+    if (!appointment) return res.status(404).json({ error: 'No encontrado' });
+    res.json({ status: appointment.status });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
