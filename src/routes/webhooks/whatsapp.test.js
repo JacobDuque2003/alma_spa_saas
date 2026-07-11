@@ -124,7 +124,10 @@ test('processWebhookPayload: mismo waMessageId dos veces → un solo mensaje per
     },
   };
   prisma.client = { findFirst: async () => null };
-  prisma.whatsAppConversation = { upsert: async () => ({ id: 'c1', tenantId: TENANT_ID }) };
+  prisma.whatsAppConversation = {
+    upsert: async () => ({ id: 'c1', tenantId: TENANT_ID }),
+    update: async () => ({ id: 'c1' }),
+  };
 
   const payload = {
     entry: [{ changes: [{ value: {
