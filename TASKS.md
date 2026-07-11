@@ -87,6 +87,8 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 - [ ] Fase 6: Reportes
 - [ ] Fase 7: Import/Export Excel
 - [ ] Fase 8: Auditoría de seguridad + testing + despliegue
+  - [ ] **Pendiente de Fase 4**: aplicar grant de DB restringido sobre `ClientIntakeAuditLog` con rol de app de privilegios mínimos (hoy append-only garantizado solo en capa de aplicación). SQL en `docs/append-only-audit-grant.sql`.
+  - [ ] **Pendiente de Fase 5**: si `processInboundMessage` falla al actualizar `WhatsAppConversation` (unreadCount/lastMessageAt) después de guardar el mensaje exitosamente, hoy solo se loguea un warning — el mensaje queda guardado pero la bandeja puede mostrar metadata desincronizada (contador de no leídos, orden) sin ninguna alerta. Evaluar: métrica/alerta sobre estos warnings, o un mecanismo de reconciliación que recalcule unreadCount/lastMessageAt desde los mensajes reales en vez de confiar solo en el incremento puntual.
 
 ## Hallazgos de seguridad en OTROS proyectos (no Alma Spa) — no perder de vista
 
