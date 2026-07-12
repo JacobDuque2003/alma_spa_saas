@@ -97,12 +97,40 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 - [x] Migración `20260711191427_fase6_reportes_indexes` aplicada contra Railway
 - [x] Walkthrough completo (13 pasos) contra Postgres real — todas las validaciones, 6 métricas, restricción por rol verificada
 
-## Fases 7–8 — pendientes
+## Fase 8 — Auditoría de seguridad + testing + despliegue — EN PROGRESO
 
-- [ ] Fase 7: Import/Export Excel
-- [ ] Fase 8: Auditoría de seguridad + testing + despliegue
-  - [ ] **Pendiente de Fase 4**: aplicar grant de DB restringido sobre `ClientIntakeAuditLog` con rol de app de privilegios mínimos (hoy append-only garantizado solo en capa de aplicación). SQL en `docs/append-only-audit-grant.sql`.
-  - [ ] **Pendiente de Fase 5**: si `processInboundMessage` falla al actualizar `WhatsAppConversation` (unreadCount/lastMessageAt) después de guardar el mensaje exitosamente, hoy solo se loguea un warning — el mensaje queda guardado pero la bandeja puede mostrar metadata desincronizada (contador de no leídos, orden) sin ninguna alerta. Evaluar: métrica/alerta sobre estos warnings, o un mecanismo de reconciliación que recalcule unreadCount/lastMessageAt desde los mensajes reales en vez de confiar solo en el incremento puntual.
+### Oleada 1 — Seguridad y correctitud — COMPLETADA
+
+- [x] **A1** (Fase 4): Rol de DB `alma_app` con privilegios mínimos. SQL corregido en `docs/append-only-audit-grant.sql` (idempotente, sin el bug del `ALTER DEFAULT PRIVILEGES` global, `_prisma_migrations` bloqueada, schema CREATE denegado). `prisma/schema.prisma` con `directUrl` para separar runtime (DML) de migraciones (DDL). Script de verificación en `scripts/verify-db-role.js`.
+- [x] **B1**: `helmet` con configuración explícita para API pura — HSTS 1 año, X-Frame-Options DENY, nosniff, Referrer-Policy no-referrer. CSP/COEP/COOP/CORP desactivados (irrelevantes para JSON API).
+- [x] **B3**: `trust proxy = 1` — Railway usa 1 hop. Repara `req.ip` para que `publicRateLimit.js` rate-limite por IP real del cliente, no la del proxy.
+- [x] **B5**: `assertJwtSecretOrExit()` — fail-fast si JWT_SECRET falta o tiene < 32 bytes (HMAC-SHA256). Mismo patrón que las claves de cifrado.
+- [x] **B9**: `PUBLIC_BASE_URL` agregado a `.env.example` con documentación de uso.
+- [x] **B10**: Script `db:migrate:deploy` (producción, sin prompts, sin reset). Script `db:verify-role` para validación post-setup.
+- [x] **B12**: Error handler extraído a `src/middleware/errorHandler.js`. Clase base `AppError` en `errors.js` — `BadRequestError`, `SlotUnavailableError`, `ForbiddenTenantError`, `ProtectedAccountError` la extienden. Errores de negocio preservan su mensaje original; Prisma/librerías se sanitizan (nunca filtran tablas/constraints/queries).
+- [x] Code Reviewer: 0 blockers. Hallazgos S2 (extraer errorHandler a módulo), S3 (RAISE NOTICE en SQL), S4 ($queryRaw en verify script), N3 (tests 413/P2025/5xx) aplicados.
+- [x] 133 tests (113 previos + 20 nuevos, 0 regresiones)
+
+### Oleada 2 — Deploy (pendiente)
+
+- [ ] **B8**: Procfile/railway.toml (start command, health check, region)
+- [ ] **C1**: Variables de entorno en Railway (JWT_SECRET, claves, PUBLIC_BASE_URL, NODE_ENV=production)
+- [ ] **C2**: Decisión de instancia única vs múltiples
+- [ ] **C3**: Crear rol `alma_app` en Railway, aplicar SQL, cambiar DATABASE_URL
+- [ ] **C4**: Health check configurado en Railway
+
+### Oleada 3 — Hardening adicional (pendiente)
+
+- [ ] **B2**: Middleware CORS con whitelist
+- [ ] **B4**: Rate limiting en rutas autenticadas
+- [ ] **B6**: Graceful shutdown (SIGTERM/SIGINT)
+- [ ] **B7**: Logging estructurado (JSON)
+- [ ] **B11**: Rate limit distribuido (Redis o alternativa)
+- [ ] **A2** (Fase 5): Reconciliación de metadata de WhatsAppConversation (unreadCount/lastMessageAt)
+
+## Fase 7 — pendiente
+
+- [ ] Import/Export Excel
 
 ## Hallazgos de seguridad en OTROS proyectos (no Alma Spa) — no perder de vista
 

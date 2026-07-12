@@ -1,7 +1,8 @@
-class ForbiddenTenantError extends Error {
+const { AppError } = require('./errors');
+
+class ForbiddenTenantError extends AppError {
   constructor() {
-    super('No tiene acceso a este recurso');
-    this.status = 403;
+    super('No tiene acceso a este recurso', 403);
   }
 }
 

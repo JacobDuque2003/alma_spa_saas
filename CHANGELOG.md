@@ -2,6 +2,21 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.1] - 2026-07-12
+
+### Agregado (Fase 8, Oleada 1 — Seguridad y correctitud)
+- **B3 Trust proxy**: `app.set('trust proxy', 1)` — Railway usa 1 hop de proxy. Corrige `req.ip` para que el rate limiting en `publicRateLimit.js` opere sobre la IP real del cliente, no la IP del proxy de Railway. Antes, todos los clientes compartían un solo bucket de rate limit.
+- **B12 Error handler hardening**: extraído a `src/middleware/errorHandler.js`. Clase base `AppError` para distinguir errores de negocio (mensajes preservados) de errores inesperados (mensajes sanitizados). Prisma P2002→409 genérico, P2025→404 genérico, validation→500 genérico. JSON malformado→"Cuerpo JSON inválido". 4xx inesperado→"Solicitud inválida" (logueado como warn).
+- **B5 JWT_SECRET fail-fast**: `assertJwtSecretOrExit()` en `src/utils/jwt.js` — rechaza arranque si falta o tiene < 32 bytes (HMAC-SHA256). Se ejecuta primero en la cadena de asserts.
+- **B1 Helmet**: headers de seguridad para API pura — HSTS (1 año, includeSubDomains), X-Content-Type-Options nosniff, X-Frame-Options DENY, Referrer-Policy no-referrer. CSP/COEP/COOP/CORP/X-XSS-Protection desactivados (irrelevantes para JSON API). Dependencia: `helmet@8.3.0`.
+- **A1 Rol DB alma_app**: SQL corregido en `docs/append-only-audit-grant.sql` (idempotente, sin bug de ALTER DEFAULT PRIVILEGES global, _prisma_migrations bloqueada, schema CREATE denegado). `directUrl` en schema.prisma para separar runtime (alma_app, DML) de migraciones (postgres, DDL). Script de verificación: `scripts/verify-db-role.js`.
+- **B10 Migration script**: `db:migrate:deploy` (prisma migrate deploy — sin prompts, sin reset, seguro para producción). `db:verify-role` para validación post-setup.
+- **B9**: `PUBLIC_BASE_URL` documentado en `.env.example`.
+- 20 tests nuevos (4 AppError hierarchy, 11 error handler, 2 trust proxy, 3 JWT assert). Total: 133 tests, 0 regresiones.
+
+### Code Reviewer
+- 0 blockers. Aplicados: S2 (error handler extraído a módulo propio), S3 (RAISE NOTICE en SQL por password placeholder), S4 ($queryRaw en vez de $queryRawUnsafe en verify script), N3 (tests para 413/P2025/5xx).
+
 ## [0.6.0] - 2026-07-12
 
 ### Agregado

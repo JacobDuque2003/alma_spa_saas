@@ -1,15 +1,20 @@
-class BadRequestError extends Error {
+class AppError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
+
+class BadRequestError extends AppError {
   constructor(message) {
-    super(message);
-    this.status = 400;
+    super(message, 400);
   }
 }
 
-class SlotUnavailableError extends Error {
+class SlotUnavailableError extends AppError {
   constructor(message = 'Este horario ya no está disponible') {
-    super(message);
-    this.status = 409;
+    super(message, 409);
   }
 }
 
-module.exports = { BadRequestError, SlotUnavailableError };
+module.exports = { AppError, BadRequestError, SlotUnavailableError };

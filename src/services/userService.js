@@ -1,12 +1,11 @@
 const prisma = require('../utils/prisma');
 const { hashPassword } = require('./authService');
 const { assertTenantScope, resolveTenantId, ForbiddenTenantError } = require('../utils/tenantScope');
-const { BadRequestError } = require('../utils/errors');
+const { AppError, BadRequestError } = require('../utils/errors');
 
-class ProtectedAccountError extends Error {
+class ProtectedAccountError extends AppError {
   constructor() {
-    super('Esta cuenta está protegida y no puede editarse ni eliminarse');
-    this.status = 403;
+    super('Esta cuenta está protegida y no puede editarse ni eliminarse', 403);
   }
 }
 

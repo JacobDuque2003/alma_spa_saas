@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const serviceRoutes = require('./routes/services');
@@ -13,14 +14,35 @@ const whatsappSettingsRoutes = require('./routes/settings/whatsapp');
 const whatsappWebhookRoutes = require('./routes/webhooks/whatsapp');
 const crmRoutes = require('./routes/crm');
 const reportRoutes = require('./routes/reports');
+const errorHandler = require('./middleware/errorHandler');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
+const { assertJwtSecretOrExit } = require('./utils/jwt');
 
 const app = express();
-// verify: captura los bytes crudos del body en req.rawBody para poder verificar
-// la firma HMAC del webhook de WhatsApp (§3). Reserializar JSON.stringify(body)
-// no reproduce los bytes originales, así que rawBody es obligatorio y no hay
-// fallback. limit: 256kb protege contra amplificación de DoS en un endpoint público.
+
+// B3: Railway usa un solo reverse proxy (edge router) que termina TLS y añade
+// la IP real al final de X-Forwarded-For. Con 1, Express toma la última
+// entrada, ignorando IPs falsas inyectadas por un atacante.
+app.set('trust proxy', 1);
+
+// B1: headers de seguridad para API pura (sin HTML server-rendered).
+app.use(helmet({
+  xContentTypeOptions: true,
+  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+  xFrameOptions: { action: 'deny' },
+  xDnsPrefetchControl: { allow: false },
+  xPermittedCrossDomainPolicies: { permittedPolicies: 'none' },
+  xDownloadOptions: true,
+  referrerPolicy: { policy: 'no-referrer' },
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false,
+  originAgentCluster: false,
+  xXssProtection: false,
+}));
+
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
   limit: '256kb',
@@ -33,31 +55,16 @@ app.use('/services', serviceRoutes);
 app.use('/rooms', roomRoutes);
 app.use('/plans', planRoutes);
 app.use('/appointments', appointmentRoutes);
-// Fase 4: rutas de clientes (intake, tratamientos, planes, saldo). El router
-// define rutas completas (/clients/..., /treatments/..., /client-plans/...,
-// /ledger/...), por eso se monta en la raíz.
 app.use('/', clientRoutes);
-// Orden importa: la ruta literal /public/bookings debe montarse ANTES que
-// /public/:tenantSlug, o Express la interpretaría como tenantSlug="bookings".
 app.use('/public/bookings', publicBookingConfirmationRoutes);
 app.use('/public/:tenantSlug', publicBookingRoutes);
 
-// Fase 5 — CRM (WhatsApp)
-// Webhook: sin authenticate (lo llama Meta), su seguridad es la firma HMAC.
 app.use('/webhooks/whatsapp/:tenantSlug', whatsappWebhookRoutes);
 app.use('/settings/whatsapp', whatsappSettingsRoutes);
 app.use('/crm', crmRoutes);
 app.use('/reports', reportRoutes);
 
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  const status = err.status || 500;
-  if (status >= 500) {
-    console.error(err);
-    return res.status(status).json({ error: 'Error interno' });
-  }
-  res.status(status).json({ error: err.message });
-});
+app.use(errorHandler);
 
 function assertKeysDifferOrExit() {
   const a = process.env.INTAKE_ENCRYPTION_KEY;
@@ -69,6 +76,7 @@ function assertKeysDifferOrExit() {
 }
 
 if (require.main === module) {
+  assertJwtSecretOrExit();
   assertEncryptionKeyOrExit();
   assertWhatsappKeyOrExit();
   assertKeysDifferOrExit();
