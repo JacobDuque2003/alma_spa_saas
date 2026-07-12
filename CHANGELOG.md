@@ -2,6 +2,25 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] - 2026-07-12
+
+### Agregado
+- **Fase 6 — Reportes**: endpoint único `GET /reports/:metric?from=&to=` con 6 métricas y comparación automática contra el periodo anterior.
+- Métricas: `ocupacion-gabinetes`, `ingresos-servicio`, `servicios-vendidos`, `desempeno-terapeutas`, `cancelaciones`, `clientes-nuevos-recurrentes`.
+- Restricción financiera por rol: `ingresos-servicio` devuelve 403 para personal; `desempeno-terapeutas` omite `ingresosUsd` (campo ausente, no null) para personal.
+- `Tenant.config.workDays`: array de días laborables ISO (default [1,2,3,4,5,6]), configurable por tenant, usado en cálculo de capacidad teórica de gabinetes.
+- Ingresos de planes (`planRevenue`) separados de ingresos por servicio — no se prorratean (decisión: sessionsUsed es global, no por servicio).
+- 2 índices nuevos: `ClientLedgerEntry(tenantId, type, createdAt)`, `Client(tenantId, createdAt)`.
+- 13 tests nuevos (9 de servicio + 4 de router). Total acumulado: 113 tests, 0 regresiones.
+
+### Decisiones de diseño documentadas
+- **Atribución de terapeuta**: `Appointment.staffId` es la fuente única para sesiones e ingresos. No se usa `TreatmentHistory.therapistId` como override ni fallback. Razón: consistencia (misma fuente para sesiones e ingresos), completitud (toda cita se cuenta), estabilidad (reportes pasados no cambian). El fix correcto para sustituciones es actualizar `Appointment.staffId` al momento de la sustitución.
+- **Plan revenue separado**: los cargos con `clientPlanId` se muestran como categoría propia. No se prorratean por servicio porque `ClientPlan.sessionsUsed` es un contador global.
+
+### Verificado — PostgreSQL real (Railway)
+- Migración: `20260711191427_fase6_reportes_indexes`
+- Walkthrough 13 pasos: validaciones (5 checks de 400/401), 6 métricas con data real, restricción financiera por rol (403 para personal, campo omitido en desempeño).
+
 ## [0.1.0] - 2026-07-05
 
 ### Agregado

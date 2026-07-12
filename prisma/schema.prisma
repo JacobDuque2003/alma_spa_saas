@@ -158,6 +158,7 @@ model Client {
 
   @@unique([tenantId, whatsapp])
   @@index([tenantId])
+  @@index([tenantId, createdAt])
 }
 
 model ClientIntake {
@@ -303,6 +304,7 @@ model ClientLedgerEntry {
   createdBy User   @relation("LedgerEntriesCreated", fields: [createdById], references: [id])
 
   @@index([tenantId, clientId, createdAt])
+  @@index([tenantId, type, createdAt])
 }
 
 enum IntakeAuditField {

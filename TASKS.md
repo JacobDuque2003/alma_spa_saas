@@ -82,9 +82,23 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 - [x] 104 tests unitarios (75 previos + 29 nuevos, 0 regresiones)
 - [x] Walkthrough completo (14 pasos) contra Postgres real (Railway) simulando a Meta con curl — ver `CHANGELOG.md` [0.5.0]
 
-## Fases 6–8 — pendientes (ver brief de Etapa 4 en CLAUDE.md)
+## Fase 6 — Reportes — COMPLETADA
 
-- [ ] Fase 6: Reportes
+- [x] Diseño con 3 agentes (Backend Architect + Database Optimizer, Application Security Engineer, Code Reviewer) — Plan aprobado con decisión de atribución por Appointment.staffId y workDays configurable en Tenant.config
+- [x] 2 índices nuevos: `@@index([tenantId, type, createdAt])` en ClientLedgerEntry, `@@index([tenantId, createdAt])` en Client
+- [x] `src/services/reportService.js`: 6 métricas (ocupación gabinetes, ingresos por servicio, servicios vendidos, desempeño terapeutas, cancelaciones, clientes nuevos/recurrentes) con comparación automática contra periodo anterior
+- [x] `src/routes/reports.js`: endpoint único `GET /reports/:metric?from=&to=` con `authenticate + requirePermission('reportes')`
+- [x] Restricción financiera: `ingresos-servicio` → 403 para personal; `desempeno-terapeutas` omite campo `ingresosUsd` (ausente, no null) para no-dueño
+- [x] `Tenant.config.workDays` (array ISO, default [1,2,3,4,5,6]) para capacidad teórica de ocupación — configurable por tenant
+- [x] Atribución de terapeuta: `Appointment.staffId` como fuente única (decisión documentada: no se usa TreatmentHistory.therapistId)
+- [x] Ingresos de planes separados (`planRevenue`), no prorrateados por servicio
+- [x] Code Reviewer: 0 blockers, 3 suggestions (S1 nuevosIds, S2 pendiente en desempeño, S3 semántica de ocupación) — ninguna requiere cambio
+- [x] 113 tests unitarios (104 previos + 9 de reportes + 4 de router, 0 regresiones)
+- [x] Migración `20260711191427_fase6_reportes_indexes` aplicada contra Railway
+- [x] Walkthrough completo (13 pasos) contra Postgres real — todas las validaciones, 6 métricas, restricción por rol verificada
+
+## Fases 7–8 — pendientes
+
 - [ ] Fase 7: Import/Export Excel
 - [ ] Fase 8: Auditoría de seguridad + testing + despliegue
   - [ ] **Pendiente de Fase 4**: aplicar grant de DB restringido sobre `ClientIntakeAuditLog` con rol de app de privilegios mínimos (hoy append-only garantizado solo en capa de aplicación). SQL en `docs/append-only-audit-grant.sql`.

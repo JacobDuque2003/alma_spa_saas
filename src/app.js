@@ -12,6 +12,7 @@ const clientRoutes = require('./routes/clients');
 const whatsappSettingsRoutes = require('./routes/settings/whatsapp');
 const whatsappWebhookRoutes = require('./routes/webhooks/whatsapp');
 const crmRoutes = require('./routes/crm');
+const reportRoutes = require('./routes/reports');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
 
@@ -46,6 +47,7 @@ app.use('/public/:tenantSlug', publicBookingRoutes);
 app.use('/webhooks/whatsapp/:tenantSlug', whatsappWebhookRoutes);
 app.use('/settings/whatsapp', whatsappSettingsRoutes);
 app.use('/crm', crmRoutes);
+app.use('/reports', reportRoutes);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
