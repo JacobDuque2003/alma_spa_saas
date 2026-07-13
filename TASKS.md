@@ -128,6 +128,10 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 - [ ] **B11**: Rate limit distribuido (Redis o alternativa)
 - [ ] **A2** (Fase 5): Reconciliación de metadata de WhatsAppConversation (unreadCount/lastMessageAt)
 
+## Mejoras futuras — sin fase asignada
+
+- [ ] **RT1**: Migrar polling 30s de la bandeja CRM a SSE o WebSocket si el negocio reporta latencia perceptible en uso real. Decisión consciente de v1: 30s es imperceptible para ~38 msgs/día; migración limpia a `GET /crm/conversations/stream` (SSE) sin cambios de UI. Anotado en diseño de Etapa 5.
+
 ## Fase 7 — pendiente
 
 - [ ] Import/Export Excel

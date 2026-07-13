@@ -4,6 +4,7 @@ const { BadRequestError, SlotUnavailableError } = require('../utils/errors');
 const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
+const { getTenantTimezone, localHourToUTC, localDayBoundsUTC } = require('../utils/timezone');
 
 const STAFF_ROLES = ['personal', 'dueno'];
 const OPEN_STATUSES = ['pendiente', 'confirmado'];
@@ -15,12 +16,12 @@ function getBusinessHours(tenantConfig) {
   return DEFAULT_BUSINESS_HOURS;
 }
 
-function generateHourlySlots(dateStr, businessHours) {
+function generateHourlySlots(dateStr, businessHours, timezone) {
   const startHour = Number(businessHours.start.split(':')[0]);
   const endHour = Number(businessHours.end.split(':')[0]);
   const slots = [];
   for (let h = startHour; h < endHour; h += 1) {
-    slots.push(new Date(`${dateStr}T${String(h).padStart(2, '0')}:00:00.000Z`));
+    slots.push(localHourToUTC(dateStr, h, timezone));
   }
   return slots;
 }
@@ -49,8 +50,8 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
   const staffIds = staff.map((s) => s.id);
   if (staffIds.length === 0) return [];
 
-  const dayStart = new Date(`${date}T00:00:00.000Z`);
-  const dayEnd = new Date(`${date}T23:59:59.999Z`);
+  const tz = getTenantTimezone(tenantConfig);
+  const { dayStart, dayEnd } = localDayBoundsUTC(date, tz);
   const orConditions = [{ staffId: { in: staffIds } }];
   if (roomIds.length) orConditions.push({ roomId: { in: roomIds } });
 
@@ -64,7 +65,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
   const bookedStaffSlots = new Set(appointments.map((a) => `${a.staffId}|${a.startsAt.toISOString()}`));
 
   const businessHours = getBusinessHours(tenantConfig);
-  const slots = generateHourlySlots(date, businessHours).filter((slot) => {
+  const slots = generateHourlySlots(date, businessHours, tz).filter((slot) => {
     const iso = slot.toISOString();
     const staffFree = staffIds.some((id) => !bookedStaffSlots.has(`${id}|${iso}`));
     if (!staffFree) return false;

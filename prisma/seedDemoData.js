@@ -17,6 +17,7 @@
 require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const { encryptField } = require('../src/utils/intakeCrypto');
+const { localHourToUTC, DEFAULT_TIMEZONE } = require('../src/utils/timezone');
 
 const prisma = new PrismaClient();
 
@@ -30,9 +31,7 @@ const ROOM_MASAJES = 'cmr9dme5i0005tyvowxqpj802';
 const PLAN_MENSUAL = 'cmrckv8f0000i3rivbiecjrvq';
 
 function d(dateStr, hour = 10) {
-  const dt = new Date(dateStr + 'T00:00:00Z');
-  dt.setUTCHours(hour);
-  return dt;
+  return localHourToUTC(dateStr, hour, DEFAULT_TIMEZONE);
 }
 
 function addHours(date, h) {
