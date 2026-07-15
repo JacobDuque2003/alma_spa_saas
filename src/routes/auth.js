@@ -1,5 +1,7 @@
 const express = require('express');
 const { login } = require('../services/authService');
+const authenticate = require('../middleware/authenticate');
+const prisma = require('../utils/prisma');
 
 const router = express.Router();
 
@@ -16,6 +18,21 @@ router.post('/login', async (req, res, next) => {
     }
 
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/me', authenticate, async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, name: true, email: true, role: true, tenantId: true },
+    });
+    if (!user) {
+      return res.status(401).json({ error: 'Usuario no encontrado' });
+    }
+    res.json(user);
   } catch (err) {
     next(err);
   }

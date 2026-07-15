@@ -264,7 +264,16 @@ async function listAppointments(actor, query) {
     if (query.from) where.startsAt.gte = new Date(query.from);
     if (query.to) where.startsAt.lte = new Date(query.to);
   }
-  return prisma.appointment.findMany({ where, orderBy: { startsAt: 'asc' } });
+  return prisma.appointment.findMany({
+    where,
+    orderBy: { startsAt: 'asc' },
+    include: {
+      service: { select: { name: true, category: true, durationMins: true } },
+      client:  { select: { id: true, fullName: true, whatsapp: true } },
+      room:    { select: { id: true, name: true } },
+      staff:   { select: { id: true, name: true } },
+    },
+  });
 }
 
 async function getAppointment(actor, id) {
