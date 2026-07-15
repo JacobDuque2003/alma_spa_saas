@@ -32,8 +32,13 @@ async function proxyRequest(req, { params }) {
   let res;
   try {
     res = await fetch(url, fetchOpts);
-  } catch {
-    return NextResponse.json({ error: "Backend no disponible" }, { status: 502 });
+  } catch (err) {
+    return NextResponse.json({
+      error: "Backend no disponible",
+      detail: err?.message,
+      cause: err?.cause?.message || err?.cause?.code || null,
+      target: url.toString(),
+    }, { status: 502 });
   }
   const data = await res.text();
 
