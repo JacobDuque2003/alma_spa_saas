@@ -2,6 +2,25 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.0] - 2026-07-16
+
+### Agregado (Fase 5B — Login + Layout protegido + Agenda + Gabinetes)
+- **Panel de administración**: Login con JWT httpOnly cookie (8h), AuthProvider en React context (sin localStorage), protección de rutas via `proxy.js` (Next.js 16).
+- **Agenda**: vista día/semana con grilla 8AM-6PM, bloques de cita coloreados por estado, modal de detalle con servicio/cliente/gabinete/terapeuta/precio.
+- **Gabinetes**: estado en tiempo real (Ocupado/Libre) calculado contra citas activas, botón "Ver N citas del día" expandible, auto-refresh cada 60s, sección "A domicilio".
+- **`GET /auth/me`**: endpoint protegido que devuelve `{id, name, email, role, tenantId}` para hidratar el AuthProvider.
+- **`requireAnyPermission`**: middleware OR-logic para permisos (`gabinetes` OR `configuracion` en `GET /rooms`).
+- **`listAppointments` enriquecido**: includes de service, client, room, staff en las queries de citas.
+- **Páginas de error con marca Alma Spa**: `not-found.js` (404), `error.js` (error de sección), `global-error.js` restyled — paleta bronce/crema (#8C6E50, #6B5540, #C9A876, #EBCDB5, #A89A87, #EBE8E1). `global-error.js` autosuficiente (sin dependencias de layout).
+
+### Verificado
+- Login: 5 escenarios (wrong_password→401, empty_body→400, missing_password→400, empty_strings→400, correct→200). BFF propaga status/mensaje correctamente.
+- Modal de detalle (Agenda): abre con click, muestra datos completos, cierre funciona (verificado con JS + delay para React re-render).
+- Botón expandir (Gabinetes): "Ver N citas del día" expande lista, "Ocultar citas del día" colapsa — verificado via JS click.
+- 404 page: renderiza con paleta de marca en ruta inexistente.
+- Build limpio: `npm run build` sin errores, 9 rutas generadas.
+- 140 tests backend: 0 regresiones.
+
 ## [0.8.1] - 2026-07-12
 
 ### Agregado (Fase 8, Oleada 1 — Seguridad y correctitud)

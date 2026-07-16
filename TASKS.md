@@ -97,6 +97,24 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 - [x] Migración `20260711191427_fase6_reportes_indexes` aplicada contra Railway
 - [x] Walkthrough completo (13 pasos) contra Postgres real — todas las validaciones, 6 métricas, restricción por rol verificada
 
+## Fase 5B — Login + Layout protegido + Agenda + Gabinetes — COMPLETADA
+
+- [x] `GET /auth/me` — endpoint protegido (authenticate, sin permiso específico)
+- [x] `listAppointments` enriquecido — includes de service, client, room, staff
+- [x] `requireAnyPermission` middleware — OR-logic para `GET /rooms` (gabinetes OR configuracion)
+- [x] `frontend/proxy.js` — protección de rutas admin (Next.js 16, no middleware.js)
+- [x] `frontend/lib/auth-client.js` — authFetch, login, logout (cookie httpOnly, redirect en 401)
+- [x] `frontend/lib/auth-context.js` — AuthProvider + useAuth hook (React 19 Context, sin localStorage)
+- [x] `frontend/app/admin/login/page.js` — formulario login con manejo de errores
+- [x] `frontend/app/admin/(dashboard)/layout.js` — sidebar + header + AuthProvider
+- [x] `frontend/app/admin/(dashboard)/agenda/page.js` — vista día/semana, modal detalle, colores por estado
+- [x] `frontend/app/admin/(dashboard)/gabinetes/page.js` — estado real-time, expandir citas, auto-refresh 60s
+- [x] Páginas de error con paleta Alma Spa: `not-found.js` (404), `error.js` (sección), `global-error.js` (restyled)
+- [x] Verificación login: 5 escenarios de error probados via browser JS, BFF propaga status/mensajes correctamente
+- [x] Verificación modal Agenda: abre, muestra detalle completo, cierre funciona
+- [x] Verificación botón expandir Gabinetes: "Ver N citas del día" expande/colapsa correctamente
+- [x] Build limpio + 140 tests backend sin regresiones
+
 ## Fase 8 — Auditoría de seguridad + testing + despliegue — EN PROGRESO
 
 ### Oleada 1 — Seguridad y correctitud — COMPLETADA
