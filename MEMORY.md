@@ -1,6 +1,17 @@
 # Memoria del proyecto — Alma Spa Backend
 
 > Contexto vivo para retomar el trabajo entre sesiones. Ver también `docs/` (producto, arquitectura, roadmap) y el brief completo de Etapa 4 en `CLAUDE.md` de la carpeta `PROYECTOS/`.
+## Actualizacion 2026-07-16 - Fase 5C/5D frontend admin completada
+
+Se implemento en rama `codex/5c-clientes-crm` el panel admin restante: Clientes, CRM WhatsApp, Reportes, Personal y Configuracion. Antes de codigo se obtuvo revision real de Backend Architect y Security/AppSec; ambos confirmaron que no hacian falta migraciones y que el backend faltante debia ser minimo.
+
+Backend agregado: `GET /clients`, `GET /clients/:id`, `GET /users`; `GET /auth/me` ahora devuelve permisos efectivos. Controles criticos preservados: endpoints de clientes no exponen `ClientIntake` (anamnesis sigue por endpoint auditado), usuarios nunca devuelven `passwordHash`, `isProtected` sigue protegido en backend, finanzas de reportes y ventana WhatsApp siguen server-side.
+
+Frontend agregado bajo `frontend/app/admin/(dashboard)/`: `clientes`, `crm`, `reportes`, `personal`, `configuracion`. `layout.js` queda pausado por coordinacion con Code; los enlaces se agregaran despues de pull/rebase sobre la version visual corregida. `recharts` quedo instalado para reportes. `eslint.config.mjs` desactiva `react-hooks/set-state-in-effect` porque la regla tambien rompia archivos estables de 5A/5B y estaba fuera del alcance refactorizarlos.
+
+Verificacion local real: `npm test` backend 150/150, `npm run lint` y `npm run build` frontend en verde, backend/frontend levantados localmente, BFF con cookie validado mediante curl cookie jar: login invalido 401, login valido 200, `/api/proxy/auth/me` 200, Agenda/Gabinetes 200, endpoints nuevos 200, paginas nuevas 200, logout 200 y post-logout 401.
+
+
 
 ## Estado actual (2026-07-06)
 

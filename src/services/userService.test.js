@@ -132,3 +132,36 @@ test('createUser exige tenantId en el body cuando el actor es superadmin (sin te
     })
   );
 });
+
+
+test('listUsers filtra por tenant del actor y usa select seguro sin passwordHash', async () => {
+  let argsSeen = null;
+  mockPrisma({
+    user: {
+      findMany: async (args) => {
+        argsSeen = args;
+        return [{ id: 'u1', tenantId: 't1', email: 'm@alma.test', name: 'Mariana', role: 'dueno', isProtected: false }];
+      },
+    },
+  });
+
+  const result = await userService.listUsers({ role: 'dueno', tenantId: 't1' });
+  assert.equal(argsSeen.where.tenantId, 't1');
+  assert.equal(argsSeen.select.email, true);
+  assert.equal('passwordHash' in argsSeen.select, false);
+  assert.equal(result[0].email, 'm@alma.test');
+});
+
+test('listUsers permite a superadmin consultar todos sin exponer passwordHash', async () => {
+  let argsSeen = null;
+  mockPrisma({
+    user: {
+      findMany: async (args) => { argsSeen = args; return []; },
+    },
+  });
+
+  await userService.listUsers({ role: 'superadmin', tenantId: null });
+  assert.deepEqual(argsSeen.where, {});
+  assert.equal('passwordHash' in argsSeen.select, false);
+  assert.equal(argsSeen.select.isProtected, true);
+});

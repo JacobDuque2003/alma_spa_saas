@@ -9,7 +9,8 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-inter);
+  --font-heading: var(--font-cormorant);
+  --font-script: var(--font-pinyon);
 
   --color-bronze: #8C6E50;
   --color-bronze-deep: #6B5540;
@@ -81,13 +82,13 @@
   --chart-4: #6B5540;
   --chart-5: #A89A87;
   --radius: 0.5rem;
-  --sidebar: #3A2F26;
-  --sidebar-foreground: #FAF7F2;
-  --sidebar-primary: #C9A876;
-  --sidebar-primary-foreground: #3A2F26;
-  --sidebar-accent: rgba(255, 255, 255, 0.1);
-  --sidebar-accent-foreground: #FAF7F2;
-  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar: #F7F5F0;
+  --sidebar-foreground: #6B5540;
+  --sidebar-primary: #8C6E50;
+  --sidebar-primary-foreground: #F7F5F0;
+  --sidebar-accent: #EBCDB5;
+  --sidebar-accent-foreground: #3A2F26;
+  --sidebar-border: rgba(168, 154, 135, 0.35);
   --sidebar-ring: #8C6E50;
 }
 

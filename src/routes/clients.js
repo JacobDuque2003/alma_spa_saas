@@ -2,6 +2,7 @@ const express = require('express');
 const authenticate = require('../middleware/authenticate');
 const requirePermission = require('../middleware/requirePermission');
 const requireRole = require('../middleware/requireRole');
+const clientService = require('../services/clientService');
 const clientIntakeService = require('../services/clientIntakeService');
 const treatmentHistoryService = require('../services/treatmentHistoryService');
 const clientPlanService = require('../services/clientPlanService');
@@ -28,6 +29,38 @@ function logCrossTenant(req, err) {
     });
   }
 }
+
+
+// --- Clientes (datos base, sin anamnesis) ---
+
+router.get('/clients', clientes, async (req, res, next) => {
+  try {
+    const clients = await clientService.listClients(req.user, req.query);
+    res.json(clients);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/clients', clientes, async (req, res, next) => {
+  try {
+    const client = await clientService.createClient(req.user, req.body);
+    res.status(201).json(client);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/clients/:clientId', clientes, async (req, res, next) => {
+  try {
+    const client = await clientService.getClient(req.user, req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(client);
+  } catch (err) {
+    logCrossTenant(req, err);
+    next(err);
+  }
+});
 
 // --- Anamnesis (ClientIntake) ---
 

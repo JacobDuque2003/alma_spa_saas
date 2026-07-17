@@ -2,6 +2,30 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.0] - 2026-07-16
+
+### Agregado (Fase 5C/5D - Clientes + CRM + Reportes + Personal + Configuracion)
+- **Panel Clientes**: lista/buscador, detalle con datos base, anamnesis editable por endpoint auditado, historial de tratamientos, planes/saldo y registro de pago.
+- **Panel CRM WhatsApp**: bandeja de conversaciones, filtro "sin confirmar hoy", vista de conversacion, envio de texto dentro de ventana 24h y recordatorio por plantilla.
+- **Panel Reportes**: 6 metricas existentes con tarjetas/graficos (Recharts instalado) y manejo de 403 para cifras financieras.
+- **Panel Personal**: lista de cuentas, edicion de permisos granulares para personal, fila protegida de plataforma para UX; la proteccion real de `isProtected` sigue en backend.
+- **Panel Configuracion**: servicios/precios, gabinetes/especialidad, planes/membresias e import/export Excel como placeholder deshabilitado (Fase 7 sigue pausada).
+- **Backend minimo de lectura**: `GET /clients`, `GET /clients/:id`, `GET /users`; `GET /auth/me` ahora devuelve permisos efectivos.
+- **Dependencia frontend**: `recharts` para visualizacion de reportes.
+
+### Seguridad
+- `GET /clients` y `GET /clients/:id` usan `clientes` y DTO seguro: no exponen `ClientIntake`, alergias, condiciones, consentimiento ni blobs cifrados.
+- `GET /users` usa `select` explicito + `omitPasswordHash`; no devuelve `passwordHash`.
+- `GET /auth/me` arma DTO campo por campo y no propaga `rolePermission` ni `passwordHash`.
+- La restriccion financiera de reportes y la ventana/plantilla de WhatsApp permanecen server-side.
+- `layout.js` queda pausado por coordinacion: los enlaces de navegacion se agregaran cuando Code termine y se integre su correccion visual.
+
+### Verificado
+- Backend: `npm test` -> 150/150 tests.
+- Frontend: `npm run lint` y `npm run build` en verde.
+- Verificacion real local con backend + frontend: login invalido 401, login valido con cookie BFF, `/api/proxy/auth/me` 200, Agenda/Gabinetes por proxy 200, endpoints nuevos por proxy 200, paginas nuevas accesibles por URL directa 200, logout 200 y post-logout `/auth/me` 401. Enlaces de sidebar pendientes por coordinacion con Code.
+
+
 ## [0.9.0] - 2026-07-16
 
 ### Agregado (Fase 5B — Login + Layout protegido + Agenda + Gabinetes)

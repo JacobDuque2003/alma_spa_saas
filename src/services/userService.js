@@ -15,6 +15,37 @@ function omitPasswordHash(user) {
   return rest;
 }
 
+
+const USER_SAFE_SELECT = {
+  id: true,
+  tenantId: true,
+  email: true,
+  name: true,
+  role: true,
+  isProtected: true,
+  active: true,
+  canAttendAppointments: true,
+  createdAt: true,
+  updatedAt: true,
+  rolePermission: true,
+};
+
+async function listUsers(actor, query = {}) {
+  const where = {};
+  if (actor.role === 'superadmin') {
+    if (query.tenantId) where.tenantId = query.tenantId;
+  } else {
+    where.tenantId = actor.tenantId;
+  }
+
+  const users = await prisma.user.findMany({
+    where,
+    select: USER_SAFE_SELECT,
+    orderBy: [{ isProtected: 'desc' }, { role: 'asc' }, { name: 'asc' }],
+  });
+  return users.map(omitPasswordHash);
+}
+
 async function createUser(actor, data) {
   const { email, password, name, role, permissions } = data;
 
@@ -110,6 +141,7 @@ async function updatePermissions(actor, targetUserId, permissions) {
 }
 
 module.exports = {
+  listUsers,
   createUser,
   updateUser,
   deleteUser,

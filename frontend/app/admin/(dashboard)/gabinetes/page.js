@@ -2,20 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import {
-  LayoutGrid,
-  Clock,
-  User,
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  Home,
-  RefreshCw,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 function toLocalDate(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
@@ -27,7 +14,7 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("es-EC", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: true,
+    hour12: false,
     timeZone: "America/Guayaquil",
   });
 }
@@ -37,11 +24,25 @@ function isNowBetween(startsAt, endsAt) {
   return now >= new Date(startsAt).getTime() && now < new Date(endsAt).getTime();
 }
 
+function formatNow() {
+  return new Date().toLocaleDateString("es-EC", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "America/Guayaquil",
+  }) + ", " + new Date().toLocaleTimeString("es-EC", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Guayaquil",
+  });
+}
+
 export default function GabinetesPage() {
   const [rooms, setRooms] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState(null);
+  const [timestamp, setTimestamp] = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -53,9 +54,9 @@ export default function GabinetesPage() {
           query: { from: `${today}T00:00:00`, to: `${today}T23:59:59` },
         }),
       ]);
-      setRooms(roomsData);
-      setAppointments(apptsData);
-      setLastRefresh(new Date());
+      setRooms(Array.isArray(roomsData) ? roomsData : []);
+      setAppointments(Array.isArray(apptsData) ? apptsData : []);
+      setTimestamp(formatNow());
     } catch {
       setRooms([]);
       setAppointments([]);
@@ -76,64 +77,50 @@ export default function GabinetesPage() {
   const domicilioAppts = activeAppts.filter((a) => a.modality === "domicilio");
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", gap: 22, overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">
+          <h1 className="font-heading" style={{ fontSize: 30, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
             Gabinetes
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Estado en tiempo real de cada gabinete
-            {lastRefresh && (
-              <span className="ml-2">
-                · Actualizado {lastRefresh.toLocaleTimeString("es-EC", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  timeZone: "America/Guayaquil",
-                })}
-              </span>
-            )}
+          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>
+            Estado en tiempo real · {timestamp}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Actualizar
-        </Button>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 12, color: "#6B5540" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#C9A876" }} />
+            Libre
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#6B5540" }} />
+            Ocupado
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", border: "1.5px dashed #8C6E50", boxSizing: "border-box" }} />
+            A domicilio
+          </span>
+        </div>
       </div>
 
       {loading && rooms.length === 0 ? (
-        <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
         </div>
       ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rooms.map((room) => (
-              <RoomCard
-                key={room.id}
-                room={room}
-                appointments={activeAppts.filter((a) => a.roomId === room.id)}
-              />
-            ))}
-          </div>
-
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, alignItems: "start" }}>
+          {rooms.filter((r) => r.active).map((room) => (
+            <RoomCard
+              key={room.id}
+              room={room}
+              appointments={activeAppts.filter((a) => a.roomId === room.id)}
+            />
+          ))}
           {domicilioAppts.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <h2 className="text-lg font-heading font-semibold flex items-center gap-2 mb-4">
-                  <Home className="h-5 w-5 text-muted-foreground" />
-                  A domicilio
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {domicilioAppts.map((appt) => (
-                    <AppointmentMini key={appt.id} appt={appt} />
-                  ))}
-                </div>
-              </div>
-            </>
+            <DomicilioCard appointments={domicilioAppts} />
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -144,105 +131,218 @@ function RoomCard({ room, appointments }) {
   const current = appointments.find((a) => isNowBetween(a.startsAt, a.endsAt));
   const isOccupied = !!current;
 
+  const progress = current
+    ? Math.min(
+        100,
+        ((Date.now() - new Date(current.startsAt).getTime()) /
+          (new Date(current.endsAt).getTime() - new Date(current.startsAt).getTime())) *
+          100
+      )
+    : 0;
+
   return (
-    <Card className={`transition-colors ${isOccupied ? "border-destructive/40" : "border-green-400/40"}`}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-            {room.name}
-          </CardTitle>
-          <Badge
-            className={
-              isOccupied
-                ? "bg-red-100 text-red-800 border-red-300"
-                : "bg-green-100 text-green-800 border-green-300"
-            }
-          >
-            {isOccupied ? "Ocupado" : "Libre"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {current && (
-          <div className="rounded-md bg-destructive/5 p-3 text-sm space-y-1">
-            <p className="font-medium">{current.service?.name}</p>
-            <p className="text-muted-foreground flex items-center gap-1">
-              <User className="h-3 w-3" />
-              {current.client?.fullName}
-            </p>
-            <p className="text-muted-foreground flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {formatTime(current.startsAt)} — {formatTime(current.endsAt)}
-            </p>
-          </div>
-        )}
+    <div
+      style={{
+        background: "#F7F5F0",
+        border: `1px solid ${isOccupied ? "rgba(107,85,64,0.45)" : "rgba(168,154,135,0.4)"}`,
+        borderRadius: 12,
+        padding: 24,
+        gridRow: expanded ? "span 2" : "auto",
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <h2 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
+          {room.name}
+        </h2>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            padding: "5px 14px",
+            borderRadius: 999,
+            background: isOccupied ? "#6B5540" : "rgba(201,168,118,0.25)",
+            color: isOccupied ? "#EBE8E1" : "#8C6E50",
+            fontSize: 12,
+            fontWeight: 500,
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: isOccupied ? "#EBCDB5" : "#C9A876",
+            }}
+          />
+          {isOccupied ? "Ocupado" : "Libre"}
+        </span>
+      </div>
 
-        {appointments.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full text-xs"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? (
-              <>
-                <ChevronUp className="h-3 w-3 mr-1" /> Ocultar citas del día
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-3 w-3 mr-1" /> Ver {appointments.length} cita{appointments.length !== 1 ? "s" : ""} del día
-              </>
-            )}
-          </Button>
-        )}
-
-        {expanded && (
-          <div className="space-y-2">
-            {appointments.map((appt) => (
-              <AppointmentMini key={appt.id} appt={appt} />
-            ))}
-          </div>
-        )}
-
-        {appointments.length === 0 && !isOccupied && (
-          <p className="text-xs text-muted-foreground text-center py-2">
-            Sin citas programadas hoy
+      {/* Current appointment info */}
+      {current ? (
+        <>
+          <p style={{ margin: "0 0 16px", fontSize: 13, color: "#A89A87" }}>
+            En curso: {current.service?.name} · {current.client?.fullName} · termina {formatTime(current.endsAt)}
           </p>
-        )}
-      </CardContent>
-    </Card>
+          <div style={{ height: 4, borderRadius: 999, background: "rgba(168,154,135,0.3)", marginBottom: 20 }}>
+            <div style={{ width: `${progress}%`, height: "100%", borderRadius: 999, background: "#8C6E50", transition: "width 1s" }} />
+          </div>
+        </>
+      ) : (
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: "#A89A87" }}>
+          {appointments.length > 0
+            ? `Siguiente: ${appointments[0].service?.name} · ${formatTime(appointments[0].startsAt)}`
+            : "Sin citas programadas hoy"}
+        </p>
+      )}
+
+      {/* Expand toggle */}
+      {appointments.length > 0 && (
+        <>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "9px 18px",
+              borderRadius: 999,
+              border: expanded ? "none" : "1px solid #8C6E50",
+              background: expanded ? "#8C6E50" : "none",
+              color: expanded ? "#F7F5F0" : "#8C6E50",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: "pointer",
+              marginBottom: expanded ? 18 : 0,
+            }}
+          >
+            {expanded ? "Ocultar clientes reservados ▴" : `Ver ${appointments.length} cita${appointments.length !== 1 ? "s" : ""} del día ▾`}
+          </button>
+
+          {expanded && (
+            <div style={{ display: "flex", flexDirection: "column", borderTop: "1px solid rgba(168,154,135,0.35)" }}>
+              {appointments.map((appt, i) => {
+                const isCurrent = isNowBetween(appt.startsAt, appt.endsAt);
+                const isConfirmed = appt.status === "confirmado";
+                return (
+                  <div
+                    key={appt.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "13px 4px",
+                      borderBottom: i < appointments.length - 1 ? "1px solid rgba(168,154,135,0.25)" : "none",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: "#6B5540" }}>
+                        {appt.client?.fullName || "Cliente"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#A89A87" }}>
+                        {formatTime(appt.startsAt)} · {appt.service?.name}
+                      </div>
+                    </div>
+                    {isConfirmed ? (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "4px 12px",
+                          borderRadius: 999,
+                          background: "rgba(201,168,118,0.2)",
+                          color: "#8C6E50",
+                          fontSize: 12,
+                          fontWeight: 500,
+                        }}
+                      >
+                        ✓ Confirmó{isCurrent ? " · en curso" : ""}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "4px 12px",
+                          borderRadius: 999,
+                          border: "1px solid #A89A87",
+                          color: "#A89A87",
+                          fontSize: 12,
+                        }}
+                      >
+                        Sin confirmar
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
-function AppointmentMini({ appt }) {
-  const statusBadge = {
-    pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
-    confirmado: "bg-green-100 text-green-800 border-green-300",
-  };
-  const statusLabel = {
-    pendiente: "Pendiente",
-    confirmado: "Confirmado",
-  };
-
+function DomicilioCard({ appointments }) {
   return (
-    <div className="rounded-md border border-border p-2 text-sm space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="font-medium">{appt.service?.name}</span>
-        <Badge className={statusBadge[appt.status] || "bg-gray-100 text-gray-800"}>
-          {statusLabel[appt.status] || appt.status}
-        </Badge>
+    <div
+      style={{
+        background: "#F7F5F0",
+        border: "1.5px dashed rgba(140,110,80,0.5)",
+        borderRadius: 12,
+        padding: 24,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <h2 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
+          A domicilio
+        </h2>
+        <span style={{ fontSize: 13, color: "#A89A87" }}>{appointments.length} hoy</span>
       </div>
-      <p className="text-muted-foreground text-xs flex items-center gap-1">
-        <Clock className="h-3 w-3" />
-        {formatTime(appt.startsAt)} — {formatTime(appt.endsAt)}
-      </p>
-      {appt.client && (
-        <p className="text-muted-foreground text-xs flex items-center gap-1">
-          <User className="h-3 w-3" />
-          {appt.client.fullName}
-        </p>
-      )}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {appointments.map((appt, i) => (
+          <div
+            key={appt.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "13px 4px",
+              borderBottom: i < appointments.length - 1 ? "1px solid rgba(168,154,135,0.25)" : "none",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "#6B5540" }}>
+                {appt.client?.fullName || "Cliente"}
+              </div>
+              <div style={{ fontSize: 12, color: "#A89A87" }}>
+                {formatTime(appt.startsAt)} · {appt.service?.name}
+              </div>
+            </div>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 12px",
+                borderRadius: 999,
+                background: appt.status === "confirmado" ? "rgba(201,168,118,0.2)" : "transparent",
+                border: appt.status !== "confirmado" ? "1px solid #A89A87" : "none",
+                color: appt.status === "confirmado" ? "#8C6E50" : "#A89A87",
+                fontSize: 12,
+                fontWeight: appt.status === "confirmado" ? 500 : 400,
+              }}
+            >
+              {appt.status === "confirmado" ? "✓ Confirmó" : "Sin confirmar"}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

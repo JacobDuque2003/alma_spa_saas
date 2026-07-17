@@ -80,6 +80,15 @@ if (require.main === module) {
   assertEncryptionKeyOrExit();
   assertWhatsappKeyOrExit();
   assertKeysDifferOrExit();
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL] unhandledRejection — el proceso seguirá pero esto debe corregirse:', reason);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[FATAL] uncaughtException — cerrando proceso:', err);
+    process.exit(1);
+  });
+
   const port = process.env.PORT || 3001;
   app.listen(port, () => console.log(`Alma Spa backend escuchando en :${port}`));
 }

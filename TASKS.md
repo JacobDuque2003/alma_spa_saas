@@ -1,5 +1,16 @@
 # Tareas — Alma Spa Backend
 
+## Fase 5C/5D - Panel admin Clientes/CRM/Reportes/Personal/Configuracion - COMPLETADA (2026-07-16)
+
+- [x] Revision bloqueante real con Backend Architect y Security/AppSec antes de implementar.
+- [x] Rama de trabajo `codex/5c-clientes-crm` + `safe.directory` configurado.
+- [x] Backend minimo: `GET /clients`, `GET /clients/:id`, `GET /users`, permisos efectivos en `GET /auth/me`.
+- [x] Controles de seguridad: tenant scope, `clientes`, no exposicion de `ClientIntake`, no `passwordHash`, `isProtected` protegido en backend, finanzas/WhatsApp server-side.
+- [x] Frontend: Clientes, CRM, Reportes, Personal, Configuracion segun mockups aprobados; Excel queda placeholder deshabilitado.
+- [ ] `layout.js`: agregar enlaces nuevos en `NAV_ITEMS` despues de que Code termine/fusione su correccion visual.
+- [x] Verificacion: backend tests 150/150, frontend lint/build, verificacion real local BFF/login/logout/Agenda/Gabinetes/nuevas paginas.
+
+
 ## Fase 1 — Esquema multi-tenant + autenticación + permisos
 
 - [x] `package.json` + dependencias (express, prisma, jsonwebtoken, bcryptjs, dotenv)

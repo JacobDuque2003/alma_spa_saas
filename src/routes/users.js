@@ -8,6 +8,17 @@ const router = express.Router();
 
 router.use(authenticate, requireRole('superadmin', 'dueno'));
 
+
+router.get('/', async (req, res, next) => {
+  try {
+    const users = await userService.listUsers(req.user, req.query);
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 router.post('/', async (req, res, next) => {
   try {
     const user = await userService.createUser(req.user, req.body);
