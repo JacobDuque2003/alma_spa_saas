@@ -13,7 +13,7 @@
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.js",
     "db:verify-role": "node scripts/verify-db-role.js",
-    "test": "node --test src/*.test.js src/**/*.test.js"
+    "test": "node --test src/*.test.js src/middleware/*.test.js src/services/*.test.js src/utils/*.test.js src/routes/*.test.js src/routes/**/*.test.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
