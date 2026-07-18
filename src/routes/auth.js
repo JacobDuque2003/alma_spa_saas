@@ -1,9 +1,29 @@
 const express = require('express');
-const { login } = require('../services/authService');
+const bcrypt = require('bcryptjs');
+const { login, hashPassword } = require('../services/authService');
 const authenticate = require('../middleware/authenticate');
 const prisma = require('../utils/prisma');
 
 const MODULE_PERMISSIONS = ['agenda', 'gabinetes', 'clientes', 'crm', 'reportes', 'configuracion'];
+
+const pwBuckets = new Map();
+function passwordChangeRateLimit(req, res, next) {
+  const key = `pw:${req.user.id}`;
+  const now = Date.now();
+  const bucket = pwBuckets.get(key);
+  const LIMIT = 5;
+  const WINDOW = 15 * 60_000;
+
+  if (!bucket || bucket.resetAt <= now) {
+    pwBuckets.set(key, { count: 1, resetAt: now + WINDOW });
+    return next();
+  }
+  bucket.count += 1;
+  if (bucket.count > LIMIT) {
+    return res.status(429).json({ error: 'Demasiados intentos. Espere 15 minutos.' });
+  }
+  next();
+}
 
 function effectivePermissions(user) {
   if (['superadmin', 'dueno'].includes(user.role)) {
@@ -58,6 +78,43 @@ router.get('/me', authenticate, async (req, res, next) => {
       tenantId: user.tenantId,
       permissions: effectivePermissions(user),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/me/password', authenticate, passwordChangeRateLimit, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+      return res.status(400).json({ error: 'currentPassword y newPassword deben ser cadenas de texto' });
+    }
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword y newPassword son requeridos' });
+    }
+    if (newPassword.length < 10) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 10 caracteres' });
+    }
+    if (newPassword.length > 128) {
+      return res.status(400).json({ error: 'La contraseña no puede exceder 128 caracteres' });
+    }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, passwordHash: true } });
+    if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      return res.status(403).json({ error: 'Contraseña actual incorrecta' });
+    }
+
+    const newHash = await hashPassword(newPassword);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+
+    console.info('[password-changed]', { userId: user.id, ip: req.ip, at: new Date().toISOString() });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

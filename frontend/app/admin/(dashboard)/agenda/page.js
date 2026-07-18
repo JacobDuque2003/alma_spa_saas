@@ -102,6 +102,7 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [staffList, setStaffList] = useState([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -115,12 +116,14 @@ export default function AgendaPage() {
         from = `${days[0]}T00:00:00`;
         to = `${days[6]}T23:59:59`;
       }
-      const [appts, roomList] = await Promise.all([
+      const [appts, roomList, userList] = await Promise.all([
         authFetch("/appointments", { query: { from, to } }).catch(() => []),
         authFetch("/rooms").catch(() => []),
+        authFetch("/users").catch(() => []),
       ]);
       setAppointments(appts);
       setRooms(roomList.filter((r) => r.active));
+      setStaffList(Array.isArray(userList) ? userList.filter((u) => u.canAttendAppointments && u.active) : []);
     } catch {
       setAppointments([]);
     } finally {
@@ -331,7 +334,18 @@ export default function AgendaPage() {
         />
       )}
 
-      {selected && <AppointmentDetail appt={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <AppointmentDetail
+          appt={selected}
+          rooms={rooms}
+          staffList={staffList}
+          onClose={() => setSelected(null)}
+          onUpdated={(updated) => {
+            setAppointments((prev) => prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)));
+            setSelected(null);
+          }}
+        />
+      )}
       {showNewForm && (
         <NewAppointmentForm
           defaultDate={selectedDate}
@@ -598,122 +612,165 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
   );
 }
 
-function AppointmentDetail({ appt, onClose }) {
+function AppointmentDetail({ appt, rooms, staffList, onClose, onUpdated }) {
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [editDate, setEditDate] = useState(toLocalDate(new Date(appt.startsAt)));
+  const [editTime, setEditTime] = useState(formatTime(appt.startsAt));
+  const [editRoomId, setEditRoomId] = useState(appt.room?.id || "");
+  const [editStaffId, setEditStaffId] = useState(appt.staff?.id || "");
+
+  async function changeStatus(newStatus) {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await authFetch(`/appointments/${appt.id}/status`, { method: "PATCH", body: { status: newStatus } });
+      onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: appt.room, staff: appt.staff });
+    } catch (err) {
+      setError(err.message || "Error al cambiar estado");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveReschedule() {
+    setSaving(true);
+    setError(null);
+    try {
+      const body = {};
+      const newStartsAt = `${editDate}T${editTime}:00`;
+      if (newStartsAt !== appt.startsAt) body.startsAt = newStartsAt;
+      if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
+      if (editStaffId && editStaffId !== appt.staff?.id) body.staffId = editStaffId;
+      if (Object.keys(body).length === 0) { setEditing(false); return; }
+      const updated = await authFetch(`/appointments/${appt.id}`, { method: "PATCH", body });
+      const newRoom = rooms.find((r) => r.id === (updated.roomId || editRoomId));
+      const newStaff = staffList.find((s) => s.id === (updated.staffId || editStaffId));
+      onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: newRoom || appt.room, staff: newStaff || appt.staff });
+    } catch (err) {
+      setError(err.message || "Error al reprogramar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const canChange = appt.status !== "cancelado" && appt.status !== "no_show";
+  const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" };
+  const pillBtn = (bg, color, border) => ({ padding: "7px 16px", borderRadius: 999, border: border || "none", background: bg, color, fontSize: 12, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 });
+
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 50,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(58,47,38,0.4)",
-      }}
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}
     >
       <div
-        style={{
-          width: "100%",
-          maxWidth: 420,
-          margin: "0 16px",
-          background: "#F7F5F0",
-          borderRadius: 16,
-          padding: 28,
-          position: "relative",
-          boxShadow: "0 24px 64px rgba(107,85,64,0.18)",
-        }}
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 440, margin: "0 16px", background: "#F7F5F0", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)", maxHeight: "90vh", overflowY: "auto" }}
       >
-        <button
-          onClick={onClose}
-          style={{
-            position: "absolute",
-            top: 16,
-            right: 16,
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "#A89A87",
-          }}
-        >
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
         </button>
-        <h2
-          className="font-heading"
-          style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}
-        >
+        <h2 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>
           {appt.service?.name || "Servicio"}
         </h2>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "4px 12px",
-            borderRadius: 999,
-            background: statusInfo.bg,
-            border: statusInfo.border !== "transparent" ? `1px solid ${statusInfo.border}` : "none",
-            color: statusInfo.text,
-            fontSize: 12,
-            fontWeight: 500,
-          }}
-        >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: statusInfo.bg, border: statusInfo.border !== "transparent" ? `1px solid ${statusInfo.border}` : "none", color: statusInfo.text, fontSize: 12, fontWeight: 500 }}>
           {STATUS_LABELS[appt.status]}
         </span>
 
-        <div style={{ borderTop: "1px solid rgba(168,154,135,0.3)", margin: "18px 0", padding: 0 }} />
+        <div style={{ borderTop: "1px solid rgba(168,154,135,0.3)", margin: "18px 0" }} />
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-            <span style={{ color: "#A89A87" }}>Horario</span>
-            <span>
-              {formatTime(appt.startsAt)} – {formatTime(appt.endsAt)}
-              {appt.service?.durationMins && (
-                <span style={{ color: "#A89A87", marginLeft: 8 }}>({appt.service.durationMins} min)</span>
+        {!editing ? (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
+                <span style={{ color: "#A89A87" }}>Horario</span>
+                <span>{formatTime(appt.startsAt)} – {formatTime(appt.endsAt)}{appt.service?.durationMins && <span style={{ color: "#A89A87", marginLeft: 8 }}>({appt.service.durationMins} min)</span>}</span>
+              </div>
+              {appt.client && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
+                  <span style={{ color: "#A89A87" }}>Cliente</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div>{appt.client.fullName}</div>
+                    {appt.client.whatsapp && <div style={{ fontSize: 12, color: "#A89A87" }}>{appt.client.whatsapp}</div>}
+                  </div>
+                </div>
               )}
-            </span>
-          </div>
-          {appt.client && (
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-              <span style={{ color: "#A89A87" }}>Cliente</span>
-              <div style={{ textAlign: "right" }}>
-                <div>{appt.client.fullName}</div>
-                {appt.client.whatsapp && (
-                  <div style={{ fontSize: 12, color: "#A89A87" }}>{appt.client.whatsapp}</div>
-                )}
+              {appt.room && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
+                  <span style={{ color: "#A89A87" }}>Gabinete</span>
+                  <span>{appt.room.name}</span>
+                </div>
+              )}
+              {appt.staff && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
+                  <span style={{ color: "#A89A87" }}>Terapeuta</span>
+                  <span>{appt.staff.name}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
+                <span style={{ color: "#A89A87" }}>Modalidad</span>
+                <span>{appt.modality === "domicilio" ? "A domicilio" : "En gabinete"}</span>
+              </div>
+              {appt.priceUsd != null && (
+                <div style={{ textAlign: "right", fontWeight: 600, fontSize: 16, color: "#6B5540", marginTop: 4 }}>
+                  ${Number(appt.priceUsd).toFixed(2)}
+                </div>
+              )}
+            </div>
+
+            {error && <p style={{ fontSize: 13, color: "#C25450", margin: "12px 0 0", textAlign: "center" }}>{error}</p>}
+
+            {canChange && (
+              <>
+                <div style={{ borderTop: "1px solid rgba(168,154,135,0.3)", margin: "18px 0" }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {appt.status !== "confirmado" && (
+                      <button disabled={saving} onClick={() => changeStatus("confirmado")} style={pillBtn("rgba(201,168,118,0.2)", "#8C6E50", "1px solid rgba(201,168,118,0.4)")}>Confirmar</button>
+                    )}
+                    <button disabled={saving} onClick={() => changeStatus("cancelado")} style={pillBtn("rgba(194,84,80,0.1)", "#C25450", "1px solid rgba(194,84,80,0.3)")}>Cancelar cita</button>
+                    <button disabled={saving} onClick={() => changeStatus("no_show")} style={pillBtn("rgba(168,154,135,0.15)", "#A89A87", "1px solid rgba(168,154,135,0.4)")}>No asistió</button>
+                  </div>
+                  <button disabled={saving} onClick={() => setEditing(true)} style={pillBtn("#8C6E50", "#F7F5F0")}>Reprogramar</button>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Fecha</label>
+                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Hora</label>
+                <input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} style={inputStyle} />
               </div>
             </div>
-          )}
-          {appt.room && (
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-              <span style={{ color: "#A89A87" }}>Gabinete</span>
-              <span>{appt.room.name}</span>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Gabinete</label>
+              <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+                <option value="">Sin cambio</option>
+                {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
             </div>
-          )}
-          {appt.staff && (
-            <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-              <span style={{ color: "#A89A87" }}>Terapeuta</span>
-              <span>{appt.staff.name}</span>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Terapeuta</label>
+              <select value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+                <option value="">Sin cambio</option>
+                {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-            <span style={{ color: "#A89A87" }}>Modalidad</span>
-            <span>{appt.modality === "domicilio" ? "A domicilio" : "En gabinete"}</span>
+            {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setEditing(false); setError(null); }} style={{ ...pillBtn("transparent", "#8C6E50", "1px solid #8C6E50"), flex: 1 }}>Cancelar</button>
+              <button disabled={saving} onClick={saveReschedule} style={{ ...pillBtn("#8C6E50", "#F7F5F0"), flex: 1 }}>{saving ? "Guardando…" : "Guardar"}</button>
+            </div>
           </div>
-          {appt.priceUsd != null && (
-            <div
-              style={{
-                textAlign: "right",
-                fontWeight: 600,
-                fontSize: 16,
-                color: "#6B5540",
-                marginTop: 4,
-              }}
-            >
-              ${Number(appt.priceUsd).toFixed(2)}
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );
@@ -732,7 +789,9 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated }) {
   const [newClientPhone, setNewClientPhone] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [date, setDate] = useState(defaultDate);
-  const [time, setTime] = useState("09:00");
+  const [time, setTime] = useState("");
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -750,6 +809,24 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated }) {
       setStaff(Array.isArray(u) ? u.filter((x) => x.canAttendAppointments && x.active) : []);
     });
   }, []);
+
+  useEffect(() => {
+    if (!serviceId || !date) {
+      setAvailableSlots([]);
+      setTime("");
+      return;
+    }
+    setSlotsLoading(true);
+    authFetch(`/appointments/availability`, { query: { serviceId, date, modality: "presencial" } })
+      .then((data) => {
+        const raw = Array.isArray(data?.slots) ? data.slots : Array.isArray(data) ? data : [];
+        const slots = raw.map((s) => (typeof s === "string" ? s : new Date(s).toISOString()));
+        setAvailableSlots(slots);
+        setTime((prev) => (slots.includes(prev) ? prev : slots[0] || ""));
+      })
+      .catch(() => setAvailableSlots([]))
+      .finally(() => setSlotsLoading(false));
+  }, [serviceId, date]);
 
   function searchClients(q) {
     setClientSearch(q);
@@ -806,7 +883,7 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated }) {
 
       await authFetch("/appointments", {
         method: "POST",
-        body: { clientId, serviceId, staffId, roomId, startsAt: `${date}T${time}:00`, modality: "presencial" },
+        body: { clientId, serviceId, staffId, roomId, startsAt: time, modality: "presencial" },
       });
 
       onCreated();
@@ -934,7 +1011,15 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated }) {
             </div>
             <div>
               <label style={labelStyle} htmlFor="time">Hora</label>
-              <input id="time" type="time" style={inputStyle} value={time} onChange={(e) => setTime(e.target.value)} />
+              {slotsLoading ? (
+                <div style={{ ...inputStyle, display: "flex", alignItems: "center", justifyContent: "center" }}><Loader2 size={14} className="animate-spin" style={{ color: "#A89A87" }} /></div>
+              ) : availableSlots.length > 0 ? (
+                <select id="time" style={{ ...inputStyle, appearance: "none", cursor: "pointer" }} value={time} onChange={(e) => setTime(e.target.value)}>
+                  {availableSlots.map((s) => <option key={s} value={s}>{formatTime(s)}</option>)}
+                </select>
+              ) : (
+                <div style={{ ...inputStyle, color: "#A89A87", fontSize: 13 }}>{serviceId ? "Sin horarios" : "Elige servicio"}</div>
+              )}
             </div>
           </div>
 

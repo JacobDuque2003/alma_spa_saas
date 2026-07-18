@@ -2,6 +2,8 @@ const express = require('express');
 const authenticate = require('../middleware/authenticate');
 const requirePermission = require('../middleware/requirePermission');
 const appointmentService = require('../services/appointmentService');
+const prisma = require('../utils/prisma');
+const { resolveTenantId } = require('../utils/tenantScope');
 
 const router = express.Router();
 
@@ -11,6 +13,23 @@ router.get('/', async (req, res, next) => {
   try {
     const appointments = await appointmentService.listAppointments(req.user, req.query);
     res.json(appointments);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/availability', async (req, res, next) => {
+  try {
+    const tenantId = resolveTenantId(req.user);
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const slots = await appointmentService.getAvailability({
+      tenantId,
+      tenantConfig: tenant?.config || {},
+      serviceId: req.query.serviceId,
+      date: req.query.date,
+      modality: req.query.modality || 'presencial',
+    });
+    res.json({ slots });
   } catch (err) {
     next(err);
   }

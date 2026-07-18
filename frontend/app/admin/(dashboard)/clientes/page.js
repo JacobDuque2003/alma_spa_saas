@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, Search, X } from "lucide-react";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
@@ -73,16 +73,11 @@ export default function ClientesPage() {
 
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
-  async function registerPayment() {
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+
+  function registerPayment() {
     if (!selectedId) return;
-    const amountUsd = window.prompt("Monto del pago en USD");
-    if (!amountUsd) return;
-    const method = window.prompt("Método de pago (efectivo, transferencia, tarjeta)") || "no especificado";
-    await authFetch(`/clients/${selectedId}/payments`, {
-      method: "POST",
-      body: { amountUsd: Number(amountUsd), method, description: "Pago registrado desde panel" },
-    });
-    await fetchDetail();
+    setShowPaymentForm(true);
   }
 
   const selected = clients.find((c) => c.id === selectedId);
@@ -223,6 +218,14 @@ export default function ClientesPage() {
           </div>
         ) : detail ? (
           <>
+            {showPaymentForm && (
+              <PaymentFormModal
+                clientName={detail.fullName}
+                onClose={() => setShowPaymentForm(false)}
+                onSaved={() => { setShowPaymentForm(false); fetchDetail(); }}
+                clientId={selectedId}
+              />
+            )}
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -413,6 +416,66 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
         >
           Registrar pago
         </button>
+      </div>
+    </div>
+  );
+}
+
+const modalInputStyle = { width: "100%", padding: "10px 14px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 14, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
+const modalLabelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
+
+function PaymentFormModal({ clientName, clientId, onClose, onSaved }) {
+  const [amountUsd, setAmountUsd] = useState("");
+  const [method, setMethod] = useState("efectivo");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!Number(amountUsd) || Number(amountUsd) <= 0) {
+      setError("Ingresa un monto válido");
+      return;
+    }
+    setSaving(true);
+    try {
+      await authFetch(`/clients/${clientId}/payments`, {
+        method: "POST",
+        body: { amountUsd: Number(amountUsd), method, description: "Pago registrado desde panel" },
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message || "Error al registrar pago");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, margin: "0 16px", background: "#F7F5F0", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
+          <X size={20} />
+        </button>
+        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>Registrar pago</h2>
+        <p style={{ margin: "0 0 20px", fontSize: 13, color: "#A89A87" }}>{clientName}</p>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={modalLabelStyle}>Monto (USD)</label>
+            <input type="number" step="0.01" min="0.01" style={modalInputStyle} value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} placeholder="45.00" autoFocus />
+          </div>
+          <div>
+            <label style={modalLabelStyle}>Método de pago</label>
+            <select value={method} onChange={(e) => setMethod(e.target.value)} style={{ ...modalInputStyle, appearance: "none", cursor: "pointer" }}>
+              <option value="efectivo">Efectivo</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="tarjeta">Tarjeta</option>
+            </select>
+          </div>
+          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
+            <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Registrando…" : "Registrar pago"}</button>
+          </div>
+        </form>
       </div>
     </div>
   );

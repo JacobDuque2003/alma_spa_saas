@@ -96,40 +96,53 @@ function Shell({ children }) {
         >
           {user && (
             <>
-              <span
+              <Link
+                href="/admin/perfil"
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  background: "#C9A876",
-                  color: "#F7F5F0",
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  flexShrink: 0,
+                  gap: 10,
+                  textDecoration: "none",
+                  minWidth: 0,
+                  flex: 1,
                 }}
+                title="Mi perfil"
               >
-                {getInitials(user.name)}
-              </span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div
+                <span
                   style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    background: "#C9A876",
+                    color: "#F7F5F0",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                     fontSize: 13,
-                    fontWeight: 500,
-                    color: "#6B5540",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                    fontWeight: 600,
+                    flexShrink: 0,
                   }}
                 >
-                  {user.name}
+                  {getInitials(user.name)}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: "#6B5540",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {user.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#A89A87" }}>
+                    {ROLE_LABELS[user.role] || user.role}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: "#A89A87" }}>
-                  {ROLE_LABELS[user.role] || user.role}
-                </div>
-              </div>
+              </Link>
               <button
                 onClick={logout}
                 style={{
