@@ -62,6 +62,17 @@ router.get('/clients/:clientId', clientes, async (req, res, next) => {
   }
 });
 
+router.patch('/clients/:clientId', clientes, async (req, res, next) => {
+  try {
+    const client = await clientService.updateClient(req.user, req.params.clientId, req.body);
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(client);
+  } catch (err) {
+    logCrossTenant(req, err);
+    next(err);
+  }
+});
+
 // --- Anamnesis (ClientIntake) ---
 
 router.get('/clients/:clientId/intake', clientes, async (req, res, next) => {

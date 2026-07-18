@@ -124,4 +124,23 @@ async function createClient(actor, data) {
   return toClientSafeDto(client);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient };
+async function updateClient(actor, clientId, changes) {
+  const client = await loadClientForActor(actor, clientId);
+  if (!client) return null;
+
+  const data = {};
+  if (changes.fullName !== undefined) data.fullName = changes.fullName;
+  if (changes.email !== undefined) data.email = changes.email || null;
+  if (changes.whatsapp !== undefined) data.whatsapp = normalizePhone(changes.whatsapp);
+
+  if (Object.keys(data).length === 0) return toClientSafeDto(client);
+
+  const updated = await prisma.client.update({
+    where: { id: clientId },
+    data,
+    select: CLIENT_SAFE_SELECT,
+  });
+  return toClientSafeDto(updated);
+}
+
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient };

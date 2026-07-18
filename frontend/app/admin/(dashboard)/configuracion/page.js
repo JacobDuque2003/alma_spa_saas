@@ -267,8 +267,8 @@ export default function ConfiguracionPage() {
     await fetchData();
   }
 
-  async function updateRoom(room, specialty) {
-    await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: { specialty } });
+  async function updateRoom(room, changes) {
+    await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
     await fetchData();
   }
 
@@ -357,11 +357,18 @@ export default function ConfiguracionPage() {
             </div>
             <div style={{ display: "flex", flexDirection: "column" }}>
               {rooms.filter((r) => r.active).map((r, i, arr) => (
-                <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none" }}>
-                  <span style={{ fontSize: 14, color: "#6B5540" }}>{r.name}</span>
-                  <select value={r.specialty} onChange={(e) => updateRoom(r, e.target.value)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none" }}>
+                <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: 10, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none" }}>
+                  <input
+                    defaultValue={r.name}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== r.name) updateRoom(r, { name: v }); }}
+                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 14, color: "#6B5540", outline: "none", minWidth: 0 }}
+                  />
+                  <select value={r.specialty} onChange={(e) => updateRoom(r, { specialty: e.target.value })} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none" }}>
                     {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  <button onClick={() => { if (confirm("¿Desactivar este gabinete?")) authFetch(`/rooms/${r.id}`, { method: "DELETE" }).then(fetchData); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#A89A87", padding: 4 }} title="Desactivar">
+                    <X size={16} />
+                  </button>
                 </div>
               ))}
             </div>

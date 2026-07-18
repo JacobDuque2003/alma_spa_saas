@@ -74,6 +74,8 @@ export default function ClientesPage() {
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showEditClient, setShowEditClient] = useState(false);
+  const [showEditIntake, setShowEditIntake] = useState(false);
 
   function registerPayment() {
     if (!selectedId) return;
@@ -226,6 +228,21 @@ export default function ClientesPage() {
                 clientId={selectedId}
               />
             )}
+            {showEditClient && (
+              <EditClientModal
+                client={detail}
+                onClose={() => setShowEditClient(false)}
+                onSaved={() => { setShowEditClient(false); fetchDetail(); fetchClients(); }}
+              />
+            )}
+            {showEditIntake && (
+              <EditIntakeModal
+                clientId={selectedId}
+                intake={intake}
+                onClose={() => setShowEditIntake(false)}
+                onSaved={() => { setShowEditIntake(false); fetchDetail(); }}
+              />
+            )}
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -257,6 +274,23 @@ export default function ClientesPage() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => setShowEditClient(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "9px 20px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(168,154,135,0.5)",
+                    background: "none",
+                    color: "#6B5540",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Editar
+                </button>
                 <Link
                   href="/admin/crm"
                   style={{
@@ -274,7 +308,7 @@ export default function ClientesPage() {
                   Abrir chat
                 </Link>
                 <Link
-                  href="/admin/agenda"
+                  href={`/admin/agenda?clientId=${selectedId}&clientName=${encodeURIComponent(detail.fullName)}`}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -295,7 +329,7 @@ export default function ClientesPage() {
             {/* Content grid */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 18, flex: 1, minHeight: 0 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 18, minHeight: 0 }}>
-                <IntakeCard intake={intake} />
+                <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />
                 <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />
               </div>
               <TreatmentsCard treatments={treatments} />
@@ -311,14 +345,14 @@ export default function ClientesPage() {
   );
 }
 
-function IntakeCard({ intake }) {
+function IntakeCard({ intake, onEdit }) {
   return (
     <div style={{ background: "#F7F5F0", border: "1px solid rgba(168,154,135,0.4)", borderRadius: 12, padding: 22 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
-          Ficha de anamnesis estética
+          Ficha de anamnesis
         </h3>
-        <span style={{ fontSize: 13, color: "#8C6E50", textDecoration: "underline", cursor: "pointer" }}>Editar</span>
+        <button onClick={onEdit} style={{ fontSize: 13, color: "#8C6E50", textDecoration: "underline", cursor: "pointer", background: "none", border: "none" }}>Editar</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
@@ -474,6 +508,82 @@ function PaymentFormModal({ clientName, clientId, onClose, onSaved }) {
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
             <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Registrando…" : "Registrar pago"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditClientModal({ client, onClose, onSaved }) {
+  const [fullName, setFullName] = useState(client.fullName || "");
+  const [whatsapp, setWhatsapp] = useState(client.whatsapp || "");
+  const [email, setEmail] = useState(client.email || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!fullName.trim() || !whatsapp.trim()) { setError("Nombre y WhatsApp son obligatorios"); return; }
+    setSaving(true);
+    try {
+      await authFetch(`/clients/${client.id}`, { method: "PATCH", body: { fullName: fullName.trim(), whatsapp: whatsapp.trim(), email: email.trim() || null } });
+      onSaved();
+    } catch (err) { setError(err.message || "Error al guardar"); setSaving(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, margin: "0 16px", background: "#F7F5F0", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}><X size={20} /></button>
+        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>Editar clienta</h2>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div><label style={modalLabelStyle}>Nombre completo</label><input style={modalInputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
+          <div><label style={modalLabelStyle}>WhatsApp</label><input style={modalInputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} /></div>
+          <div><label style={modalLabelStyle}>Correo (opcional)</label><input type="email" style={modalInputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
+            <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando…" : "Guardar"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditIntakeModal({ clientId, intake, onClose, onSaved }) {
+  const [allergies, setAllergies] = useState(intake?.allergies || "");
+  const [conditions, setConditions] = useState(intake?.conditions || "");
+  const [consentSigned, setConsentSigned] = useState(intake?.consentSigned || false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await authFetch(`/clients/${clientId}/intake`, { method: "PUT", body: { allergies, conditions, consentSigned } });
+      onSaved();
+    } catch (err) { setError(err.message || "Error al guardar"); setSaving(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, margin: "0 16px", background: "#F7F5F0", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}><X size={20} /></button>
+        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>Ficha de anamnesis</h2>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div><label style={modalLabelStyle}>Alergias</label><textarea style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Ninguna conocida" /></div>
+          <div><label style={modalLabelStyle}>Condiciones relevantes</label><textarea style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} value={conditions} onChange={(e) => setConditions(e.target.value)} placeholder="Ninguna" /></div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={consentSigned} onChange={(e) => setConsentSigned(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#8C6E50" }} />
+            <span style={{ fontSize: 13, color: "#6B5540" }}>Consentimiento firmado</span>
+          </label>
+          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
+            <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando…" : "Guardar"}</button>
           </div>
         </form>
       </div>

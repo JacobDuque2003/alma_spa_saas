@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, X, Search } from "lucide-react";
 
@@ -95,13 +96,16 @@ function formatDayFull(dateStr) {
 
 export default function AgendaPage() {
   const today = toLocalDate(new Date());
+  const searchParams = useSearchParams();
+  const preClientId = searchParams.get("clientId");
+  const preClientName = searchParams.get("clientName");
   const [view, setView] = useState("week");
   const [selectedDate, setSelectedDate] = useState(today);
   const [appointments, setAppointments] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
-  const [showNewForm, setShowNewForm] = useState(false);
+  const [showNewForm, setShowNewForm] = useState(!!preClientId);
   const [staffList, setStaffList] = useState([]);
 
   const fetchData = useCallback(async () => {
@@ -351,6 +355,7 @@ export default function AgendaPage() {
           defaultDate={selectedDate}
           onClose={() => setShowNewForm(false)}
           onCreated={handleCreated}
+          preSelectedClient={preClientId ? { id: preClientId, fullName: preClientName || "" } : null}
         />
       )}
     </div>
@@ -776,14 +781,14 @@ function AppointmentDetail({ appt, rooms, staffList, onClose, onUpdated }) {
   );
 }
 
-function NewAppointmentForm({ defaultDate, onClose, onCreated }) {
+function NewAppointmentForm({ defaultDate, onClose, onCreated, preSelectedClient }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
-  const [clientSearch, setClientSearch] = useState("");
+  const [clientSearch, setClientSearch] = useState(preSelectedClient?.fullName || "");
   const [clientResults, setClientResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [selectedClient, setSelectedClient] = useState(null);
+  const [selectedClient, setSelectedClient] = useState(preSelectedClient || null);
   const [showNewClient, setShowNewClient] = useState(false);
   const [newClientName, setNewClientName] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
