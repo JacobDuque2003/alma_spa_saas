@@ -314,7 +314,7 @@ export default function CRMPage() {
                     }}
                   >
                     <p style={{ margin: 0 }}>
-                      {m.body || (m.type === "template" ? `[Plantilla: ${m.templateName || "recordatorio"}]` : `[${m.type}]`)}
+                      {m.body || (m.type === "template" ? `Recordatorio enviado` : `Mensaje ${m.type === "image" ? "con imagen" : ""}`)}
                     </p>
                     <p style={{ margin: "6px 0 0", textAlign: "right", fontSize: 11, color: "#A89A87" }}>
                       {time(m.createdAt)} {m.status ? `· ${m.status}` : ""}
@@ -345,7 +345,7 @@ export default function CRMPage() {
                   color: "#6B5540",
                   outline: "none",
                 }}
-                placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Ventana 24h cerrada: usa recordatorio"}
+                placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Han pasado mas de 24h — envia un recordatorio"}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 disabled={!selected.withinWindow || sending}

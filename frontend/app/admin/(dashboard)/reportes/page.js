@@ -147,7 +147,7 @@ export default function ReportesPage() {
                 value: s.citasAtendidas,
                 label: s.ingresosUsd ? `${s.citasAtendidas} · ${money(s.ingresosUsd)}` : `${s.citasAtendidas}`,
               }))}
-              note="Sesiones atendidas; ingresos solo si backend los autoriza."
+              note="Sesiones atendidas; ingresos visibles solo para la duena."
             />
           </RCard>
 

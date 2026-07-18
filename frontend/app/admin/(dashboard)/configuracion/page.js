@@ -377,8 +377,8 @@ export default function ConfiguracionPage() {
           <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
             <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Datos en Excel</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <ExcelBox icon={Upload} title="Subir Excel para actualizar" body="Fase 7 esta pausada hasta recibir el archivo real." button="Subir Excel" />
-              <ExcelBox icon={Download} title="Descargar respaldo completo" body="Exportacion pendiente de Fase 7." button="Descargar respaldo" />
+              <ExcelBox icon={Upload} title="Subir Excel para actualizar" body="Disponible proximamente." button="Subir Excel" />
+              <ExcelBox icon={Download} title="Descargar respaldo completo" body="Disponible proximamente." button="Descargar respaldo" />
             </div>
           </div>
         </div>
@@ -399,7 +399,7 @@ function ExcelBox({ icon: Icon, title, body, button }) {
       <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>{body}</p>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
         <button disabled style={{ padding: "7px 16px", borderRadius: 999, background: "#8C6E50", color: "#F7F5F0", border: "none", fontSize: 13, opacity: 0.5, cursor: "not-allowed" }}>{button}</button>
-        <span style={{ padding: "3px 10px", borderRadius: 999, background: "rgba(201,168,118,0.2)", color: "#8C6E50", fontSize: 11, fontWeight: 500 }}>Pausado</span>
+        <span style={{ padding: "3px 10px", borderRadius: 999, background: "rgba(201,168,118,0.2)", color: "#8C6E50", fontSize: 11, fontWeight: 500 }}>Proximamente</span>
       </div>
     </div>
   );

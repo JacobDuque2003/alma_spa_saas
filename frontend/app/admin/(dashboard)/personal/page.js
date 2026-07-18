@@ -33,7 +33,7 @@ function roleLabel(role) {
 }
 function permissionsSummary(user) {
   const rp = user.rolePermission || {};
-  if (user.role !== "personal") return "Acceso completo a todos los modulos";
+  if (user.role !== "personal") return "Acceso completo a todas las secciones";
   const enabled = MODULES.filter(([k]) => rp[k]).map(([, label]) => label);
   return enabled.length ? enabled.join(", ") : "Sin permisos activos";
 }
