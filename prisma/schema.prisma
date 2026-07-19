@@ -26,6 +26,7 @@ model Tenant {
 
   users                 User[]
   services              Service[]
+  serviceCategories     ServiceCategory[]
   rooms                 Room[]
   plans                 Plan[]
   clients               Client[]
@@ -97,6 +98,20 @@ model Service {
   @@index([tenantId, category, active])
 }
 
+model ServiceCategory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
+}
+
 enum RoomStatus {
   libre
   ocupado
@@ -108,6 +123,8 @@ model Room {
   tenantId  String
   name      String
   specialty String
+  opensAt   String     @default("09:00")
+  closesAt  String     @default("19:00")
   status    RoomStatus @default(libre)
   active    Boolean    @default(true)
   createdAt DateTime   @default(now())

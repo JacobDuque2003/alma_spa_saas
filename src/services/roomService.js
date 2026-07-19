@@ -46,6 +46,8 @@ async function createRoom(actor, data) {
       tenantId,
       name: data.name,
       specialty: data.specialty,
+      opensAt: data.opensAt || '09:00',
+      closesAt: data.closesAt || '19:00',
       status: 'libre',
       active: true,
     },
@@ -64,6 +66,8 @@ async function updateRoom(actor, id, changes) {
     data.specialty = changes.specialty;
   }
   if (changes.status !== undefined) data.status = changes.status;
+  if (changes.opensAt !== undefined) data.opensAt = changes.opensAt;
+  if (changes.closesAt !== undefined) data.closesAt = changes.closesAt;
 
   return prisma.room.update({ where: { id }, data });
 }

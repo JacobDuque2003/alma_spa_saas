@@ -47,7 +47,7 @@ async function listUsers(actor, query = {}) {
 }
 
 async function createUser(actor, data) {
-  const { email, password, name, role, permissions } = data;
+  const { email, password, name, role, permissions, canAttendAppointments } = data;
 
   if (role === 'superadmin') {
     throw new BadRequestError('No se pueden crear cuentas superadmin vía API');
@@ -68,6 +68,7 @@ async function createUser(actor, data) {
       role,
       tenantId,
       isProtected: false,
+      canAttendAppointments: !!canAttendAppointments,
       ...(role === 'personal'
         ? {
             rolePermission: {

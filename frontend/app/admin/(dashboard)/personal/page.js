@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2, ShieldCheck, X } from "lucide-react";
 
 const PLATFORM_SUPPORT_USER = {
   id: "platform-support",
@@ -38,6 +38,186 @@ function permissionsSummary(user) {
   return enabled.length ? enabled.join(", ") : "Sin permisos activos";
 }
 
+const inputStyle = {
+  width: "100%",
+  padding: "10px 14px",
+  border: "1px solid rgba(168,154,135,0.5)",
+  borderRadius: 8,
+  fontSize: 14,
+  color: "#6B5540",
+  background: "#FDFCFA",
+  outline: "none",
+  boxSizing: "border-box",
+};
+const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
+const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
+const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
+
+function NewUserModal({ onClose, onSaved }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("personal");
+  const [permissions, setPermissions] = useState(
+    Object.fromEntries(MODULES.map(([k]) => [k, false]))
+  );
+  const [canAttendAppointments, setCanAttendAppointments] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim() || !email.trim() || !password) {
+      setError("Nombre, email y contraseña son requeridos");
+      return;
+    }
+    if (password.length < 10) {
+      setError("La contraseña debe tener al menos 10 caracteres");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await authFetch("/users", {
+        method: "POST",
+        body: {
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          role,
+          canAttendAppointments,
+          permissions: role === "personal" ? permissions : undefined,
+        },
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message || "Error al crear la cuenta");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 50,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(58,47,38,0.4)",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          margin: "0 16px",
+          background: "#F7F5F0",
+          borderRadius: 16,
+          padding: 28,
+          position: "relative",
+          boxShadow: "0 24px 64px rgba(107,85,64,0.18)",
+        }}
+      >
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}
+        >
+          <X size={20} />
+        </button>
+        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>
+          Invitar cuenta
+        </h2>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={labelStyle}>Nombre</label>
+            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre completo" />
+          </div>
+          <div>
+            <label style={labelStyle}>Email</label>
+            <input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+          </div>
+          <div>
+            <label style={labelStyle}>Contraseña</label>
+            <input type="password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 10 caracteres" />
+          </div>
+          <div>
+            <label style={labelStyle}>Rol</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}
+            >
+              <option value="personal">Terapeuta</option>
+              <option value="dueno">Dueña</option>
+            </select>
+          </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={canAttendAppointments}
+              onChange={(e) => setCanAttendAppointments(e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: "#8C6E50" }}
+            />
+            <span style={{ fontSize: 13, color: "#6B5540" }}>Puede atender citas</span>
+          </label>
+
+          {role === "personal" && (
+            <div>
+              <label style={{ ...labelStyle, marginBottom: 8 }}>Permisos por módulo</label>
+              <div
+                style={{
+                  border: "1px solid rgba(168,154,135,0.4)",
+                  borderRadius: 8,
+                  padding: "4px 14px",
+                }}
+              >
+                {MODULES.map(([key, label], i) => (
+                  <label
+                    key={key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      padding: "10px 0",
+                      borderBottom: i < MODULES.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: "#6B5540" }}>{label}</span>
+                    <input
+                      type="checkbox"
+                      checked={!!permissions[key]}
+                      onChange={(e) => setPermissions((p) => ({ ...p, [key]: e.target.checked }))}
+                      style={{ width: 18, height: 18, accentColor: "#8C6E50" }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button type="button" onClick={onClose} style={pillSecondary}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>
+              {saving ? "Creando…" : "Crear cuenta"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function PersonalPage() {
   const [users, setUsers] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -45,6 +225,7 @@ export default function PersonalPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showNewUser, setShowNewUser] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -101,6 +282,7 @@ export default function PersonalPage() {
             <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Cuentas del spa y permisos</p>
           </div>
           <button
+            onClick={() => setShowNewUser(true)}
             style={{
               padding: "9px 20px",
               borderRadius: 999,
@@ -354,6 +536,16 @@ export default function PersonalPage() {
           </div>
         )}
       </div>
+
+      {showNewUser && (
+        <NewUserModal
+          onClose={() => setShowNewUser(false)}
+          onSaved={() => {
+            setShowNewUser(false);
+            fetchUsers();
+          }}
+        />
+      )}
     </div>
   );
 }
