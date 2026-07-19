@@ -21,6 +21,9 @@ const pinyon = Pinyon_Script({
 export const metadata = {
   title: "ALMA Spa — Belleza y Bienestar Holística",
   description: "Reserva tu cita en ALMA Spa",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }) {

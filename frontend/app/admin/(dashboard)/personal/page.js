@@ -113,11 +113,13 @@ function NewUserModal({ onClose, onSaved }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
-          maxWidth: 480,
+          maxWidth: 420,
+          maxHeight: "90vh",
+          overflowY: "auto",
           margin: "0 16px",
           background: "#F7F5F0",
           borderRadius: 16,
-          padding: 28,
+          padding: "24px 24px 20px",
           position: "relative",
           boxShadow: "0 24px 64px rgba(107,85,64,0.18)",
         }}
@@ -129,7 +131,7 @@ function NewUserModal({ onClose, onSaved }) {
           <X size={20} />
         </button>
         <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>
-          Invitar cuenta
+          Agregar usuario
         </h2>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
@@ -276,7 +278,7 @@ export default function PersonalPage() {
       <div style={{ width: 420, flex: "0 0 420px", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
-            <h1 className="font-heading" style={{ fontSize: 30, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
+            <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
               Personal
             </h1>
             <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Cuentas del spa y permisos</p>
@@ -294,7 +296,7 @@ export default function PersonalPage() {
               cursor: "pointer",
             }}
           >
-            + Invitar cuenta
+            + Agregar usuario
           </button>
         </div>
 

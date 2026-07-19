@@ -98,7 +98,7 @@ export default function PerfilPage() {
   return (
     <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", gap: 22, overflowY: "auto", maxWidth: 600 }}>
       <div>
-        <h1 className="font-heading" style={{ fontSize: 30, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Mi perfil</h1>
+        <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Mi perfil</h1>
         <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Datos de tu cuenta y seguridad</p>
       </div>
 

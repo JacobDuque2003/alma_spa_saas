@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Settings, X } from "lucide-react";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
@@ -23,6 +23,17 @@ export default function CRMPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [quickReplies, setQuickReplies] = useState([
+    "Hola, gracias por escribirnos a Alma Spa. ¿En qué podemos ayudarte?",
+    "Tu cita ha sido confirmada. Te esperamos.",
+    "Nuestro horario es de lunes a viernes de 9:00 a 19:00.",
+    "¿Te gustaría agendar una cita? Puedo ayudarte con eso.",
+  ]);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [showEditReplies, setShowEditReplies] = useState(false);
+  const [editingReplyIdx, setEditingReplyIdx] = useState(null);
+  const [editReplyText, setEditReplyText] = useState("");
+  const [newReplyText, setNewReplyText] = useState("");
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
@@ -94,6 +105,41 @@ export default function CRMPage() {
     } finally {
       setSending(false);
     }
+  }
+
+  function useQuickReply(text) {
+    setBody(text);
+    setShowQuickReplies(false);
+  }
+
+  function deleteQuickReply(idx) {
+    setQuickReplies((prev) => prev.filter((_, i) => i !== idx));
+    if (editingReplyIdx === idx) {
+      setEditingReplyIdx(null);
+      setEditReplyText("");
+    }
+  }
+
+  function startEditQuickReply(idx) {
+    setEditingReplyIdx(idx);
+    setEditReplyText(quickReplies[idx]);
+  }
+
+  function saveEditQuickReply() {
+    if (editingReplyIdx === null) return;
+    const text = editReplyText.trim();
+    if (text) {
+      setQuickReplies((prev) => prev.map((r, i) => (i === editingReplyIdx ? text : r)));
+    }
+    setEditingReplyIdx(null);
+    setEditReplyText("");
+  }
+
+  function addQuickReply() {
+    const text = newReplyText.trim();
+    if (!text) return;
+    setQuickReplies((prev) => [...prev, text]);
+    setNewReplyText("");
   }
 
   return (
@@ -235,7 +281,17 @@ export default function CRMPage() {
       </div>
 
       {/* Chat area */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "#E7E3DC" }}>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+          background: "#E7E3DC",
+          backgroundImage: "radial-gradient(circle, rgba(168,154,135,0.12) 1px, transparent 1px)",
+          backgroundSize: "20px 20px",
+        }}
+      >
         {selected ? (
           <>
             {/* Chat header */}
@@ -293,7 +349,7 @@ export default function CRMPage() {
             </div>
 
             {error && (
-              <div style={{ margin: "12px 24px 0", padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>
+              <div style={{ margin: "12px 24px 0", padding: 12, borderRadius: 8, background: "rgba(201,168,118,0.15)", color: "#8C6E50", fontSize: 13 }}>
                 {error}
               </div>
             )}
@@ -327,6 +383,7 @@ export default function CRMPage() {
             {/* Input */}
             <div
               style={{
+                position: "relative",
                 display: "flex",
                 gap: 12,
                 padding: "16px 24px",
@@ -334,6 +391,193 @@ export default function CRMPage() {
                 background: "#F7F5F0",
               }}
             >
+              {showQuickReplies && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#F7F5F0",
+                    borderTop: "1px solid rgba(168,154,135,0.35)",
+                    maxHeight: 280,
+                    overflowY: "auto",
+                    padding: "12px 24px",
+                    boxShadow: "0 -4px 16px rgba(107,85,64,0.08)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#6B5540", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      Respuestas rapidas
+                    </span>
+                    <button
+                      onClick={() => setShowEditReplies((v) => !v)}
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        border: "none",
+                        background: showEditReplies ? "#C9A876" : "rgba(201,168,118,0.2)",
+                        color: showEditReplies ? "#F7F5F0" : "#8C6E50",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      title="Editar respuestas"
+                    >
+                      <Settings size={14} />
+                    </button>
+                  </div>
+
+                  {quickReplies.length === 0 && (
+                    <p style={{ fontSize: 13, color: "#A89A87", margin: "10px 0" }}>No hay respuestas guardadas.</p>
+                  )}
+
+                  {quickReplies.map((reply, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 0",
+                        borderBottom: "1px solid rgba(168,154,135,0.2)",
+                        cursor: showEditReplies ? "default" : "pointer",
+                        fontSize: 13,
+                        color: "#6B5540",
+                      }}
+                    >
+                      {showEditReplies ? (
+                        editingReplyIdx === idx ? (
+                          <input
+                            autoFocus
+                            value={editReplyText}
+                            onChange={(e) => setEditReplyText(e.target.value)}
+                            onBlur={saveEditQuickReply}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEditQuickReply();
+                              if (e.key === "Escape") {
+                                setEditingReplyIdx(null);
+                                setEditReplyText("");
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              marginRight: 10,
+                              padding: "6px 10px",
+                              borderRadius: 6,
+                              border: "1px solid rgba(168,154,135,0.5)",
+                              fontSize: 13,
+                              color: "#6B5540",
+                              outline: "none",
+                            }}
+                          />
+                        ) : (
+                          <span
+                            onClick={() => startEditQuickReply(idx)}
+                            style={{ flex: 1, marginRight: 10, cursor: "pointer" }}
+                          >
+                            {reply}
+                          </span>
+                        )
+                      ) : (
+                        <span onClick={() => useQuickReply(reply)} style={{ flex: 1, marginRight: 10 }}>
+                          {reply}
+                        </span>
+                      )}
+                      {showEditReplies && (
+                        <button
+                          onClick={() => deleteQuickReply(idx)}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: "50%",
+                            border: "none",
+                            background: "rgba(194,84,80,0.12)",
+                            color: "#C25450",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                          title="Eliminar"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {showEditReplies && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <input
+                        value={newReplyText}
+                        onChange={(e) => setNewReplyText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addQuickReply();
+                        }}
+                        placeholder="Nueva respuesta rapida…"
+                        style={{
+                          flex: 1,
+                          padding: "8px 12px",
+                          borderRadius: 6,
+                          border: "1px solid rgba(168,154,135,0.5)",
+                          fontSize: 13,
+                          color: "#6B5540",
+                          outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={addQuickReply}
+                        disabled={!newReplyText.trim()}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 6,
+                          border: "none",
+                          background: "#C9A876",
+                          color: "#F7F5F0",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          cursor: newReplyText.trim() ? "pointer" : "default",
+                          opacity: newReplyText.trim() ? 1 : 0.5,
+                        }}
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                onClick={() => setShowQuickReplies(!showQuickReplies)}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  background: showQuickReplies ? "#C9A876" : "rgba(201,168,118,0.2)",
+                  color: showQuickReplies ? "#F7F5F0" : "#8C6E50",
+                  border: "none",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  flexShrink: 0,
+                }}
+                title="Respuestas rápidas"
+              >
+                ⚡
+              </button>
               <input
                 style={{
                   flex: 1,

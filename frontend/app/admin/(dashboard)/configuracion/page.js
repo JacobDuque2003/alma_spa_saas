@@ -27,6 +27,34 @@ const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBot
 const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 
+const cardStyle = {
+  background: "#F7F5F0",
+  border: "1px solid rgba(168,154,135,0.4)",
+  borderRadius: 12,
+  padding: 24,
+};
+
+function Toggle({ checked, onChange }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
+      style={{
+        width: 44, height: 24, borderRadius: 12, border: "none",
+        background: checked ? "#C9A876" : "rgba(168,154,135,0.3)",
+        position: "relative", cursor: "pointer", transition: "background 0.2s",
+        flexShrink: 0,
+      }}
+    >
+      <span style={{
+        position: "absolute", top: 2, left: checked ? 22 : 2,
+        width: 20, height: 20, borderRadius: "50%",
+        background: "#F7F5F0", transition: "left 0.2s",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+      }} />
+    </button>
+  );
+}
+
 function ServiceFormModal({ categories, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -106,56 +134,6 @@ function RoomFormModal({ categories, onClose, onSaved }) {
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear gabinete"}</button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function PlanFormModal({ onClose, onSaved }) {
-  const [name, setName] = useState("");
-  const [sessionsIncluded, setSessionsIncluded] = useState("");
-  const [period, setPeriod] = useState("mensual");
-  const [priceUsd, setPriceUsd] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!name.trim() || !Number(sessionsIncluded) || !Number(priceUsd)) {
-      setError("Nombre, sesiones y precio son requeridos");
-      return;
-    }
-    setSaving(true);
-    try {
-      await authFetch("/plans", { method: "POST", body: { name: name.trim(), sessionsIncluded: Number(sessionsIncluded), period, priceUsd: Number(priceUsd), appliesToAllServices: true, includesHomeService: false } });
-      onSaved();
-    } catch (err) {
-      setError(err.message || "Error al crear plan");
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal title="Nuevo plan" onClose={onClose}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Plan mensual masajes" /></div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div><label style={labelStyle}>Sesiones</label><input type="number" style={inputStyle} value={sessionsIncluded} onChange={(e) => setSessionsIncluded(e.target.value)} placeholder="4" /></div>
-          <div>
-            <label style={labelStyle}>Periodo</label>
-            <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
-              <option value="mensual">Mensual</option>
-              <option value="trimestral">Trimestral</option>
-              <option value="anual">Anual</option>
-            </select>
-          </div>
-        </div>
-        <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="80.00" /></div>
-        {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
-        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-          <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
-          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear plan"}</button>
         </div>
       </form>
     </Modal>
@@ -260,21 +238,96 @@ function BusinessHoursPanel({ onRefresh }) {
   );
 }
 
+function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) {
+  const [name, setName] = useState(r.name);
+  const [specialty, setSpecialty] = useState(r.specialty);
+  const [opensAt, setOpensAt] = useState(r.opensAt || "09:00");
+  const [closesAt, setClosesAt] = useState(r.closesAt || "19:00");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setName(r.name);
+    setSpecialty(r.specialty);
+    setOpensAt(r.opensAt || "09:00");
+    setClosesAt(r.closesAt || "19:00");
+  }, [r]);
+
+  const dirty = name !== r.name || specialty !== r.specialty || opensAt !== (r.opensAt || "09:00") || closesAt !== (r.closesAt || "19:00");
+  const active = r.active !== false;
+
+  async function handleSave() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await onUpdate(r, { name: name.trim(), specialty, opensAt, closesAt });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ borderBottom: isLast ? "none" : "1px solid rgba(168,154,135,0.3)", opacity: active ? 1 : 0.5 }}>
+      <div
+        onClick={onToggleExpand}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", cursor: "pointer", gap: 10 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C9A876", flexShrink: 0 }} />
+          <span style={{ fontSize: 14, fontWeight: 500, color: "#6B5540", whiteSpace: "nowrap" }}>{r.name}</span>
+          <span style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.specialty} · {r.opensAt || "09:00"}-{r.closesAt || "19:00"}</span>
+          {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450", flexShrink: 0 }}>Inactivo</span>}
+        </div>
+        <Toggle checked={active} onChange={(val) => onUpdate(r, { active: val })} />
+      </div>
+      {expanded && (
+        <div style={{ padding: "0 0 18px", display: "flex", flexDirection: "column", gap: 12 }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Nombre</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Especialidad</label>
+              <select value={specialty} onChange={(e) => setSpecialty(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Apertura</label>
+              <input type="time" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Cierre</label>
+              <input type="time" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+          {dirty && (
+            <button onClick={handleSave} disabled={saving} style={{ alignSelf: "flex-start", padding: "8px 20px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
+              {saving ? "Guardando…" : "Guardar"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ConfiguracionPage() {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dbCategories, setDbCategories] = useState([]);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
-  const [showPlanForm, setShowPlanForm] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
   const [editCatId, setEditCatId] = useState(null);
   const [editCatName, setEditCatName] = useState("");
+  const [expandedRoomId, setExpandedRoomId] = useState(null);
 
-  const derivedCategories = useMemo(() => [...new Set(services.filter((s) => s.active).map((s) => s.category))], [services]);
+  const derivedCategories = useMemo(() => [...new Set(services.map((s) => s.category))], [services]);
   const categories = useMemo(() => {
     const dbNames = dbCategories.map((c) => c.name);
     const merged = [...dbNames, ...derivedCategories.filter((d) => !dbNames.includes(d))];
@@ -285,10 +338,9 @@ export default function ConfiguracionPage() {
     setLoading(true);
     setError("");
     try {
-      const [s, r, p, cats] = await Promise.all([authFetch("/services"), authFetch("/rooms"), authFetch("/plans"), authFetch("/categories").catch(() => [])]);
+      const [s, r, cats] = await Promise.all([authFetch("/services"), authFetch("/rooms"), authFetch("/categories").catch(() => [])]);
       setServices(s);
       setRooms(r);
-      setPlans(p);
       setDbCategories(Array.isArray(cats) ? cats : []);
     } catch (err) {
       setError(err.message);
@@ -316,92 +368,78 @@ export default function ConfiguracionPage() {
     fetchData();
   }
 
-  const cardStyle = {
-    background: "#F7F5F0",
-    border: "1px solid rgba(168,154,135,0.4)",
-    borderRadius: 12,
-    padding: 24,
-    minHeight: 300,
-  };
-
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", gap: 22, overflowY: "auto" }}>
-      <div>
-        <h1 className="font-heading" style={{ fontSize: 30, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Configuracion</h1>
-        <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, gabinetes, planes y respaldo de datos</p>
-      </div>
-
-      {error && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{error}</div>}
-
-      {loading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
+    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto" }}>
+      <div style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: 20 }}>
+        <div>
+          <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Configuracion</h1>
+          <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Servicios, categorias, gabinetes y horario de atencion</p>
         </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          {/* Servicios y precios */}
-          <div style={cardStyle}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-              <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: 0 }}>Servicios y precios</h3>
-              <button onClick={() => setShowServiceForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                <Plus size={14} /> Anadir servicio
-              </button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {services.filter((s) => s.active).map((s, i, arr) => (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none" }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 14, color: "#6B5540" }}>{s.name}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: "#A89A87" }}>1 h · {s.category}{s.offersHomeService ? " · domicilio" : ""}</p>
-                  </div>
-                  <input type="number" step="0.01" defaultValue={Number(s.priceUsd).toFixed(2)} onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }} style={{ width: 90, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none" }} />
-                  <button onClick={() => updateService(s, { offersHomeService: !s.offersHomeService })} style={{ padding: "5px 14px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: s.offersHomeService ? "rgba(201,168,118,0.2)" : "transparent", color: "#8C6E50", fontSize: 12, cursor: "pointer" }}>
-                    {s.offersHomeService ? "Domicilio" : "Spa"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Planes y membresias */}
-          <div style={cardStyle}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-              <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: 0 }}>Planes y membresias</h3>
-              <button onClick={() => setShowPlanForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                <Plus size={14} /> Crear plan
-              </button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {plans.filter((p) => p.active).map((p) => (
-                <div key={p.id} style={{ borderRadius: 12, border: "1px solid rgba(235,205,181,0.6)", background: "rgba(235,205,181,0.2)", padding: 18 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#6B5540" }}>{p.name}</p>
-                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>{p.sessionsIncluded} sesiones · {p.period} · {p.appliesToAllServices ? "cualquier servicio" : "servicios seleccionados"}</p>
-                    </div>
-                    <b style={{ fontSize: 16, color: "#8C6E50" }}>{money(p.priceUsd)}</b>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {error && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{error}</div>}
 
-          {/* Categorias */}
-          <div style={cardStyle}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-              <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: 0 }}>Categorias</h3>
-              <button onClick={() => setShowCatForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                <Plus size={14} /> Crear categoria
-              </button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {categories.map((catName, i) => {
-                const dbCat = dbCategories.find((c) => c.name === catName);
-                const isEditing = editCatId === (dbCat?.id || catName);
-                return (
-                  <div key={dbCat?.id || catName} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 0", borderBottom: i < categories.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none" }}>
-                    {isEditing ? (
+        {loading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
+          </div>
+        ) : (
+          <>
+            {/* Servicios y precios */}
+            <div style={cardStyle}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+                <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Servicios y precios</h3>
+                <button onClick={() => setShowServiceForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
+                  <Plus size={14} /> Anadir servicio
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {services.map((s, i, arr) => {
+                  const active = s.active !== false;
+                  return (
+                    <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
+                          <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50" }}>{s.category}</span>
+                          {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
+                        </div>
+                        <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>1 h{s.offersHomeService ? " · domicilio" : ""}</p>
+                      </div>
                       <input
+                        type="number"
+                        step="0.01"
+                        defaultValue={Number(s.priceUsd).toFixed(2)}
+                        onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
+                        style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
+                      />
+                      <button onClick={() => updateService(s, { offersHomeService: !s.offersHomeService })} style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: s.offersHomeService ? "rgba(201,168,118,0.2)" : "transparent", color: "#8C6E50", fontSize: 12, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
+                        {s.offersHomeService ? "Domicilio" : "Spa"}
+                      </button>
+                      <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />
+                    </div>
+                  );
+                })}
+                {services.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay servicios todavia.</p>}
+              </div>
+            </div>
+
+            {/* Categorias */}
+            <div style={cardStyle}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+                <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Categorias</h3>
+                <button onClick={() => setShowCatForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
+                  <Plus size={14} /> Crear categoria
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {categories.map((catName) => {
+                  const dbCat = dbCategories.find((c) => c.name === catName);
+                  const isEditing = editCatId === (dbCat?.id || catName);
+
+                  if (isEditing) {
+                    return (
+                      <input
+                        key={dbCat?.id || catName}
                         autoFocus
                         value={editCatName}
                         onChange={(e) => setEditCatName(e.target.value)}
@@ -414,95 +452,75 @@ export default function ConfiguracionPage() {
                           setEditCatId(null);
                         }}
                         onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                        style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid rgba(201,168,118,0.6)", background: "#FDFCFA", fontSize: 14, color: "#6B5540", outline: "none", flex: 1 }}
+                        style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(201,168,118,0.6)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none", width: 150 }}
                       />
-                    ) : (
-                      <span style={{ fontSize: 14, color: "#6B5540" }}>{catName}</span>
-                    )}
-                    <div style={{ display: "flex", gap: 6 }}>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={dbCat?.id || catName}
+                      onClick={() => { if (dbCat) { setEditCatId(dbCat.id); setEditCatName(catName); } }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 14px", borderRadius: 999, background: "rgba(201,168,118,0.15)", border: "1px solid rgba(201,168,118,0.4)", cursor: dbCat ? "pointer" : "default" }}
+                    >
+                      <span style={{ fontSize: 13, color: "#6B5540" }}>{catName}</span>
                       {dbCat && (
-                        <>
-                          <button onClick={() => { setEditCatId(dbCat.id); setEditCatName(catName); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#A89A87", padding: 4 }} title="Editar nombre">
-                            <Edit3 size={14} />
-                          </button>
-                          <button onClick={() => { if (confirm("¿Eliminar esta categoria?")) authFetch(`/categories/${dbCat.id}`, { method: "DELETE" }).then(fetchData); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#A89A87", padding: 4 }} title="Eliminar">
-                            <X size={14} />
-                          </button>
-                        </>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar esta categoria?")) authFetch(`/categories/${dbCat.id}`, { method: "DELETE" }).then(fetchData); }}
+                          style={{ background: "rgba(168,154,135,0.2)", border: "none", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#8C6E50", padding: 0 }}
+                          title="Eliminar"
+                        >
+                          <X size={11} />
+                        </button>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-              {categories.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay categorias. Crea una para empezar.</p>}
+                  );
+                })}
+                {categories.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay categorias. Crea una para empezar.</p>}
+              </div>
             </div>
-          </div>
 
-          {/* Gabinetes */}
-          <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-              <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: 0 }}>Gabinetes</h3>
-              <button onClick={() => setShowRoomForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                <Plus size={14} /> Anadir gabinete
-              </button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {rooms.filter((r) => r.active).map((r, i, arr) => (
-                <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto auto", alignItems: "center", gap: 10, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none" }}>
-                  <input
-                    defaultValue={r.name}
-                    onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== r.name) updateRoom(r, { name: v }); }}
-                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 14, color: "#6B5540", outline: "none", minWidth: 0 }}
+            {/* Gabinetes */}
+            <div style={cardStyle}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+                <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Gabinetes</h3>
+                <button onClick={() => setShowRoomForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
+                  <Plus size={14} /> Anadir gabinete
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {rooms.map((r, i, arr) => (
+                  <RoomRow
+                    key={r.id}
+                    r={r}
+                    categories={categories}
+                    expanded={expandedRoomId === r.id}
+                    onToggleExpand={() => setExpandedRoomId(expandedRoomId === r.id ? null : r.id)}
+                    onUpdate={updateRoom}
+                    isLast={i === arr.length - 1}
                   />
-                  <select value={r.specialty} onChange={(e) => updateRoom(r, { specialty: e.target.value })} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none" }}>
-                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <input type="time" defaultValue={r.opensAt || "09:00"} onBlur={(e) => { if (e.target.value !== r.opensAt) updateRoom(r, { opensAt: e.target.value }); }} style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none" }} title="Hora de apertura" />
-                  <span style={{ fontSize: 12, color: "#A89A87" }}>a</span>
-                  <input type="time" defaultValue={r.closesAt || "19:00"} onBlur={(e) => { if (e.target.value !== r.closesAt) updateRoom(r, { closesAt: e.target.value }); }} style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none" }} title="Hora de cierre" />
-                  <button onClick={() => { if (confirm("¿Desactivar este gabinete?")) authFetch(`/rooms/${r.id}`, { method: "DELETE" }).then(fetchData); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#A89A87", padding: 4 }} title="Desactivar">
-                    <X size={16} />
-                  </button>
-                </div>
-              ))}
+                ))}
+                {rooms.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay gabinetes todavia.</p>}
+              </div>
             </div>
-          </div>
 
-          {/* Horario de atencion */}
-          <div style={cardStyle}>
-            <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Horario de atencion</h3>
-            <BusinessHoursPanel />
-          </div>
-
-          {/* Datos en Excel */}
-          <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
-            <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Datos en Excel</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <ExcelBox icon={Upload} title="Subir Excel para actualizar" body="Disponible proximamente." button="Subir Excel" />
-              <ExcelBox icon={Download} title="Descargar respaldo completo" body="Disponible proximamente." button="Descargar respaldo" />
+            {/* Horario de atencion */}
+            <div style={cardStyle}>
+              <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Horario de atencion</h3>
+              <BusinessHoursPanel />
             </div>
-          </div>
-        </div>
-      )}
+
+            {/* Datos en Excel — mencion breve */}
+            <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
+              <Upload size={13} /> Subir Excel <Download size={13} style={{ marginLeft: 8 }} /> Descargar respaldo — disponible proximamente
+            </p>
+          </>
+        )}
+      </div>
 
       {showServiceForm && <ServiceFormModal categories={categories} onClose={() => setShowServiceForm(false)} onSaved={() => handleFormSaved(setShowServiceForm)} />}
       {showRoomForm && <RoomFormModal categories={categories} onClose={() => setShowRoomForm(false)} onSaved={() => handleFormSaved(setShowRoomForm)} />}
-      {showPlanForm && <PlanFormModal onClose={() => setShowPlanForm(false)} onSaved={() => handleFormSaved(setShowPlanForm)} />}
       {showCatForm && <CategoryFormModal onClose={() => setShowCatForm(false)} onSaved={() => handleFormSaved(setShowCatForm)} />}
-    </div>
-  );
-}
-
-function ExcelBox({ icon: Icon, title, body, button }) {
-  return (
-    <div style={{ borderRadius: 12, border: "1.5px dashed rgba(168,154,135,0.5)", padding: 20, display: "flex", flexDirection: "column" }}>
-      <Icon size={18} style={{ marginBottom: 12, color: "#8C6E50" }} />
-      <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: "#6B5540" }}>{title}</p>
-      <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>{body}</p>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
-        <button disabled style={{ padding: "7px 16px", borderRadius: 999, background: "#8C6E50", color: "#F7F5F0", border: "none", fontSize: 13, opacity: 0.5, cursor: "not-allowed" }}>{button}</button>
-        <span style={{ padding: "3px 10px", borderRadius: 999, background: "rgba(201,168,118,0.2)", color: "#8C6E50", fontSize: 11, fontWeight: 500 }}>Proximamente</span>
-      </div>
     </div>
   );
 }

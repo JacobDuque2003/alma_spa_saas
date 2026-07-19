@@ -50,24 +50,24 @@ function Shell({ children }) {
       <aside
         className="flex flex-col"
         style={{
-          width: 240,
-          flex: "0 0 240px",
+          width: 190,
+          flex: "0 0 190px",
           background: "#F7F5F0",
           borderRight: "1px solid rgba(168,154,135,0.35)",
-          padding: "28px 16px 20px",
+          padding: "24px 12px 16px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 5, padding: "0 12px 28px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4, padding: "0 10px 22px" }}>
           <span
             className="font-heading"
-            style={{ fontSize: 22, fontWeight: 600, letterSpacing: 3, color: "#6B5540" }}
+            style={{ fontSize: 18, fontWeight: 600, letterSpacing: 2.5, color: "#6B5540" }}
           >
             ALMA
           </span>
           <span
             style={{
               fontFamily: "var(--font-pinyon), 'Pinyon Script', cursive",
-              fontSize: 20,
+              fontSize: 16,
               color: "#C9A876",
             }}
           >
@@ -89,8 +89,8 @@ function Shell({ children }) {
             marginTop: "auto",
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            padding: "12px 14px",
+            gap: 8,
+            padding: "10px 10px",
             borderTop: "1px solid rgba(168,154,135,0.35)",
           }}
         >
@@ -110,15 +110,15 @@ function Shell({ children }) {
               >
                 <span
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     borderRadius: "50%",
                     background: "#C9A876",
                     color: "#F7F5F0",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 13,
+                    fontSize: 11,
                     fontWeight: 600,
                     flexShrink: 0,
                   }}
@@ -128,7 +128,7 @@ function Shell({ children }) {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div
                     style={{
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: 500,
                       color: "#6B5540",
                       overflow: "hidden",
@@ -171,10 +171,10 @@ function NavItem({ item, active }) {
   const baseStyle = {
     display: "flex",
     alignItems: "center",
-    gap: 12,
-    padding: "11px 14px",
+    gap: 10,
+    padding: "9px 12px",
     borderRadius: 8,
-    fontSize: 15,
+    fontSize: 13,
     textDecoration: "none",
     transition: "background 0.15s, color 0.15s",
   };

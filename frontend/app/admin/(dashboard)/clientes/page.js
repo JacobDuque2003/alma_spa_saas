@@ -332,7 +332,7 @@ export default function ClientesPage() {
                 <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />
                 <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />
               </div>
-              <TreatmentsCard treatments={treatments} />
+              <TreatmentsCard treatments={treatments} clientId={selectedId} onSaved={fetchDetail} />
             </div>
           </>
         ) : (
@@ -591,15 +591,81 @@ function EditIntakeModal({ clientId, intake, onClose, onSaved }) {
   );
 }
 
-function TreatmentsCard({ treatments }) {
+function TreatmentsCard({ treatments, clientId, onSaved }) {
+  const [showForm, setShowForm] = useState(false);
+  const [services, setServices] = useState([]);
+  const [serviceId, setServiceId] = useState("");
+  const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!showForm) return;
+    authFetch("/services").then((s) => setServices(Array.isArray(s) ? s.filter((x) => x.active) : [])).catch(() => {});
+  }, [showForm]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!serviceId || !sessionDate) { setError("Servicio y fecha son requeridos"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await authFetch(`/clients/${clientId}/treatments`, { method: "POST", body: { serviceId, sessionDate, notes: notes || undefined } });
+      setShowForm(false);
+      setServiceId("");
+      setNotes("");
+      onSaved?.();
+    } catch (err) {
+      setError(err.message || "Error al guardar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputSt = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
+
   return (
     <div style={{ background: "#F7F5F0", border: "1px solid rgba(168,154,135,0.4)", borderRadius: 12, padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           Historial de tratamientos
         </h3>
-        <span style={{ fontSize: 13, color: "#A89A87" }}>{treatments.length} sesiones</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 13, color: "#A89A87" }}>{treatments.length} sesiones</span>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}
+          >
+            {showForm ? "Cancelar" : "+ Agregar"}
+          </button>
+        </div>
       </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, padding: 14, background: "rgba(201,168,118,0.08)", borderRadius: 10 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Servicio</label>
+            <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} style={{ ...inputSt, appearance: "none", cursor: "pointer" }}>
+              <option value="">Seleccionar...</option>
+              {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Fecha</label>
+            <input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} style={inputSt} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Notas (opcional)</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputSt, resize: "vertical" }} placeholder="Observaciones del tratamiento..." />
+          </div>
+          {error && <p style={{ fontSize: 12, color: "#C25450", margin: 0 }}>{error}</p>}
+          <button type="submit" disabled={saving} style={{ padding: "8px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+            {saving ? "Guardando..." : "Guardar tratamiento"}
+          </button>
+        </form>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto" }}>
         {treatments.length === 0 ? (
           <p style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#A89A87" }}>

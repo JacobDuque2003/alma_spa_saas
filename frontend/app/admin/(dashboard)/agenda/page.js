@@ -170,7 +170,7 @@ export default function AgendaPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <h1
             className="font-heading"
-            style={{ fontSize: 30, fontWeight: 600, color: "#6B5540", margin: 0 }}
+            style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: 0 }}
           >
             Agenda
           </h1>
@@ -377,7 +377,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
   }
 
   return (
-    <div style={{ flex: 1, overflow: "hidden", padding: "0 32px 28px" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
       <div
         style={{
           display: "grid",
@@ -386,7 +386,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
           borderRadius: 12,
           background: "#F7F5F0",
           overflow: "hidden",
-          height: "100%",
+          minHeight: "100%",
         }}
       >
         {/* Header row */}
