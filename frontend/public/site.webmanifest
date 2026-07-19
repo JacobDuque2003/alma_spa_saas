@@ -1,0 +1,19 @@
+{
+  "name": "ALMA Spa",
+  "short_name": "ALMA Spa",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#8C6E50",
+  "background_color": "#F7F5F0",
+  "display": "standalone"
+}
