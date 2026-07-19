@@ -493,7 +493,7 @@ export default function ConfiguracionPage() {
                   <RoomRow
                     key={r.id}
                     r={r}
-                    categories={categories}
+                    categories={derivedCategories}
                     expanded={expandedRoomId === r.id}
                     onToggleExpand={() => setExpandedRoomId(expandedRoomId === r.id ? null : r.id)}
                     onUpdate={updateRoom}
@@ -519,7 +519,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {showServiceForm && <ServiceFormModal categories={categories} onClose={() => setShowServiceForm(false)} onSaved={() => handleFormSaved(setShowServiceForm)} />}
-      {showRoomForm && <RoomFormModal categories={categories} onClose={() => setShowRoomForm(false)} onSaved={() => handleFormSaved(setShowRoomForm)} />}
+      {showRoomForm && <RoomFormModal categories={derivedCategories} onClose={() => setShowRoomForm(false)} onSaved={() => handleFormSaved(setShowRoomForm)} />}
       {showCatForm && <CategoryFormModal onClose={() => setShowCatForm(false)} onSaved={() => handleFormSaved(setShowCatForm)} />}
     </div>
   );
