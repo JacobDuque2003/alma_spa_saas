@@ -53,8 +53,9 @@ async function updateService(actor, id, changes) {
   if (changes.category !== undefined) data.category = changes.category;
   if (changes.priceUsd !== undefined) data.priceUsd = changes.priceUsd;
   if (changes.offersHomeService !== undefined) data.offersHomeService = !!changes.offersHomeService;
-  // durationMins nunca se acepta del cliente: siempre fijo en 60.
+  if (changes.active !== undefined) data.active = !!changes.active;
 
+  if (Object.keys(data).length === 0) return target;
   return prisma.service.update({ where: { id }, data });
 }
 

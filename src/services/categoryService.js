@@ -52,6 +52,8 @@ async function updateCategory(actor, id, changes) {
     data.name = name;
   }
 
+  if (Object.keys(data).length === 0) return target;
+
   try {
     return await prisma.serviceCategory.update({ where: { id }, data });
   } catch (err) {
@@ -66,6 +68,30 @@ async function deleteCategory(actor, id) {
   const target = await prisma.serviceCategory.findUnique({ where: { id } });
   if (!target) return null;
   assertTenantScope(actor, target.tenantId);
+
+  // Cascade guard: no se puede desactivar una categoría si hay gabinetes activos
+  // cuya specialty coincide con el nombre de esta categoría.
+  const dependentRoom = await prisma.room.findFirst({
+    where: { tenantId: target.tenantId, specialty: target.name, active: true },
+  });
+  if (dependentRoom) {
+    throw new AppError(
+      `No se puede eliminar esta categoría porque hay gabinetes activos que la usan (ej: "${dependentRoom.name}")`,
+      409
+    );
+  }
+
+  // Cascade guard: no se puede desactivar si hay servicios activos asociados
+  // (el admin primero debe reasignar o desactivar esos servicios).
+  const dependentService = await prisma.service.findFirst({
+    where: { tenantId: target.tenantId, category: target.name, active: true },
+  });
+  if (dependentService) {
+    throw new AppError(
+      `No se puede eliminar esta categoría porque hay servicios activos que la usan (ej: "${dependentService.name}")`,
+      409
+    );
+  }
 
   return prisma.serviceCategory.update({ where: { id }, data: { active: false } });
 }

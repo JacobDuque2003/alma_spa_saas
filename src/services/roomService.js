@@ -65,10 +65,18 @@ async function updateRoom(actor, id, changes) {
     await assertSpecialtyMatchesActiveCategory(target.tenantId, changes.specialty);
     data.specialty = changes.specialty;
   }
+  if (changes.active !== undefined) data.active = !!changes.active;
   if (changes.status !== undefined) data.status = changes.status;
-  if (changes.opensAt !== undefined) data.opensAt = changes.opensAt;
-  if (changes.closesAt !== undefined) data.closesAt = changes.closesAt;
+  if (changes.opensAt !== undefined) {
+    if (!/^\d{2}:\d{2}$/.test(changes.opensAt)) throw new BadRequestError('opensAt debe tener formato HH:MM');
+    data.opensAt = changes.opensAt;
+  }
+  if (changes.closesAt !== undefined) {
+    if (!/^\d{2}:\d{2}$/.test(changes.closesAt)) throw new BadRequestError('closesAt debe tener formato HH:MM');
+    data.closesAt = changes.closesAt;
+  }
 
+  if (Object.keys(data).length === 0) return target;
   return prisma.room.update({ where: { id }, data });
 }
 

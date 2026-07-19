@@ -46,11 +46,27 @@ async function listUsers(actor, query = {}) {
   return users.map(omitPasswordHash);
 }
 
+const ALLOWED_ROLES_FOR_CREATION = ['personal', 'dueno'];
+const MIN_PASSWORD_LENGTH = 10;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 async function createUser(actor, data) {
   const { email, password, name, role, permissions, canAttendAppointments } = data;
 
-  if (role === 'superadmin') {
-    throw new BadRequestError('No se pueden crear cuentas superadmin vía API');
+  // --- Input validation ---
+  if (!email || !EMAIL_REGEX.test(email)) {
+    throw new BadRequestError('Email inválido');
+  }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    throw new BadRequestError(`La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`);
+  }
+  if (!name || !name.trim()) {
+    throw new BadRequestError('El nombre es requerido');
+  }
+
+  // --- Role whitelist: only allowed roles can be created via API ---
+  if (!ALLOWED_ROLES_FOR_CREATION.includes(role)) {
+    throw new BadRequestError('Rol no permitido. Solo se pueden crear cuentas: personal, dueno');
   }
 
   const tenantId = resolveTenantId(actor, data.tenantId);
@@ -142,6 +158,8 @@ async function updatePermissions(actor, targetUserId, permissions) {
 }
 
 module.exports = {
+  ALLOWED_ROLES_FOR_CREATION,
+  MIN_PASSWORD_LENGTH,
   listUsers,
   createUser,
   updateUser,

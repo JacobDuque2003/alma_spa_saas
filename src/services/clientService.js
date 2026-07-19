@@ -1,6 +1,16 @@
 const prisma = require('../utils/prisma');
 const { assertTenantScope } = require('../utils/tenantScope');
-const { normalizePhone } = require('../utils/phone');
+const { normalizePhone, isValidE164 } = require('../utils/phone');
+const { BadRequestError } = require('../utils/errors');
+
+/**
+ * Validación básica de email — RFC 5322 simplificado. No intenta cubrir
+ * todos los edge-cases pero filtra basura evidente y entradas maliciosas.
+ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+function isValidEmail(email) {
+  return typeof email === 'string' && email.length <= 254 && EMAIL_RE.test(email);
+}
 
 /**
  * Carga el Client (siempre existe, a diferencia de ClientIntake) para derivar
@@ -112,13 +122,24 @@ async function upsertClient(tx, tenantId, { fullName, whatsapp, email }) {
 
 async function createClient(actor, data) {
   const tenantId = actor.role === 'superadmin' ? (data.tenantId || actor.tenantId) : actor.tenantId;
-  if (!tenantId) throw new (require('../errors').BadRequestError)('tenantId es requerido');
+  if (!tenantId) throw new BadRequestError('tenantId es requerido');
   if (!data.fullName || !data.whatsapp) {
-    throw new (require('../errors').BadRequestError)('fullName y whatsapp son requeridos');
+    throw new BadRequestError('fullName y whatsapp son requeridos');
   }
   const whatsapp = normalizePhone(data.whatsapp);
+  if (!isValidE164(whatsapp)) {
+    throw new BadRequestError('Formato de WhatsApp inválido. Use formato E.164 (ej: +593999000001)');
+  }
+  if (data.email && !isValidEmail(data.email)) {
+    throw new BadRequestError('Formato de email inválido');
+  }
   const client = await prisma.client.create({
-    data: { tenantId, fullName: data.fullName, whatsapp, email: data.email || null },
+    data: {
+      tenantId,
+      fullName: String(data.fullName).trim(),
+      whatsapp,
+      email: data.email ? String(data.email).trim().toLowerCase() : null,
+    },
     select: CLIENT_SAFE_SELECT,
   });
   return toClientSafeDto(client);
@@ -129,9 +150,29 @@ async function updateClient(actor, clientId, changes) {
   if (!client) return null;
 
   const data = {};
-  if (changes.fullName !== undefined) data.fullName = changes.fullName;
-  if (changes.email !== undefined) data.email = changes.email || null;
-  if (changes.whatsapp !== undefined) data.whatsapp = normalizePhone(changes.whatsapp);
+  if (changes.fullName !== undefined) {
+    if (typeof changes.fullName !== 'string' || changes.fullName.trim().length === 0) {
+      throw new BadRequestError('fullName debe ser un string no vacío');
+    }
+    data.fullName = changes.fullName.trim();
+  }
+  if (changes.email !== undefined) {
+    if (changes.email) {
+      if (!isValidEmail(changes.email)) {
+        throw new BadRequestError('Formato de email inválido');
+      }
+      data.email = changes.email.trim().toLowerCase();
+    } else {
+      data.email = null;
+    }
+  }
+  if (changes.whatsapp !== undefined) {
+    const normalized = normalizePhone(changes.whatsapp);
+    if (!isValidE164(normalized)) {
+      throw new BadRequestError('Formato de WhatsApp inválido. Use formato E.164 (ej: +593999000001)');
+    }
+    data.whatsapp = normalized;
+  }
 
   if (Object.keys(data).length === 0) return toClientSafeDto(client);
 

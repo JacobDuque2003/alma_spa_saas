@@ -9,6 +9,15 @@ function normalizePhone(raw) {
   return digits.startsWith('+') ? digits : '+' + digits;
 }
 
+/**
+ * Valida que un string ya normalizado sea un número E.164 razonable:
+ * empieza con +, seguido de 7-15 dígitos (ITU-T E.164 max = 15 dígitos).
+ */
+const E164_RE = /^\+[1-9]\d{6,14}$/;
+function isValidE164(phone) {
+  return E164_RE.test(phone);
+}
+
 function phoneToWaId(phone) {
   return normalizePhone(phone).replace(/^\+/, '');
 }
@@ -17,4 +26,4 @@ function waIdToPhone(waId) {
   return '+' + String(waId).replace(/[^0-9]/g, '');
 }
 
-module.exports = { normalizePhone, phoneToWaId, waIdToPhone };
+module.exports = { normalizePhone, isValidE164, phoneToWaId, waIdToPhone };
