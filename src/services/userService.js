@@ -2,6 +2,7 @@ const prisma = require('../utils/prisma');
 const { hashPassword } = require('./authService');
 const { assertTenantScope, resolveTenantId, ForbiddenTenantError } = require('../utils/tenantScope');
 const { AppError, BadRequestError } = require('../utils/errors');
+const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
 
 class ProtectedAccountError extends AppError {
   constructor() {
@@ -53,7 +54,6 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 async function createUser(actor, data) {
   const { email, password, name, role, permissions, canAttendAppointments } = data;
 
-  // --- Input validation ---
   if (!email || !EMAIL_REGEX.test(email)) {
     throw new BadRequestError('Email inválido');
   }
@@ -64,7 +64,6 @@ async function createUser(actor, data) {
     throw new BadRequestError('El nombre es requerido');
   }
 
-  // --- Role whitelist: only allowed roles can be created via API ---
   if (!ALLOWED_ROLES_FOR_CREATION.includes(role)) {
     throw new BadRequestError('Rol no permitido. Solo se pueden crear cuentas: personal, dueno');
   }
@@ -74,33 +73,43 @@ async function createUser(actor, data) {
     throw new BadRequestError('tenantId es requerido para roles dueno/personal');
   }
 
-  const passwordHash = await hashPassword(password);
+  const pw = await hashPassword(password);
 
-  const created = await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      name,
-      role,
-      tenantId,
-      isProtected: false,
-      canAttendAppointments: !!canAttendAppointments,
-      ...(role === 'personal'
-        ? {
-            rolePermission: {
-              create: {
-                agenda: !!permissions?.agenda,
-                gabinetes: !!permissions?.gabinetes,
-                clientes: !!permissions?.clientes,
-                crm: !!permissions?.crm,
-                reportes: !!permissions?.reportes,
-                configuracion: !!permissions?.configuracion,
+  const created = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        email,
+        passwordHash: pw,
+        name,
+        role,
+        tenantId,
+        isProtected: false,
+        canAttendAppointments: !!canAttendAppointments,
+        ...(role === 'personal'
+          ? {
+              rolePermission: {
+                create: {
+                  agenda: !!permissions?.agenda,
+                  gabinetes: !!permissions?.gabinetes,
+                  clientes: !!permissions?.clientes,
+                  crm: !!permissions?.crm,
+                  reportes: !!permissions?.reportes,
+                  configuracion: !!permissions?.configuracion,
+                },
               },
-            },
-          }
-        : {}),
-    },
-    include: { rolePermission: true },
+            }
+          : {}),
+      },
+      include: { rolePermission: true },
+    });
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'user',
+      entityId: user.id,
+      action: 'create',
+      detail: pickSafe('user', { name, email, role, canAttendAppointments: !!canAttendAppointments }),
+    });
+    return user;
   });
   return omitPasswordHash(created);
 }
@@ -115,12 +124,30 @@ async function updateUser(actor, targetUserId, changes) {
   }
   assertTenantScope(actor, target.tenantId);
 
+  if (changes.active === false && actor.id === targetUserId) {
+    throw new BadRequestError('No puedes desactivar tu propia cuenta');
+  }
+
   const data = {};
   if (changes.name !== undefined) data.name = changes.name;
   if (changes.active !== undefined) data.active = changes.active;
   if (changes.password) data.passwordHash = await hashPassword(changes.password);
 
-  const updated = await prisma.user.update({ where: { id: targetUserId }, data });
+  const updated = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.update({ where: { id: targetUserId }, data });
+    const action = resolveAction('user', data, target);
+    const safeChanges = { ...data };
+    delete safeChanges.passwordHash;
+    if (changes.password) safeChanges.passwordChanged = true;
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'user',
+      entityId: targetUserId,
+      action,
+      detail: pickSafe('user', safeChanges),
+    });
+    return user;
+  });
   return omitPasswordHash(updated);
 }
 
@@ -134,7 +161,17 @@ async function deleteUser(actor, targetUserId) {
   }
   assertTenantScope(actor, target.tenantId);
 
-  return prisma.user.delete({ where: { id: targetUserId } });
+  return prisma.$transaction(async (tx) => {
+    const deleted = await tx.user.delete({ where: { id: targetUserId } });
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'user',
+      entityId: targetUserId,
+      action: 'purge',
+      detail: pickSafe('user', target),
+    });
+    return deleted;
+  });
 }
 
 async function updatePermissions(actor, targetUserId, permissions) {
@@ -150,10 +187,20 @@ async function updatePermissions(actor, targetUserId, permissions) {
   }
   assertTenantScope(actor, target.tenantId);
 
-  return prisma.rolePermission.upsert({
-    where: { userId: targetUserId },
-    update: permissions,
-    create: { userId: targetUserId, ...permissions },
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.rolePermission.upsert({
+      where: { userId: targetUserId },
+      update: permissions,
+      create: { userId: targetUserId, ...permissions },
+    });
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'user',
+      entityId: targetUserId,
+      action: 'permissionsChanged',
+      detail: permissions,
+    });
+    return result;
   });
 }
 

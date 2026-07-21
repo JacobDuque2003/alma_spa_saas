@@ -1,6 +1,7 @@
 const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
+const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
 
 async function assertSpecialtyMatchesActiveCategory(tenantId, specialty) {
   const match = await prisma.service.findFirst({
@@ -41,16 +42,26 @@ async function createRoom(actor, data) {
 
   await assertSpecialtyMatchesActiveCategory(tenantId, data.specialty);
 
-  return prisma.room.create({
-    data: {
-      tenantId,
-      name: data.name,
-      specialty: data.specialty,
-      opensAt: data.opensAt || '09:00',
-      closesAt: data.closesAt || '19:00',
-      status: 'libre',
-      active: true,
-    },
+  return prisma.$transaction(async (tx) => {
+    const room = await tx.room.create({
+      data: {
+        tenantId,
+        name: data.name,
+        specialty: data.specialty,
+        opensAt: data.opensAt || '09:00',
+        closesAt: data.closesAt || '19:00',
+        status: 'libre',
+        active: true,
+      },
+    });
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'room',
+      entityId: room.id,
+      action: 'create',
+      detail: pickSafe('room', room),
+    });
+    return room;
   });
 }
 
@@ -77,15 +88,23 @@ async function updateRoom(actor, id, changes) {
   }
 
   if (Object.keys(data).length === 0) return target;
-  return prisma.room.update({ where: { id }, data });
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.room.update({ where: { id }, data });
+    const action = resolveAction('room', data, target);
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'room',
+      entityId: id,
+      action,
+      detail: pickSafe('room', data),
+    });
+    return updated;
+  });
 }
 
 async function deleteRoom(actor, id) {
-  const target = await prisma.room.findUnique({ where: { id } });
-  if (!target) return null;
-  assertTenantScope(actor, target.tenantId);
-
-  return prisma.room.update({ where: { id }, data: { active: false } });
+  return updateRoom(actor, id, { active: false });
 }
 
 module.exports = { listRooms, getRoom, createRoom, updateRoom, deleteRoom };

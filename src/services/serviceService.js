@@ -1,6 +1,7 @@
 const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
+const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
 
 const FIXED_DURATION_MINS = 60;
 
@@ -30,16 +31,26 @@ async function createService(actor, data) {
     throw new BadRequestError('name y category son requeridos');
   }
 
-  return prisma.service.create({
-    data: {
-      tenantId,
-      name: data.name,
-      category: data.category,
-      durationMins: FIXED_DURATION_MINS,
-      priceUsd: data.priceUsd,
-      offersHomeService: !!data.offersHomeService,
-      active: true,
-    },
+  return prisma.$transaction(async (tx) => {
+    const service = await tx.service.create({
+      data: {
+        tenantId,
+        name: data.name,
+        category: data.category,
+        durationMins: FIXED_DURATION_MINS,
+        priceUsd: data.priceUsd,
+        offersHomeService: !!data.offersHomeService,
+        active: true,
+      },
+    });
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'service',
+      entityId: service.id,
+      action: 'create',
+      detail: pickSafe('service', service),
+    });
+    return service;
   });
 }
 
@@ -56,34 +67,39 @@ async function updateService(actor, id, changes) {
   if (changes.active !== undefined) data.active = !!changes.active;
 
   if (Object.keys(data).length === 0) return target;
-  return prisma.service.update({ where: { id }, data });
-}
 
-async function deleteService(actor, id) {
-  const target = await prisma.service.findUnique({ where: { id } });
-  if (!target) return null;
-  assertTenantScope(actor, target.tenantId);
-
-  // Si esta era la última Service activa de esta category en el tenant,
-  // y hay algún Room activo con specialty = esa category, no se puede
-  // desactivar: dejaría el gabinete sin ninguna categoría de servicio activa
-  // que lo respalde (misma regla de integridad que valida createRoom/updateRoom).
-  const otherActiveSameCategory = await prisma.service.count({
-    where: { tenantId: target.tenantId, category: target.category, active: true, id: { not: id } },
-  });
-  if (otherActiveSameCategory === 0) {
-    const dependentRoom = await prisma.room.findFirst({
-      where: { tenantId: target.tenantId, specialty: target.category, active: true },
+  if (data.active === false && target.active) {
+    const otherActiveSameCategory = await prisma.service.count({
+      where: { tenantId: target.tenantId, category: target.category, active: true, id: { not: id } },
     });
-    if (dependentRoom) {
-      throw new BadRequestError(
-        `No se puede desactivar: el gabinete "${dependentRoom.name}" depende de la categoría "${target.category}" y quedaría sin ningún servicio activo que la respalde`
-      );
+    if (otherActiveSameCategory === 0) {
+      const dependentRoom = await prisma.room.findFirst({
+        where: { tenantId: target.tenantId, specialty: target.category, active: true },
+      });
+      if (dependentRoom) {
+        throw new BadRequestError(
+          `No se puede desactivar: el gabinete "${dependentRoom.name}" depende de la categoría "${target.category}" y quedaría sin ningún servicio activo que la respalde`
+        );
+      }
     }
   }
 
-  // Soft delete: Fase 3/4 referenciarán Service por id (citas, planes de cliente).
-  return prisma.service.update({ where: { id }, data: { active: false } });
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.service.update({ where: { id }, data });
+    const action = resolveAction('service', data, target);
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'service',
+      entityId: id,
+      action,
+      detail: pickSafe('service', data),
+    });
+    return updated;
+  });
+}
+
+async function deleteService(actor, id) {
+  return updateService(actor, id, { active: false });
 }
 
 module.exports = { listServices, getService, createService, updateService, deleteService };

@@ -1,6 +1,7 @@
 const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError, AppError } = require('../utils/errors');
+const { pickSafe, writeAuditLog } = require('../utils/adminAudit');
 
 async function listCategories(actor, query) {
   const where = { active: true };
@@ -23,12 +24,18 @@ async function createCategory(actor, data) {
   }
 
   try {
-    return await prisma.serviceCategory.create({
-      data: {
-        tenantId,
-        name,
-        active: true,
-      },
+    return await prisma.$transaction(async (tx) => {
+      const cat = await tx.serviceCategory.create({
+        data: { tenantId, name, active: true },
+      });
+      await writeAuditLog(tx, {
+        actor,
+        entity: 'category',
+        entityId: cat.id,
+        action: 'create',
+        detail: pickSafe('category', { name }),
+      });
+      return cat;
     });
   } catch (err) {
     if (err.code === 'P2002') {
@@ -55,7 +62,17 @@ async function updateCategory(actor, id, changes) {
   if (Object.keys(data).length === 0) return target;
 
   try {
-    return await prisma.serviceCategory.update({ where: { id }, data });
+    return await prisma.$transaction(async (tx) => {
+      const updated = await tx.serviceCategory.update({ where: { id }, data });
+      await writeAuditLog(tx, {
+        actor,
+        entity: 'category',
+        entityId: id,
+        action: 'update',
+        detail: pickSafe('category', data),
+      });
+      return updated;
+    });
   } catch (err) {
     if (err.code === 'P2002') {
       throw new AppError('Ya existe una categoría con ese nombre en este tenant', 409);
@@ -69,8 +86,6 @@ async function deleteCategory(actor, id) {
   if (!target) return null;
   assertTenantScope(actor, target.tenantId);
 
-  // Cascade guard: no se puede desactivar una categoría si hay gabinetes activos
-  // cuya specialty coincide con el nombre de esta categoría.
   const dependentRoom = await prisma.room.findFirst({
     where: { tenantId: target.tenantId, specialty: target.name, active: true },
   });
@@ -81,8 +96,6 @@ async function deleteCategory(actor, id) {
     );
   }
 
-  // Cascade guard: no se puede desactivar si hay servicios activos asociados
-  // (el admin primero debe reasignar o desactivar esos servicios).
   const dependentService = await prisma.service.findFirst({
     where: { tenantId: target.tenantId, category: target.name, active: true },
   });
@@ -93,7 +106,17 @@ async function deleteCategory(actor, id) {
     );
   }
 
-  return prisma.serviceCategory.update({ where: { id }, data: { active: false } });
+  return prisma.$transaction(async (tx) => {
+    const deactivated = await tx.serviceCategory.update({ where: { id }, data: { active: false } });
+    await writeAuditLog(tx, {
+      actor,
+      entity: 'category',
+      entityId: id,
+      action: 'deactivate',
+      detail: pickSafe('category', target),
+    });
+    return deactivated;
+  });
 }
 
 module.exports = { listCategories, createCategory, updateCategory, deleteCategory };

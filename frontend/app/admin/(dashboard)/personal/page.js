@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, ShieldCheck, X } from "lucide-react";
+import { Loader2, ShieldCheck, X, ToggleLeft, ToggleRight } from "lucide-react";
 
 const PLATFORM_SUPPORT_USER = {
   id: "platform-support",
@@ -228,6 +228,7 @@ export default function PersonalPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showNewUser, setShowNewUser] = useState(false);
+  const [toggling, setToggling] = useState(null);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -252,6 +253,23 @@ export default function PersonalPage() {
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  async function toggleActive(user) {
+    if (user.isProtected) return;
+    setToggling(user.id);
+    setError("");
+    try {
+      await authFetch(`/users/${user.id}`, {
+        method: "PATCH",
+        body: { active: !user.active },
+      });
+      await fetchUsers();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setToggling(null);
+    }
+  }
 
   const selected = useMemo(() => users.find((u) => u.id === selectedId), [users, selectedId]);
 
@@ -376,8 +394,41 @@ export default function PersonalPage() {
                         : permissionsSummary(user)}
                     </p>
                   </div>
+                  {!user.isProtected && !user.active && (
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: "rgba(194,84,80,0.12)",
+                        color: "#C25450",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        flexShrink: 0,
+                      }}
+                    >
+                      Inactiva
+                    </span>
+                  )}
                   {!user.isProtected && (
-                    <span style={{ fontSize: 12, color: "#8C6E50", textDecoration: "underline" }}>Editar</span>
+                    <button
+                      title={user.active ? "Desactivar cuenta" : "Activar cuenta"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleActive(user);
+                      }}
+                      disabled={toggling === user.id}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: toggling === user.id ? "wait" : "pointer",
+                        padding: 4,
+                        flexShrink: 0,
+                        color: user.active ? "#8C6E50" : "#A89A87",
+                        opacity: toggling === user.id ? 0.5 : 1,
+                      }}
+                    >
+                      {user.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                    </button>
                   )}
                 </button>
               );

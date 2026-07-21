@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/admin/reportes", label: "Reportes", enabled: true },
   { href: "/admin/personal", label: "Personal", enabled: true },
   { href: "/admin/configuracion", label: "Configuración", enabled: true },
+  { href: "/admin/logs", label: "Logs", enabled: true, roles: ["superadmin", "dueno"] },
 ];
 
 const ROLE_LABELS = {
@@ -76,7 +77,7 @@ function Shell({ children }) {
         </div>
 
         <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => !item.roles || (user && item.roles.includes(user.role))).map((item) => {
             const active = item.enabled && pathname.startsWith(item.href);
             return (
               <NavItem key={item.label} item={item} active={active} />

@@ -38,7 +38,7 @@ router.patch('/:id', protectSuperadmin, async (req, res, next) => {
   }
 });
 
-router.delete('/:id', protectSuperadmin, async (req, res, next) => {
+router.delete('/:id', requireRole('superadmin'), protectSuperadmin, async (req, res, next) => {
   try {
     const user = await userService.deleteUser(req.user, req.params.id);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });

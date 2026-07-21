@@ -7,6 +7,8 @@ function mockPrisma({ serviceCategory = {}, room = {}, service = {} } = {}) {
   prisma.serviceCategory = serviceCategory;
   prisma.room = room;
   prisma.service = service;
+  prisma.adminAuditLog = { create: async () => ({}) };
+  prisma.$transaction = async (fn) => fn(prisma);
 }
 
 // --- deleteCategory cascade protection ---
@@ -25,7 +27,7 @@ test('deleteCategory devuelve 409 si un gabinete activo usa esta categoría como
   });
 
   await assert.rejects(
-    () => categoryService.deleteCategory({ role: 'dueno', tenantId: 't1' }, 'cat1'),
+    () => categoryService.deleteCategory({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'cat1'),
     (err) => {
       assert.equal(err.status, 409);
       assert.match(err.message, /gabinetes activos/);
@@ -40,7 +42,7 @@ test('deleteCategory devuelve 409 si hay servicios activos con esta categoría',
       findUnique: async () => ({ id: 'cat1', tenantId: 't1', name: 'Facial', active: true }),
     },
     room: {
-      findFirst: async () => null, // sin gabinetes dependientes
+      findFirst: async () => null,
     },
     service: {
       findFirst: async () => ({ id: 'srv1', name: 'Limpieza facial', category: 'Facial', active: true }),
@@ -48,7 +50,7 @@ test('deleteCategory devuelve 409 si hay servicios activos con esta categoría',
   });
 
   await assert.rejects(
-    () => categoryService.deleteCategory({ role: 'dueno', tenantId: 't1' }, 'cat1'),
+    () => categoryService.deleteCategory({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'cat1'),
     (err) => {
       assert.equal(err.status, 409);
       assert.match(err.message, /servicios activos/);
@@ -71,7 +73,7 @@ test('deleteCategory permite soft-delete cuando no hay gabinetes ni servicios ac
     },
   });
 
-  const result = await categoryService.deleteCategory({ role: 'dueno', tenantId: 't1' }, 'cat1');
+  const result = await categoryService.deleteCategory({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'cat1');
   assert.equal(result.active, false);
 });
 
@@ -116,7 +118,7 @@ test('createCategory crea la categoría correctamente', async () => {
   });
 
   const result = await categoryService.createCategory(
-    { role: 'dueno', tenantId: 't1' },
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
     { name: 'Corporal' }
   );
   assert.equal(result.name, 'Corporal');

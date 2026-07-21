@@ -6,13 +6,15 @@ const serviceService = require('./serviceService');
 function mockPrisma({ service = {}, room = {} } = {}) {
   prisma.service = service;
   prisma.room = room;
+  prisma.adminAuditLog = { create: async () => ({}) };
+  prisma.$transaction = async (fn) => fn(prisma);
 }
 
 test('createService ignora un tenantId forjado en el body y usa el del JWT del actor', async () => {
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 
   const result = await serviceService.createService(
-    { role: 'dueno', tenantId: 'tenant-real-del-jwt' },
+    { role: 'dueno', tenantId: 'tenant-real-del-jwt', id: 'a1', email: 'a@test.com' },
     { name: 'Masaje relajante', category: 'masajes', priceUsd: 45, tenantId: 'tenant-forjado' }
   );
 
@@ -23,7 +25,7 @@ test('createService siempre fuerza durationMins a 60 sin importar lo que mande e
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 
   const result = await serviceService.createService(
-    { role: 'dueno', tenantId: 't1' },
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
     { name: 'Facial', category: 'faciales', priceUsd: 30, durationMins: 999 }
   );
 
@@ -34,7 +36,7 @@ test('createService guarda offersHomeService del body (bug real encontrado en ve
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 
   const result = await serviceService.createService(
-    { role: 'dueno', tenantId: 't1' },
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
     { name: 'Masaje relajante', category: 'masajes', priceUsd: 45, offersHomeService: true }
   );
 
@@ -45,7 +47,7 @@ test('createService por defecto offersHomeService=false si no se manda', async (
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 
   const result = await serviceService.createService(
-    { role: 'dueno', tenantId: 't1' },
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
     { name: 'Limpieza facial', category: 'faciales', priceUsd: 30 }
   );
 
@@ -66,21 +68,21 @@ test('updateService rechaza con 403 si el actor intenta tocar un servicio de otr
 test('deleteService hace soft delete (active=false) cuando hay otra service activa de la misma category', async () => {
   mockPrisma({
     service: {
-      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes' }),
-      count: async () => 1, // otra service activa de la misma category ya cubre a los gabinetes
+      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes', active: true }),
+      count: async () => 1,
       update: async (args) => ({ id: 's1', ...args.data }),
     },
   });
 
-  const result = await serviceService.deleteService({ role: 'dueno', tenantId: 't1' }, 's1');
+  const result = await serviceService.deleteService({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 's1');
   assert.equal(result.active, false);
 });
 
 test('deleteService rechaza con 400 si es la última service activa de la category y un room activo depende de ella', async () => {
   mockPrisma({
     service: {
-      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes' }),
-      count: async () => 0, // ninguna otra service activa de "masajes"
+      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes', active: true }),
+      count: async () => 0,
     },
     room: {
       findFirst: async () => ({ id: 'room1', name: 'Sala de masajes', specialty: 'masajes', active: true }),
@@ -88,7 +90,7 @@ test('deleteService rechaza con 400 si es la última service activa de la catego
   });
 
   await assert.rejects(
-    () => serviceService.deleteService({ role: 'dueno', tenantId: 't1' }, 's1'),
+    () => serviceService.deleteService({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 's1'),
     (err) => err.status === 400
   );
 });
@@ -96,15 +98,15 @@ test('deleteService rechaza con 400 si es la última service activa de la catego
 test('deleteService permite desactivar cuando es la última service de la category pero no hay ningún room activo dependiendo', async () => {
   mockPrisma({
     service: {
-      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes' }),
+      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes', active: true }),
       count: async () => 0,
       update: async (args) => ({ id: 's1', ...args.data }),
     },
     room: {
-      findFirst: async () => null, // ningún room activo con specialty "masajes"
+      findFirst: async () => null,
     },
   });
 
-  const result = await serviceService.deleteService({ role: 'dueno', tenantId: 't1' }, 's1');
+  const result = await serviceService.deleteService({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 's1');
   assert.equal(result.active, false);
 });

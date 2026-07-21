@@ -457,3 +457,37 @@ model WhatsAppMessage {
 
   @@index([tenantId, conversationId, createdAt])
 }
+
+// ---- Admin Audit Log --------------------------------------------------------
+
+enum AuditEntity {
+  user
+  service
+  room
+  category
+}
+
+enum AuditAction {
+  create
+  update
+  activate
+  deactivate
+  purge
+  permissionsChanged
+}
+
+model AdminAuditLog {
+  id         String      @id @default(cuid())
+  tenantId   String
+  actorId    String
+  actorEmail String
+  entity     AuditEntity
+  entityId   String
+  action     AuditAction
+  detail     Json?
+  createdAt  DateTime    @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, createdAt])
+  @@index([tenantId, actorId, createdAt])
+}

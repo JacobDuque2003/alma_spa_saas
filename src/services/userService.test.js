@@ -6,6 +6,8 @@ const userService = require('./userService');
 function mockPrisma({ user = {}, rolePermission = {} } = {}) {
   prisma.user = user;
   prisma.rolePermission = rolePermission;
+  prisma.adminAuditLog = { create: async () => ({}) };
+  prisma.$transaction = async (fn) => fn(prisma);
 }
 
 test('updateUser rechaza con 403 si el usuario objetivo es isProtected', async () => {
@@ -16,7 +18,7 @@ test('updateUser rechaza con 403 si el usuario objetivo es isProtected', async (
   });
 
   await assert.rejects(
-    () => userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u1', { name: 'x' }),
+    () => userService.updateUser({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'u1', { name: 'x' }),
     (err) => err instanceof userService.ProtectedAccountError && err.status === 403
   );
 });
@@ -29,7 +31,7 @@ test('deleteUser rechaza con 403 si el usuario objetivo es isProtected, incluso 
   });
 
   await assert.rejects(
-    () => userService.deleteUser({ role: 'superadmin', tenantId: null }, 'u1'),
+    () => userService.deleteUser({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' }, 'u1'),
     (err) => err instanceof userService.ProtectedAccountError
   );
 });
@@ -43,7 +45,7 @@ test('updateUser rechaza con 403 si el actor (dueno) intenta tocar un usuario de
   });
 
   await assert.rejects(
-    () => userService.updateUser({ role: 'dueno', tenantId: 'tenant-propio' }, 'u2', { name: 'x' }),
+    () => userService.updateUser({ role: 'dueno', tenantId: 'tenant-propio', id: 'a1', email: 'a@test.com' }, 'u2', { name: 'x' }),
     (err) => err instanceof userService.ForbiddenTenantError
   );
 });
@@ -56,7 +58,7 @@ test('updateUser permite a superadmin (sin tenant) operar sobre cualquier tenant
     },
   });
 
-  const result = await userService.updateUser({ role: 'superadmin', tenantId: null }, 'u2', { name: 'Nuevo Nombre' });
+  const result = await userService.updateUser({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' }, 'u2', { name: 'Nuevo Nombre' });
   assert.equal(result.name, 'Nuevo Nombre');
 });
 
@@ -68,7 +70,7 @@ test('updateUser aplica cambios normalmente cuando no hay conflicto', async () =
     },
   });
 
-  const result = await userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u3', { active: false });
+  const result = await userService.updateUser({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'u3', { active: false });
   assert.equal(result.active, false);
 });
 
@@ -80,7 +82,7 @@ test('createUser ignora por completo un tenantId forjado en el body y usa el del
   });
 
   const result = await userService.createUser(
-    { role: 'dueno', tenantId: 'tenant-real-del-jwt' },
+    { role: 'dueno', tenantId: 'tenant-real-del-jwt', id: 'a1', email: 'a@test.com' },
     {
       email: 'valida@spa.test',
       password: 'Abcdefg123!',
@@ -101,7 +103,7 @@ test('createUser nunca devuelve passwordHash en el objeto resultante', async () 
   });
 
   const result = await userService.createUser(
-    { role: 'dueno', tenantId: 't1' },
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
     { email: 'valida@spa.test', password: 'Abcdefg123!', name: 'X', role: 'personal' }
   );
 
@@ -116,7 +118,7 @@ test('updateUser nunca devuelve passwordHash en el objeto resultante', async () 
     },
   });
 
-  const result = await userService.updateUser({ role: 'dueno', tenantId: 't1' }, 'u4', { password: 'nueva-clave' });
+  const result = await userService.updateUser({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'u4', { password: 'nueva-clave' });
   assert.equal('passwordHash' in result, false);
 });
 
@@ -124,7 +126,7 @@ test('createUser exige tenantId en el body cuando el actor es superadmin (sin te
   mockPrisma({ user: {} });
 
   await assert.rejects(() =>
-    userService.createUser({ role: 'superadmin', tenantId: null }, {
+    userService.createUser({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' }, {
       email: 'valida@spa.test',
       password: 'Abcdefg123!',
       name: 'X',
@@ -150,7 +152,7 @@ test('listUsers filtra por tenant del actor y usa select seguro sin passwordHash
     },
   });
 
-  const result = await userService.listUsers({ role: 'dueno', tenantId: 't1' });
+  const result = await userService.listUsers({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' });
   assert.equal(argsSeen.where.tenantId, 't1');
   assert.equal(argsSeen.select.email, true);
   assert.equal('passwordHash' in argsSeen.select, false);
@@ -165,7 +167,7 @@ test('listUsers permite a superadmin consultar todos sin exponer passwordHash', 
     },
   });
 
-  await userService.listUsers({ role: 'superadmin', tenantId: null });
+  await userService.listUsers({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' });
   assert.deepEqual(argsSeen.where, {});
   assert.equal('passwordHash' in argsSeen.select, false);
   assert.equal(argsSeen.select.isProtected, true);
@@ -179,7 +181,7 @@ test('[SECURITY] createUser rechaza role "superadmin" con 400', async () => {
   mockPrisma({ user: { create: async () => ({}) } });
   await assert.rejects(
     () => userService.createUser(
-      { role: 'dueno', tenantId: 't1' },
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
       { email: 'hacker@evil.com', password: 'Abcdefg123!', name: 'Hacker', role: 'superadmin' }
     ),
     (err) => {
@@ -194,7 +196,7 @@ test('[SECURITY] createUser rechaza role "admin" (no existe en whitelist)', asyn
   mockPrisma({ user: { create: async () => ({}) } });
   await assert.rejects(
     () => userService.createUser(
-      { role: 'dueno', tenantId: 't1' },
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
       { email: 'hacker@evil.com', password: 'Abcdefg123!', name: 'Hacker', role: 'admin' }
     ),
     (err) => {
@@ -210,7 +212,7 @@ test('[SECURITY] createUser rechaza role undefined/null/empty', async () => {
   for (const badRole of [undefined, null, '', 'root', 'god']) {
     await assert.rejects(
       () => userService.createUser(
-        { role: 'dueno', tenantId: 't1' },
+        { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
         { email: 'test@spa.test', password: 'Abcdefg123!', name: 'Test', role: badRole }
       ),
       (err) => {
@@ -230,7 +232,7 @@ test('[SECURITY] createUser con isProtected: true en body lo ignora (siempre fal
   });
 
   await userService.createUser(
-    { role: 'dueno', tenantId: 't1' },
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
     { email: 'nueva@spa.test', password: 'Abcdefg123!', name: 'Test', role: 'dueno', isProtected: true }
   );
 
@@ -246,7 +248,7 @@ test('[SECURITY] actor de tenant A no puede crear usuario en tenant B', async ()
   });
 
   await userService.createUser(
-    { role: 'dueno', tenantId: 'tenant-a' },
+    { role: 'dueno', tenantId: 'tenant-a', id: 'a1', email: 'a@test.com' },
     { email: 'nueva@spa.test', password: 'Abcdefg123!', name: 'Test', role: 'personal', tenantId: 'tenant-b' }
   );
 
@@ -257,7 +259,7 @@ test('[SECURITY] password menor a 10 caracteres es rechazado con 400', async () 
   mockPrisma({ user: { create: async () => ({}) } });
   await assert.rejects(
     () => userService.createUser(
-      { role: 'dueno', tenantId: 't1' },
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
       { email: 'test@spa.test', password: '12345', name: 'Test', role: 'personal' }
     ),
     (err) => {
@@ -272,7 +274,7 @@ test('[SECURITY] email sin formato valido es rechazado con 400', async () => {
   mockPrisma({ user: { create: async () => ({}) } });
   await assert.rejects(
     () => userService.createUser(
-      { role: 'dueno', tenantId: 't1' },
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
       { email: 'no-tiene-arroba', password: 'Abcdefg123!', name: 'Test', role: 'personal' }
     ),
     (err) => {
@@ -287,7 +289,7 @@ test('[SECURITY] nombre vacio o solo espacios es rechazado con 400', async () =>
   mockPrisma({ user: { create: async () => ({}) } });
   await assert.rejects(
     () => userService.createUser(
-      { role: 'dueno', tenantId: 't1' },
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
       { email: 'test@spa.test', password: 'Abcdefg123!', name: '   ', role: 'personal' }
     ),
     (err) => {
@@ -307,7 +309,7 @@ test('[SECURITY] happy path: crear personal valido funciona correctamente', asyn
   });
 
   const result = await userService.createUser(
-    { role: 'dueno', tenantId: 'tenant-spa' },
+    { role: 'dueno', tenantId: 'tenant-spa', id: 'a1', email: 'a@test.com' },
     {
       email: 'nueva.terapeuta@almaspa.test',
       password: 'SecurePass123',

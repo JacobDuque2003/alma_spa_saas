@@ -16,6 +16,7 @@ const whatsappWebhookRoutes = require('./routes/webhooks/whatsapp');
 const crmRoutes = require('./routes/crm');
 const reportRoutes = require('./routes/reports');
 const tenantConfigRoutes = require('./routes/tenantConfig');
+const auditLogRoutes = require('./routes/auditLog');
 const errorHandler = require('./middleware/errorHandler');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
@@ -67,6 +68,7 @@ app.use('/settings/whatsapp', whatsappSettingsRoutes);
 app.use('/crm', crmRoutes);
 app.use('/reports', reportRoutes);
 app.use('/tenant/config', tenantConfigRoutes);
+app.use('/audit-log', auditLogRoutes);
 
 app.use(errorHandler);
 
