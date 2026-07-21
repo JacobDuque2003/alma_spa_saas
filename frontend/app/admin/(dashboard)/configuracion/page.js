@@ -11,7 +11,7 @@ function money(v) {
 function Modal({ title, onClose, children }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, margin: "0 16px", background: "#F7F5F0", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+      <div onClick={(e) => e.stopPropagation()} className="alma-card" style={{ width: "100%", maxWidth: 420, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
         </button>
@@ -27,12 +27,7 @@ const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBot
 const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 
-const cardStyle = {
-  background: "#F7F5F0",
-  border: "1px solid rgba(168,154,135,0.4)",
-  borderRadius: 12,
-  padding: 24,
-};
+const cardPadding = { padding: 24 };
 
 function Toggle({ checked, onChange }) {
   return (
@@ -385,7 +380,7 @@ export default function ConfiguracionPage() {
         ) : (
           <>
             {/* Servicios y precios */}
-            <div style={cardStyle}>
+            <div className="alma-card" style={cardPadding}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
                 <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Servicios y precios</h3>
                 <button onClick={() => setShowServiceForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
@@ -424,7 +419,7 @@ export default function ConfiguracionPage() {
             </div>
 
             {/* Categorias */}
-            <div style={cardStyle}>
+            <div className="alma-card" style={cardPadding}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
                 <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Categorias</h3>
                 <button onClick={() => setShowCatForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
@@ -481,7 +476,7 @@ export default function ConfiguracionPage() {
             </div>
 
             {/* Gabinetes */}
-            <div style={cardStyle}>
+            <div className="alma-card" style={cardPadding}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
                 <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Gabinetes</h3>
                 <button onClick={() => setShowRoomForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
@@ -505,7 +500,7 @@ export default function ConfiguracionPage() {
             </div>
 
             {/* Horario de atencion */}
-            <div style={cardStyle}>
+            <div className="alma-card" style={cardPadding}>
               <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Horario de atencion</h3>
               <BusinessHoursPanel />
             </div>

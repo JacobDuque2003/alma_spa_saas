@@ -196,10 +196,8 @@ export default function ReportesPage() {
 function RCard({ title, action, children }) {
   return (
     <div
+      className="alma-card"
       style={{
-        background: "#F7F5F0",
-        border: "1px solid rgba(168,154,135,0.4)",
-        borderRadius: 12,
         padding: 24,
         minHeight: 260,
         display: "flex",
@@ -281,7 +279,7 @@ function MiniChart({ nuevos, recurrentes }) {
         <BarChart data={data} barCategoryGap="30%">
           <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#A89A87" }} />
           <Tooltip
-            contentStyle={{ background: "#F7F5F0", border: "1px solid rgba(168,154,135,0.4)", borderRadius: 8, fontSize: 13, color: "#6B5540" }}
+            contentStyle={{ background: "#F7F5F0", border: "1px solid #DDD6CC", borderRadius: 8, fontSize: 13, color: "#6B5540", boxShadow: "0 2px 8px rgba(107,85,64,0.08)" }}
             cursor={{ fill: "rgba(201,168,118,0.1)" }}
           />
           <Bar dataKey="value" fill="#8C6E50" radius={[6, 6, 0, 0]} />

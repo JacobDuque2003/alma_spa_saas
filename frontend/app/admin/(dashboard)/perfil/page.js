@@ -88,13 +88,6 @@ export default function PerfilPage() {
     );
   }
 
-  const cardStyle = {
-    background: "#F7F5F0",
-    border: "1px solid rgba(168,154,135,0.4)",
-    borderRadius: 12,
-    padding: 24,
-  };
-
   return (
     <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", gap: 22, overflowY: "auto", maxWidth: 600 }}>
       <div>
@@ -102,7 +95,7 @@ export default function PerfilPage() {
         <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Datos de tu cuenta y seguridad</p>
       </div>
 
-      <div style={cardStyle}>
+      <div className="alma-card" style={{ padding: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
           <span style={{ width: 56, height: 56, borderRadius: "50%", background: "#C9A876", color: "#F7F5F0", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 600, flexShrink: 0 }}>
             {getInitials(user.name)}
@@ -125,7 +118,7 @@ export default function PerfilPage() {
         </div>
       </div>
 
-      <div style={cardStyle}>
+      <div className="alma-card" style={{ padding: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: 0 }}>Seguridad</h3>
         </div>

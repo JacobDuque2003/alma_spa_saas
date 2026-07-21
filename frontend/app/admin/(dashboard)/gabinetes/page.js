@@ -142,11 +142,10 @@ function RoomCard({ room, appointments }) {
 
   return (
     <div
+      className="alma-card"
       style={{
-        background: "#F7F5F0",
-        border: `1px solid ${isOccupied ? "rgba(107,85,64,0.45)" : "rgba(168,154,135,0.4)"}`,
-        borderRadius: 12,
         padding: 24,
+        border: isOccupied ? "1px solid rgba(107,85,64,0.45)" : undefined,
         gridRow: expanded ? "span 2" : "auto",
       }}
     >
@@ -291,11 +290,10 @@ function RoomCard({ room, appointments }) {
 function DomicilioCard({ appointments }) {
   return (
     <div
+      className="alma-card"
       style={{
-        background: "#F7F5F0",
-        border: "1.5px dashed rgba(140,110,80,0.5)",
-        borderRadius: 12,
         padding: 24,
+        border: "1.5px dashed rgba(140,110,80,0.5)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>

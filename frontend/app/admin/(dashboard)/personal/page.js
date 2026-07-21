@@ -111,13 +111,13 @@ function NewUserModal({ onClose, onSaved }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="alma-card"
         style={{
           width: "100%",
           maxWidth: 420,
           maxHeight: "90vh",
           overflowY: "auto",
           margin: "0 16px",
-          background: "#F7F5F0",
           borderRadius: 16,
           padding: "24px 24px 20px",
           position: "relative",
@@ -314,14 +314,14 @@ export default function PersonalPage() {
                 <button
                   key={user.id}
                   onClick={() => setSelectedId(user.id)}
+                  className="alma-card"
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 14,
                     padding: "16px 18px",
-                    borderRadius: 12,
-                    border: `1px solid ${isSelected ? "rgba(235,205,181,0.7)" : "rgba(168,154,135,0.4)"}`,
-                    background: isSelected ? "rgba(235,205,181,0.3)" : "#F7F5F0",
+                    border: isSelected ? "1px solid rgba(235,205,181,0.7)" : undefined,
+                    background: isSelected ? "rgba(235,205,181,0.3)" : undefined,
                     cursor: "pointer",
                     textAlign: "left",
                     width: "100%",
@@ -388,11 +388,9 @@ export default function PersonalPage() {
 
       {/* Detail / permissions panel */}
       <div
+        className="alma-card"
         style={{
           flex: 1,
-          background: "#F7F5F0",
-          border: "1px solid rgba(168,154,135,0.4)",
-          borderRadius: 12,
           padding: 28,
           minHeight: 580,
           display: "flex",

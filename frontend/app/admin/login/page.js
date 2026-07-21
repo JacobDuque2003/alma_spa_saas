@@ -31,7 +31,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm" style={{ boxShadow: "0 2px 8px rgba(107,85,64,0.08)" }}>
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 text-3xl font-heading font-bold tracking-tight text-primary">
             ALMA

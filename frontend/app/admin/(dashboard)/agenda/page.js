@@ -672,7 +672,7 @@ function AppointmentDetail({ appt, rooms, staffList, onClose, onUpdated }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: "100%", maxWidth: 440, margin: "0 16px", background: "#F7F5F0", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)", maxHeight: "90vh", overflowY: "auto" }}
+        className="alma-card" style={{ width: "100%", maxWidth: 440, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)", maxHeight: "90vh", overflowY: "auto" }}
       >
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
@@ -925,11 +925,11 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated, preSelectedClient
       }}
     >
       <div
+        className="alma-card"
         style={{
           width: "100%",
           maxWidth: 480,
           margin: "0 16px",
-          background: "#F7F5F0",
           borderRadius: 16,
           padding: 28,
           position: "relative",
