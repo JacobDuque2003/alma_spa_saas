@@ -1,4 +1,5 @@
 const { verifyToken } = require('../utils/jwt');
+const prisma = require('../utils/prisma');
 
 function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
@@ -10,8 +11,17 @@ function authenticate(req, res, next) {
 
   try {
     const payload = verifyToken(token);
-    // tenantId SIEMPRE viene del JWT — nunca de params/body/query del cliente.
-    req.user = { id: payload.sub, tenantId: payload.tenantId, role: payload.role };
+    req.user = { id: payload.sub, tenantId: payload.tenantId, role: payload.role, email: payload.email || null };
+
+    if (!req.user.email) {
+      Promise.resolve()
+        .then(() => prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true } }))
+        .then((u) => { if (u) req.user.email = u.email; })
+        .catch(() => {})
+        .finally(() => next());
+      return;
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Token inválido o expirado' });

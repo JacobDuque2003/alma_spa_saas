@@ -31,7 +31,7 @@ test('authenticate deriva req.user del JWT (nunca de params/body/query)', async 
   const req = { headers: { authorization: `Bearer ${token}` }, params: { tenantId: 'tenant-forjado' }, body: { tenantId: 'otro-forjado' } };
   const { nextCalled } = await callMiddleware(req);
   assert.equal(nextCalled, true);
-  assert.deepEqual(req.user, { id: 'u1', tenantId: 't1', role: 'dueno' });
+  assert.deepEqual(req.user, { id: 'u1', tenantId: 't1', role: 'dueno', email: null });
 });
 
 test('authenticate propaga tenantId null para superadmin', async () => {

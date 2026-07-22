@@ -19,7 +19,7 @@ async function login(email, plainPassword) {
     return null;
   }
 
-  const token = signToken({ id: user.id, tenantId: user.tenantId, role: user.role });
+  const token = signToken({ id: user.id, tenantId: user.tenantId, role: user.role, email: user.email });
   return {
     token,
     user: {

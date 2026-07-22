@@ -329,10 +329,13 @@ export default function PersonalPage() {
             {users.map((user) => {
               const isSelected = user.id === selectedId;
               return (
-                <button
+                <div
                   key={user.id}
                   onClick={() => setSelectedId(user.id)}
                   className="alma-card"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(user.id); } }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -430,7 +433,7 @@ export default function PersonalPage() {
                       {user.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
                     </button>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
