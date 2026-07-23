@@ -6,24 +6,33 @@ const prisma = require('../utils/prisma');
 
 const MODULE_PERMISSIONS = ['agenda', 'gabinetes', 'clientes', 'crm', 'reportes', 'configuracion'];
 
-const pwBuckets = new Map();
-function passwordChangeRateLimit(req, res, next) {
-  const key = `pw:${req.user.id}`;
-  const now = Date.now();
-  const bucket = pwBuckets.get(key);
-  const LIMIT = 5;
-  const WINDOW = 15 * 60_000;
+const rateBuckets = new Map();
+function bucketRateLimit(keyFn, limit, windowMs, message) {
+  return function rateLimiter(req, res, next) {
+    const key = keyFn(req);
+    const now = Date.now();
+    const bucket = rateBuckets.get(key);
 
-  if (!bucket || bucket.resetAt <= now) {
-    pwBuckets.set(key, { count: 1, resetAt: now + WINDOW });
-    return next();
-  }
-  bucket.count += 1;
-  if (bucket.count > LIMIT) {
-    return res.status(429).json({ error: 'Demasiados intentos. Espere 15 minutos.' });
-  }
-  next();
+    if (!bucket || bucket.resetAt <= now) {
+      rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    bucket.count += 1;
+    if (bucket.count > limit) {
+      return res.status(429).json({ error: message });
+    }
+    next();
+  };
 }
+
+const loginRateLimit = bucketRateLimit(
+  (req) => `login:${req.ip}:${(req.body.email || '').toLowerCase()}`,
+  5, 15 * 60_000, 'Demasiados intentos de login. Espere 15 minutos.'
+);
+const passwordChangeRateLimit = bucketRateLimit(
+  (req) => `pw:${req.user.id}`,
+  5, 15 * 60_000, 'Demasiados intentos. Espere 15 minutos.'
+);
 
 function effectivePermissions(user) {
   if (['superadmin', 'dueno'].includes(user.role)) {
@@ -36,7 +45,7 @@ function effectivePermissions(user) {
 
 const router = express.Router();
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginRateLimit, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

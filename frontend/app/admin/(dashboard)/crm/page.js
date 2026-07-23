@@ -58,7 +58,8 @@ export default function CRMPage() {
 
   useEffect(() => {
     const t = setTimeout(fetchConversations, 200);
-    return () => clearTimeout(t);
+    const interval = setInterval(fetchConversations, 30_000);
+    return () => { clearTimeout(t); clearInterval(interval); };
   }, [fetchConversations]);
 
   const fetchConversation = useCallback(async () => {
@@ -78,6 +79,8 @@ export default function CRMPage() {
 
   useEffect(() => {
     fetchConversation();
+    const interval = setInterval(fetchConversation, 30_000);
+    return () => clearInterval(interval);
   }, [fetchConversation]);
 
   async function sendText() {

@@ -11,7 +11,7 @@ function signToken({ id, tenantId, role, email }) {
 }
 
 function verifyToken(token) {
-  return jwt.verify(token, process.env.JWT_SECRET);
+  return jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 }
 
 function assertJwtSecretOrExit() {

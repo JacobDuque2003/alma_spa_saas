@@ -51,7 +51,14 @@ app.use(express.json({
   limit: '256kb',
 }));
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', async (req, res) => {
+  try {
+    await require('./utils/prisma').$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', db: 'connected' });
+  } catch (err) {
+    res.status(503).json({ status: 'degraded', db: 'unreachable' });
+  }
+});
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/services', serviceRoutes);
@@ -95,8 +102,26 @@ if (require.main === module) {
     process.exit(1);
   });
 
+  const prisma = require('./utils/prisma');
+
+  function gracefulShutdown(signal) {
+    console.log(`[${signal}] Cerrando servidor…`);
+    server.close(() => {
+      prisma.$disconnect().then(() => {
+        console.log('[shutdown] Prisma desconectado, saliendo.');
+        process.exit(0);
+      });
+    });
+    setTimeout(() => {
+      console.error('[shutdown] Timeout — forzando salida.');
+      process.exit(1);
+    }, 10_000);
+  }
+
   const port = process.env.PORT || 3001;
-  app.listen(port, () => console.log(`Alma Spa backend escuchando en :${port}`));
+  const server = app.listen(port, () => console.log(`Alma Spa backend escuchando en :${port}`));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 module.exports = app;
