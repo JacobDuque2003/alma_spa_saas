@@ -21,7 +21,7 @@ async function listRooms(actor, query) {
   } else {
     where.tenantId = actor.tenantId;
   }
-  return prisma.room.findMany({ where });
+  return prisma.room.findMany({ where, orderBy: { createdAt: 'asc' } });
 }
 
 async function getRoom(actor, id) {

@@ -78,7 +78,7 @@ function NewUserModal({ onClose, onSaved }) {
     setSaving(true);
     setError("");
     try {
-      await authFetch("/users", {
+      const created = await authFetch("/users", {
         method: "POST",
         body: {
           name: name.trim(),
@@ -89,7 +89,7 @@ function NewUserModal({ onClose, onSaved }) {
           permissions: role === "personal" ? permissions : undefined,
         },
       });
-      onSaved();
+      onSaved(created);
     } catch (err) {
       setError(err.message || "Error al crear la cuenta");
       setSaving(false);
@@ -259,11 +259,11 @@ export default function PersonalPage() {
     setToggling(user.id);
     setError("");
     try {
-      await authFetch(`/users/${user.id}`, {
+      const updated = await authFetch(`/users/${user.id}`, {
         method: "PATCH",
         body: { active: !user.active },
       });
-      await fetchUsers();
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -282,7 +282,7 @@ export default function PersonalPage() {
     setSaving(true);
     try {
       await authFetch(`/users/${selected.id}/permissions`, { method: "PATCH", body: draft });
-      await fetchUsers();
+      setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, rolePermission: { ...u.rolePermission, ...draft } } : u)));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -594,9 +594,9 @@ export default function PersonalPage() {
       {showNewUser && (
         <NewUserModal
           onClose={() => setShowNewUser(false)}
-          onSaved={() => {
+          onSaved={(created) => {
             setShowNewUser(false);
-            fetchUsers();
+            setUsers((prev) => [...prev, created]);
           }}
         />
       )}

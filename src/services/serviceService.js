@@ -12,7 +12,7 @@ async function listServices(actor, query) {
   } else {
     where.tenantId = actor.tenantId;
   }
-  return prisma.service.findMany({ where });
+  return prisma.service.findMany({ where, orderBy: { createdAt: 'asc' } });
 }
 
 async function getService(actor, id) {

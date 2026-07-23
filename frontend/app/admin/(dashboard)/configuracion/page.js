@@ -65,8 +65,8 @@ function ServiceFormModal({ categories, onClose, onSaved }) {
     }
     setSaving(true);
     try {
-      await authFetch("/services", { method: "POST", body: { name: name.trim(), category: category.trim(), priceUsd: Number(priceUsd), offersHomeService: false } });
-      onSaved();
+      const created = await authFetch("/services", { method: "POST", body: { name: name.trim(), category: category.trim(), priceUsd: Number(priceUsd), offersHomeService: false } });
+      onSaved(created);
     } catch (err) {
       setError(err.message || "Error al crear servicio");
       setSaving(false);
@@ -107,8 +107,8 @@ function RoomFormModal({ categories, onClose, onSaved }) {
     }
     setSaving(true);
     try {
-      await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty } });
-      onSaved();
+      const created = await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty } });
+      onSaved(created);
     } catch (err) {
       setError(err.message || "Error al crear gabinete");
       setSaving(false);
@@ -145,8 +145,8 @@ function CategoryFormModal({ onClose, onSaved }) {
     if (!name.trim()) { setError("El nombre es requerido"); return; }
     setSaving(true);
     try {
-      await authFetch("/categories", { method: "POST", body: { name: name.trim() } });
-      onSaved();
+      const created = await authFetch("/categories", { method: "POST", body: { name: name.trim() } });
+      onSaved(created);
     } catch (err) { setError(err.message || "Error al crear categoria"); setSaving(false); }
   }
 
@@ -349,18 +349,13 @@ export default function ConfiguracionPage() {
   }, [fetchData]);
 
   async function updateService(service, changes) {
-    await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
-    await fetchData();
+    const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
+    setServices((prev) => prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s)));
   }
 
   async function updateRoom(room, changes) {
-    await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
-    await fetchData();
-  }
-
-  function handleFormSaved(closeFn) {
-    closeFn(false);
-    fetchData();
+    const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
+    setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, ...updated } : r)));
   }
 
   return (
@@ -441,8 +436,8 @@ export default function ConfiguracionPage() {
                         onBlur={async () => {
                           const v = editCatName.trim();
                           if (dbCat && v && v !== catName) {
-                            await authFetch(`/categories/${dbCat.id}`, { method: "PATCH", body: { name: v } }).catch(() => null);
-                            await fetchData();
+                            const updated = await authFetch(`/categories/${dbCat.id}`, { method: "PATCH", body: { name: v } }).catch(() => null);
+                            if (updated) setDbCategories((prev) => prev.map((c) => (c.id === dbCat.id ? { ...c, ...updated } : c)));
                           }
                           setEditCatId(null);
                         }}
@@ -461,7 +456,7 @@ export default function ConfiguracionPage() {
                       <span style={{ fontSize: 13, color: "#6B5540" }}>{catName}</span>
                       {dbCat && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar esta categoria?")) authFetch(`/categories/${dbCat.id}`, { method: "DELETE" }).then(fetchData); }}
+                          onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar esta categoria?")) authFetch(`/categories/${dbCat.id}`, { method: "DELETE" }).then(() => setDbCategories((prev) => prev.filter((c) => c.id !== dbCat.id))); }}
                           style={{ background: "rgba(168,154,135,0.2)", border: "none", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#8C6E50", padding: 0 }}
                           title="Eliminar"
                         >
@@ -513,9 +508,9 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {showServiceForm && <ServiceFormModal categories={categories} onClose={() => setShowServiceForm(false)} onSaved={() => handleFormSaved(setShowServiceForm)} />}
-      {showRoomForm && <RoomFormModal categories={derivedCategories} onClose={() => setShowRoomForm(false)} onSaved={() => handleFormSaved(setShowRoomForm)} />}
-      {showCatForm && <CategoryFormModal onClose={() => setShowCatForm(false)} onSaved={() => handleFormSaved(setShowCatForm)} />}
+      {showServiceForm && <ServiceFormModal categories={categories} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
+      {showRoomForm && <RoomFormModal categories={derivedCategories} onClose={() => setShowRoomForm(false)} onSaved={(created) => { setShowRoomForm(false); setRooms((prev) => [...prev, created]); }} />}
+      {showCatForm && <CategoryFormModal onClose={() => setShowCatForm(false)} onSaved={(created) => { setShowCatForm(false); setDbCategories((prev) => [...prev, created]); }} />}
     </div>
   );
 }

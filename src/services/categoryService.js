@@ -10,7 +10,7 @@ async function listCategories(actor, query) {
   } else {
     where.tenantId = actor.tenantId;
   }
-  return prisma.serviceCategory.findMany({ where });
+  return prisma.serviceCategory.findMany({ where, orderBy: { createdAt: 'asc' } });
 }
 
 async function createCategory(actor, data) {
