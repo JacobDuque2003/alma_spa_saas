@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, X, Search } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 9);
 const STATUS_COLORS = {
@@ -99,6 +100,7 @@ export default function AgendaPage() {
   const searchParams = useSearchParams();
   const preClientId = searchParams.get("clientId");
   const preClientName = searchParams.get("clientName");
+  const isMobile = useIsMobile();
   const [view, setView] = useState("week");
   const [selectedDate, setSelectedDate] = useState(today);
   const [appointments, setAppointments] = useState([]);
@@ -108,11 +110,13 @@ export default function AgendaPage() {
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
   const [staffList, setStaffList] = useState([]);
 
+  const effectiveView = isMobile ? "day" : view;
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       let from, to;
-      if (view === "day") {
+      if (effectiveView === "day") {
         from = `${selectedDate}T00:00:00`;
         to = `${selectedDate}T23:59:59`;
       } else {
@@ -133,7 +137,7 @@ export default function AgendaPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, view]);
+  }, [selectedDate, effectiveView]);
 
   useEffect(() => {
     fetchData();
@@ -141,7 +145,7 @@ export default function AgendaPage() {
 
   function navigate(dir) {
     const d = new Date(selectedDate + "T12:00:00");
-    d.setDate(d.getDate() + (view === "day" ? dir : dir * 7));
+    d.setDate(d.getDate() + (effectiveView === "day" ? dir : dir * 7));
     setSelectedDate(toLocalDate(d));
   }
 
@@ -155,172 +159,188 @@ export default function AgendaPage() {
     roomColorMap[r.id] = ROOM_COLORS[i % ROOM_COLORS.length];
   });
 
+  const navBtnStyle = {
+    width: isMobile ? 44 : 30,
+    height: isMobile ? 44 : 30,
+    border: "1px solid #A89A87",
+    borderRadius: "50%",
+    background: "none",
+    cursor: "pointer",
+    color: "#8C6E50",
+    fontSize: 14,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%" }}>
       {/* Header */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          flexDirection: isMobile ? "column" : "row",
+          alignItems: isMobile ? "stretch" : "center",
           justifyContent: "space-between",
-          padding: "24px 32px",
+          padding: isMobile ? "16px 16px 12px" : "24px 32px",
+          gap: isMobile ? 12 : 0,
           borderBottom: "1px solid rgba(168,154,135,0.35)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h1
             className="font-heading"
-            style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: 0 }}
+            style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: 0 }}
           >
             Agenda
           </h1>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {isMobile && (
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => setShowNewForm(true)}
               style={{
-                width: 30,
-                height: 30,
-                border: "1px solid #A89A87",
+                width: 44,
+                height: 44,
                 borderRadius: "50%",
-                background: "none",
+                background: "#8C6E50",
+                color: "#F7F5F0",
+                border: "none",
+                fontSize: 20,
                 cursor: "pointer",
-                color: "#8C6E50",
-                fontSize: 14,
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              ‹
+              +
             </button>
-            <span style={{ fontSize: 15, fontWeight: 500, color: "#6B5540" }}>
-              {view === "week" ? formatWeekRange(selectedDate) : formatDayFull(selectedDate)}
-            </span>
-            <button
-              onClick={() => navigate(1)}
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <button onClick={() => navigate(-1)} style={navBtnStyle}>‹</button>
+          <span style={{ fontSize: isMobile ? 14 : 15, fontWeight: 500, color: "#6B5540", textAlign: "center", flex: isMobile ? 1 : undefined }}>
+            {effectiveView === "week" ? formatWeekRange(selectedDate) : formatDayFull(selectedDate)}
+          </span>
+          <button onClick={() => navigate(1)} style={navBtnStyle}>›</button>
+        </div>
+
+        {!isMobile && (
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div
               style={{
-                width: 30,
-                height: 30,
-                border: "1px solid #A89A87",
-                borderRadius: "50%",
-                background: "none",
-                cursor: "pointer",
-                color: "#8C6E50",
-                fontSize: 14,
+                display: "flex",
+                background: "#F7F5F0",
+                border: "1px solid rgba(168,154,135,0.4)",
+                borderRadius: 999,
+                padding: 3,
+              }}
+            >
+              <button
+                onClick={() => setView("week")}
+                style={{
+                  padding: "7px 20px",
+                  borderRadius: 999,
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: view === "week" ? 500 : 400,
+                  background: view === "week" ? "#8C6E50" : "transparent",
+                  color: view === "week" ? "#F7F5F0" : "#8C6E50",
+                }}
+              >
+                Semana
+              </button>
+              <button
+                onClick={() => setView("day")}
+                style={{
+                  padding: "7px 20px",
+                  borderRadius: 999,
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: view === "day" ? 500 : 400,
+                  background: view === "day" ? "#8C6E50" : "transparent",
+                  color: view === "day" ? "#F7F5F0" : "#8C6E50",
+                }}
+              >
+                Día
+              </button>
+            </div>
+            <button
+              onClick={() => setShowNewForm(true)}
+              style={{
                 display: "inline-flex",
                 alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              ›
-            </button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              background: "#F7F5F0",
-              border: "1px solid rgba(168,154,135,0.4)",
-              borderRadius: 999,
-              padding: 3,
-            }}
-          >
-            <button
-              onClick={() => setView("week")}
-              style={{
-                padding: "7px 20px",
+                padding: "10px 22px",
+                background: "#8C6E50",
+                color: "#F7F5F0",
                 borderRadius: 999,
                 border: "none",
+                fontSize: 14,
+                fontWeight: 500,
                 cursor: "pointer",
-                fontSize: 13,
-                fontWeight: view === "week" ? 500 : 400,
-                background: view === "week" ? "#8C6E50" : "transparent",
-                color: view === "week" ? "#F7F5F0" : "#8C6E50",
               }}
             >
-              Semana
-            </button>
-            <button
-              onClick={() => setView("day")}
-              style={{
-                padding: "7px 20px",
-                borderRadius: 999,
-                border: "none",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: view === "day" ? 500 : 400,
-                background: view === "day" ? "#8C6E50" : "transparent",
-                color: view === "day" ? "#F7F5F0" : "#8C6E50",
-              }}
-            >
-              Día
+              + Nueva reserva
             </button>
           </div>
-          <button
-            onClick={() => setShowNewForm(true)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "10px 22px",
-              background: "#8C6E50",
-              color: "#F7F5F0",
-              borderRadius: 999,
-              border: "none",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
-          >
-            + Nueva reserva
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* Room legend */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 22,
-          padding: "14px 32px",
-          fontSize: 12,
-          color: "#6B5540",
-        }}
-      >
-        {rooms.map((r, i) => (
-          <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+      {/* Room legend — hidden on mobile */}
+      {!isMobile && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 22,
+            padding: "14px 32px",
+            fontSize: 12,
+            color: "#6B5540",
+          }}
+        >
+          {rooms.map((r, i) => (
+            <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 3,
+                  background: ROOM_COLORS[i % ROOM_COLORS.length],
+                }}
+              />
+              {r.name}
+            </span>
+          ))}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
             <span
               style={{
                 width: 10,
                 height: 10,
                 borderRadius: 3,
-                background: ROOM_COLORS[i % ROOM_COLORS.length],
+                border: "1.5px dashed #8C6E50",
+                boxSizing: "border-box",
               }}
             />
-            {r.name}
+            A domicilio
           </span>
-        ))}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 3,
-              border: "1.5px dashed #8C6E50",
-              boxSizing: "border-box",
-            }}
-          />
-          A domicilio
-        </span>
-      </div>
+        </div>
+      )}
 
       {/* Grid */}
       {loading ? (
         <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
           <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
         </div>
-      ) : view === "week" ? (
+      ) : isMobile ? (
+        <MobileCardList
+          appointments={appointments}
+          date={selectedDate}
+          roomColorMap={roomColorMap}
+          rooms={rooms}
+          onSelect={setSelected}
+        />
+      ) : effectiveView === "week" ? (
         <WeekGrid
           appointments={appointments}
           selectedDate={selectedDate}
@@ -358,6 +378,86 @@ export default function AgendaPage() {
           preSelectedClient={preClientId ? { id: preClientId, fullName: preClientName || "" } : null}
         />
       )}
+    </div>
+  );
+}
+
+function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
+  const active = appointments
+    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
+    .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+
+  if (active.length === 0) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40, color: "#A89A87", fontSize: 14 }}>
+        No hay citas para este día
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {active.map((appt) => {
+        const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : "#8C6E50";
+        const isDomicilio = appt.modality === "domicilio";
+        const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
+        const statusLabel = STATUS_LABELS[appt.status] || appt.status;
+        const time = formatTime(appt.startsAt);
+        const dur = appt.service?.durationMins || 60;
+        return (
+          <button
+            key={appt.id}
+            onClick={() => onSelect(appt)}
+            style={{
+              display: "flex",
+              alignItems: "stretch",
+              border: "1px solid rgba(168,154,135,0.35)",
+              borderRadius: 12,
+              background: "#F7F5F0",
+              overflow: "hidden",
+              cursor: "pointer",
+              padding: 0,
+              textAlign: "left",
+              minHeight: 72,
+            }}
+          >
+            <div
+              style={{
+                width: 5,
+                flexShrink: 0,
+                background: isDomicilio ? "repeating-linear-gradient(180deg, #8C6E50 0, #8C6E50 4px, transparent 4px, transparent 8px)" : color,
+              }}
+            />
+            <div style={{ flex: 1, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "#6B5540" }}>
+                  {appt.client?.fullName || "Cliente"}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background: statusInfo.bg,
+                    color: statusInfo.text,
+                    fontWeight: 500,
+                  }}
+                >
+                  {statusLabel}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: "#8C6E50" }}>
+                {appt.service?.name}
+              </div>
+              <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#A89A87" }}>
+                <span>{time} · {dur} min</span>
+                {appt.room && <span>{appt.room.name}</span>}
+                {isDomicilio && <span>A domicilio</span>}
+              </div>
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
