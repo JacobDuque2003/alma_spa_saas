@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 
 const MOBILE_BP = 768;
 
+// Turbopack dev-mode emits "useIsMobile defined multiple times" when this module
+// is imported — SWC inlines the export and clashes with the import binding.
+// Investigated 2026-07-24: production build is clean, no runtime effect. Ignore.
 export const useIsMobile = () => {
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
