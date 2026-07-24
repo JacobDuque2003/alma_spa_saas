@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Search, X } from "lucide-react";
+import { Loader2, Search, X, ArrowLeft } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
@@ -29,6 +30,8 @@ export default function ClientesPage() {
   const [plans, setPlans] = useState([]);
   const [balance, setBalance] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const isMobile = useIsMobile();
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
@@ -87,11 +90,12 @@ export default function ClientesPage() {
   return (
     <div style={{ display: "flex", height: "100%" }}>
       {/* Sidebar list */}
+      {(!isMobile || !mobileShowDetail) && (
       <div
         style={{
-          width: 330,
-          flex: "0 0 330px",
-          borderRight: "1px solid rgba(168,154,135,0.35)",
+          width: isMobile ? "100%" : 330,
+          flex: isMobile ? "1" : "0 0 330px",
+          borderRight: isMobile ? "none" : "1px solid rgba(168,154,135,0.35)",
           display: "flex",
           flexDirection: "column",
           background: "rgba(247,245,240,0.6)",
@@ -144,7 +148,7 @@ export default function ClientesPage() {
               return (
                 <button
                   key={client.id}
-                  onClick={() => setSelectedId(client.id)}
+                  onClick={() => { setSelectedId(client.id); if (isMobile) setMobileShowDetail(true); }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -207,9 +211,33 @@ export default function ClientesPage() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Detail panel */}
-      <div style={{ flex: 1, minWidth: 0, padding: "26px 30px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
+      {(!isMobile || mobileShowDetail) && (
+      <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 30px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
+        {isMobile && (
+          <button
+            onClick={() => setMobileShowDetail(false)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 0",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "#8C6E50",
+              fontSize: 14,
+              fontWeight: 500,
+              minHeight: 44,
+              alignSelf: "flex-start",
+            }}
+          >
+            <ArrowLeft size={18} />
+            Clientes
+          </button>
+        )}
         {!selectedId ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#A89A87", fontSize: 14 }}>
             Selecciona una clienta para ver su ficha.
@@ -244,8 +272,8 @@ export default function ClientesPage() {
               />
             )}
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 16 }}>
                 <span
                   style={{
                     width: 52,
@@ -263,7 +291,7 @@ export default function ClientesPage() {
                   {initials(detail.fullName)}
                 </span>
                 <div>
-                  <h2 className="font-heading" style={{ fontSize: 28, fontWeight: 600, color: "#6B5540", margin: 0 }}>
+                  <h2 className="font-heading" style={{ fontSize: isMobile ? 22 : 28, fontWeight: 600, color: "#6B5540", margin: 0 }}>
                     {detail.fullName}
                   </h2>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "#A89A87" }}>
@@ -273,7 +301,7 @@ export default function ClientesPage() {
                   </div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
                   onClick={() => setShowEditClient(true)}
                   style={{
@@ -327,7 +355,7 @@ export default function ClientesPage() {
             </div>
 
             {/* Content grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 18, flex: 1, minHeight: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.2fr", gap: 18, flex: 1, minHeight: 0 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 18, minHeight: 0 }}>
                 <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />
                 <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />
@@ -341,6 +369,7 @@ export default function ClientesPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

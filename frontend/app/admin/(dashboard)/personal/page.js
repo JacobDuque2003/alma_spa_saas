@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, ShieldCheck, X, ToggleLeft, ToggleRight } from "lucide-react";
+import { Loader2, ShieldCheck, X, ToggleLeft, ToggleRight, ArrowLeft } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 const PLATFORM_SUPPORT_USER = {
   id: "platform-support",
@@ -229,6 +230,8 @@ export default function PersonalPage() {
   const [error, setError] = useState("");
   const [showNewUser, setShowNewUser] = useState(false);
   const [toggling, setToggling] = useState(null);
+  const isMobile = useIsMobile();
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -291,9 +294,10 @@ export default function PersonalPage() {
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", gap: 24, overflow: "hidden" }}>
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", gap: isMobile ? 0 : 24, overflow: "hidden" }}>
       {/* User list */}
-      <div style={{ width: 420, flex: "0 0 420px", display: "flex", flexDirection: "column" }}>
+      {(!isMobile || !mobileShowDetail) && (
+      <div style={{ width: isMobile ? "100%" : 420, flex: isMobile ? "1" : "0 0 420px", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
@@ -331,11 +335,11 @@ export default function PersonalPage() {
               return (
                 <div
                   key={user.id}
-                  onClick={() => setSelectedId(user.id)}
+                  onClick={() => { setSelectedId(user.id); if (isMobile) setMobileShowDetail(true); }}
                   className="alma-card"
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(user.id); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(user.id); if (isMobile) setMobileShowDetail(true); } }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -439,20 +443,44 @@ export default function PersonalPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Detail / permissions panel */}
+      {(!isMobile || mobileShowDetail) && (
       <div
         className="alma-card"
         style={{
           flex: 1,
-          padding: 28,
-          minHeight: 580,
+          padding: isMobile ? 20 : 28,
+          minHeight: isMobile ? 0 : 580,
           display: "flex",
           flexDirection: "column",
         }}
       >
         {selected ? (
           <>
+            {isMobile && (
+              <button
+                onClick={() => setMobileShowDetail(false)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 0",
+                  marginBottom: 12,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#8C6E50",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  minHeight: 44,
+                }}
+              >
+                <ArrowLeft size={18} />
+                Personal
+              </button>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
               <span
                 style={{
@@ -590,6 +618,7 @@ export default function PersonalPage() {
           </div>
         )}
       </div>
+      )}
 
       {showNewUser && (
         <NewUserModal

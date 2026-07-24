@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Send, Settings, X } from "lucide-react";
+import { Loader2, Send, Settings, X, ArrowLeft } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
@@ -32,6 +33,8 @@ export default function CRMPage() {
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showEditReplies, setShowEditReplies] = useState(false);
   const [editingReplyIdx, setEditingReplyIdx] = useState(null);
+  const isMobile = useIsMobile();
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [editReplyText, setEditReplyText] = useState("");
   const [newReplyText, setNewReplyText] = useState("");
 
@@ -148,11 +151,12 @@ export default function CRMPage() {
   return (
     <div style={{ display: "flex", height: "100%" }}>
       {/* Inbox sidebar */}
+      {(!isMobile || !mobileShowDetail) && (
       <div
         style={{
-          width: 360,
-          flex: "0 0 360px",
-          borderRight: "1px solid rgba(168,154,135,0.35)",
+          width: isMobile ? "100%" : 360,
+          flex: isMobile ? "1" : "0 0 360px",
+          borderRight: isMobile ? "none" : "1px solid rgba(168,154,135,0.35)",
           display: "flex",
           flexDirection: "column",
           background: "rgba(247,245,240,0.6)",
@@ -209,7 +213,7 @@ export default function CRMPage() {
               return (
                 <button
                   key={c.id}
-                  onClick={() => setSelectedId(c.id)}
+                  onClick={() => { setSelectedId(c.id); if (isMobile) setMobileShowDetail(true); }}
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
@@ -282,8 +286,10 @@ export default function CRMPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Chat area */}
+      {(!isMobile || mobileShowDetail) && (
       <div
         style={{
           flex: 1,
@@ -303,12 +309,32 @@ export default function CRMPage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                padding: "18px 24px",
+                padding: isMobile ? "12px 16px" : "18px 24px",
                 borderBottom: "1px solid rgba(168,154,135,0.35)",
                 background: "#F7F5F0",
+                gap: 8,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+                {isMobile && (
+                  <button
+                    onClick={() => setMobileShowDetail(false)}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "#8C6E50",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ArrowLeft size={20} />
+                  </button>
+                )}
                 <span
                   style={{
                     width: 40,
@@ -358,7 +384,7 @@ export default function CRMPage() {
             )}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? 16 : 24, display: "flex", flexDirection: "column", gap: 12 }}>
               {messages.map((m) => (
                 <div key={m.id} style={{ display: "flex", justifyContent: m.direction === "outbound" ? "flex-end" : "flex-start" }}>
                   <div
@@ -389,7 +415,7 @@ export default function CRMPage() {
                 position: "relative",
                 display: "flex",
                 gap: 12,
-                padding: "16px 24px",
+                padding: isMobile ? "12px 12px" : "16px 24px",
                 borderTop: "1px solid rgba(168,154,135,0.35)",
                 background: "#F7F5F0",
               }}
@@ -620,11 +646,35 @@ export default function CRMPage() {
             </div>
           </>
         ) : (
-          <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", fontSize: 14, color: "#A89A87" }}>
+          <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#A89A87" }}>
+            {isMobile && (
+              <button
+                onClick={() => setMobileShowDetail(false)}
+                style={{
+                  position: "absolute",
+                  top: 16,
+                  left: 16,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#8C6E50",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  minHeight: 44,
+                }}
+              >
+                <ArrowLeft size={18} />
+                CRM
+              </button>
+            )}
             Selecciona una conversación.
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
