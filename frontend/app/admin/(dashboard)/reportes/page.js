@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, Lock } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, Tooltip } from "recharts";
+import { useIsMobile } from "@/lib/use-mobile";
 
 const METRICS = [
   "ocupacion-gabinetes",
@@ -22,6 +23,7 @@ function money(v) {
 }
 
 export default function ReportesPage() {
+  const isMobile = useIsMobile();
   const now = new Date();
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
   const [from, setFrom] = useState(toLocalDate(first));
@@ -58,11 +60,11 @@ export default function ReportesPage() {
   const clients = reports["clientes-nuevos-recurrentes"]?.value?.data;
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", gap: 22, overflowY: "auto" }}>
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", gap: isMobile ? 16 : 22, overflowY: "auto" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
-          <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
+          <h1 className="font-heading" style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
             Reportes
           </h1>
           <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>
@@ -106,9 +108,9 @@ export default function ReportesPage() {
           <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 16 : 20 }}>
           {/* Ocupacion */}
-          <RCard title="Ocupacion por gabinete">
+          <RCard title="Ocupacion por gabinete" compact={isMobile}>
             <Bars
               items={occ.map((r) => ({ name: r.roomName, value: r.porcentaje, suffix: "%" }))}
               note="Horas reservadas sobre horas disponibles del periodo."
@@ -118,6 +120,7 @@ export default function ReportesPage() {
           {/* Ingresos */}
           <RCard
             title="Ingresos por servicio"
+            compact={isMobile}
             action={income?.ok && <span style={{ fontSize: 18, fontWeight: 600, color: "#8C6E50" }}>{money(income.value.data.grandTotalUsd)}</span>}
           >
             {income?.ok ? (
@@ -135,12 +138,12 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Servicios mas vendidos */}
-          <RCard title="Servicios mas vendidos">
+          <RCard title="Servicios mas vendidos" compact={isMobile}>
             <Rank items={sold.slice(0, 5).map((s) => ({ name: s.serviceName || "Servicio", value: `${s.count} sesiones` }))} />
           </RCard>
 
           {/* Desempeno */}
-          <RCard title="Desempeno por terapeuta">
+          <RCard title="Desempeno por terapeuta" compact={isMobile}>
             <Bars
               items={staff.map((s) => ({
                 name: s.staffName,
@@ -152,7 +155,7 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Cancelaciones */}
-          <RCard title="Cancelaciones y no-show">
+          <RCard title="Cancelaciones y no-show" compact={isMobile}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p className="font-heading" style={{ fontSize: 42, fontWeight: 600, color: "#8C6E50", margin: 0 }}>
                 {canc ? `${Number((canc.cancelaciones.rate || 0) + (canc.noShow.rate || 0)).toFixed(1)}%` : "—"}
@@ -168,7 +171,7 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Clientes */}
-          <RCard title="Clientes nuevas vs. recurrentes">
+          <RCard title="Clientes nuevas vs. recurrentes" compact={isMobile}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
                 <span className="font-heading" style={{ fontSize: 42, fontWeight: 600, color: "#8C6E50" }}>
@@ -193,13 +196,13 @@ export default function ReportesPage() {
   );
 }
 
-function RCard({ title, action, children }) {
+function RCard({ title, action, children, compact }) {
   return (
     <div
       className="alma-card"
       style={{
-        padding: 24,
-        minHeight: 260,
+        padding: compact ? 18 : 24,
+        minHeight: compact ? 0 : 260,
         display: "flex",
         flexDirection: "column",
       }}

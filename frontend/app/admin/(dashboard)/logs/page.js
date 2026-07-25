@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 const ENTITY_OPTIONS = [
   { value: "", label: "Todas" },
@@ -61,6 +62,7 @@ function DetailCell({ detail }) {
 }
 
 export default function LogsPage() {
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -69,6 +71,7 @@ export default function LogsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
+  const [expandedId, setExpandedId] = useState(null);
   const limit = 25;
 
   const fetchLogs = useCallback(async () => {
@@ -103,10 +106,14 @@ export default function LogsPage() {
   const totalPages = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
+  const mobileHeaders = ["Fecha", "Acción", "Entidad", "Actor"];
+  const desktopHeaders = ["Fecha", "Acción", "Entidad", "ID", "Actor", "Detalle"];
+  const headers = isMobile ? mobileHeaders : desktopHeaders;
+
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ marginBottom: isMobile ? 14 : 20 }}>
+        <h1 className="font-heading" style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
           Registro de actividad
         </h1>
         <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>
@@ -116,14 +123,14 @@ export default function LogsPage() {
 
       <div
         className="alma-card"
-        style={{ padding: "14px 18px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}
+        style={{ padding: isMobile ? "10px 12px" : "14px 18px", marginBottom: isMobile ? 10 : 16, display: "flex", gap: isMobile ? 8 : 12, alignItems: "flex-end", flexWrap: "wrap" }}
       >
         <div>
           <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Tipo</label>
           <select
             value={entity}
             onChange={(e) => { setEntity(e.target.value); setOffset(0); }}
-            style={{ ...inputStyle, cursor: "pointer", appearance: "none", minWidth: 130 }}
+            style={{ ...inputStyle, cursor: "pointer", appearance: "none", minWidth: isMobile ? 100 : 130 }}
           >
             {ENTITY_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -172,18 +179,22 @@ export default function LogsPage() {
             No hay registros para los filtros seleccionados.
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: isMobile ? 12 : 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(168,154,135,0.3)" }}>
-                {["Fecha", "Acción", "Entidad", "ID", "Actor", "Detalle"].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: "12px 14px", fontSize: 11, color: "#A89A87", fontWeight: 500 }}>{h}</th>
+                {isMobile && <th style={{ width: 32 }} />}
+                {headers.map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: isMobile ? "10px 6px" : "12px 14px", fontSize: 11, color: "#A89A87", fontWeight: 500 }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
                 const ac = ACTION_COLORS[row.action] || { bg: "#eee", color: "#666" };
-                return (
+                const isExpanded = expandedId === row.id;
+                return isMobile ? (
+                  <MobileRow key={row.id} row={row} ac={ac} isExpanded={isExpanded} onToggle={() => setExpandedId(isExpanded ? null : row.id)} />
+                ) : (
                   <tr key={row.id} style={{ borderBottom: "1px solid rgba(168,154,135,0.15)" }}>
                     <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "#6B5540" }}>{formatDate(row.createdAt)}</td>
                     <td style={{ padding: "10px 14px" }}>
@@ -229,5 +240,51 @@ export default function LogsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function MobileRow({ row, ac, isExpanded, onToggle }) {
+  const hasDetail = row.detail && typeof row.detail === "object" && Object.keys(row.detail).length > 0;
+  return (
+    <>
+      <tr
+        style={{ borderBottom: isExpanded ? "none" : "1px solid rgba(168,154,135,0.15)", cursor: hasDetail ? "pointer" : "default" }}
+        onClick={hasDetail ? onToggle : undefined}
+      >
+        <td style={{ padding: "10px 4px", width: 32, textAlign: "center" }}>
+          {hasDetail && (
+            <ChevronDown
+              size={16}
+              style={{
+                color: "#A89A87",
+                transition: "transform 0.2s",
+                transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+              }}
+            />
+          )}
+        </td>
+        <td style={{ padding: "10px 6px", whiteSpace: "nowrap", color: "#6B5540", fontSize: 11 }}>{formatDate(row.createdAt)}</td>
+        <td style={{ padding: "10px 6px" }}>
+          <span style={{ padding: "2px 8px", borderRadius: 999, background: ac.bg, color: ac.color, fontSize: 10, fontWeight: 600 }}>
+            {ACTION_LABELS[row.action] || row.action}
+          </span>
+        </td>
+        <td style={{ padding: "10px 6px", color: "#6B5540", textTransform: "capitalize", fontSize: 11 }}>{row.entity}</td>
+        <td style={{ padding: "10px 6px", color: "#6B5540", fontSize: 11, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.actorEmail}</td>
+      </tr>
+      {isExpanded && (
+        <tr style={{ borderBottom: "1px solid rgba(168,154,135,0.15)" }}>
+          <td colSpan={5} style={{ padding: "8px 12px 12px", background: "rgba(168,154,135,0.06)" }}>
+            <div style={{ fontSize: 11, color: "#A89A87", marginBottom: 4 }}>
+              <b>ID:</b> <span style={{ fontFamily: "monospace" }}>{row.entityId?.slice(0, 16)}…</span>
+            </div>
+            <div style={{ fontSize: 11, color: "#6B5540" }}>
+              <b style={{ color: "#A89A87" }}>Detalle:</b>{" "}
+              <DetailCell detail={row.detail} />
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

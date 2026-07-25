@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Download, Edit3, Loader2, Plus, Upload, X } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
@@ -27,7 +28,8 @@ const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBot
 const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 
-const cardPadding = { padding: 24 };
+const cardPaddingDesktop = { padding: 24 };
+const cardPaddingMobile = { padding: 16 };
 
 function Toggle({ checked, onChange }) {
   return (
@@ -310,6 +312,7 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
 }
 
 export default function ConfiguracionPage() {
+  const isMobile = useIsMobile();
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -359,10 +362,10 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto" }}>
-      <div style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto" }}>
+      <div style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 20 }}>
         <div>
-          <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Configuracion</h1>
+          <h1 className="font-heading" style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Configuracion</h1>
           <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Servicios, categorias, gabinetes y horario de atencion</p>
         </div>
 
@@ -375,7 +378,7 @@ export default function ConfiguracionPage() {
         ) : (
           <>
             {/* Servicios y precios */}
-            <div className="alma-card" style={cardPadding}>
+            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
                 <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Servicios y precios</h3>
                 <button onClick={() => setShowServiceForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
@@ -386,26 +389,31 @@ export default function ConfiguracionPage() {
                 {services.map((s, i, arr) => {
                   const active = s.active !== false;
                   return (
-                    <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
-                          <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50" }}>{s.category}</span>
-                          {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
+                    <div key={s.id} style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5, flexDirection: isMobile ? "column" : "row" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, width: "100%" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
+                            <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50" }}>{s.category}</span>
+                            {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
+                          </div>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>1 h{s.offersHomeService ? " · domicilio" : ""}</p>
                         </div>
-                        <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>1 h{s.offersHomeService ? " · domicilio" : ""}</p>
+                        {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        defaultValue={Number(s.priceUsd).toFixed(2)}
-                        onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
-                        style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
-                      />
-                      <button onClick={() => updateService(s, { offersHomeService: !s.offersHomeService })} style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: s.offersHomeService ? "rgba(201,168,118,0.2)" : "transparent", color: "#8C6E50", fontSize: 12, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-                        {s.offersHomeService ? "Domicilio" : "Spa"}
-                      </button>
-                      <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          defaultValue={Number(s.priceUsd).toFixed(2)}
+                          onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
+                          style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
+                        />
+                        <button onClick={() => updateService(s, { offersHomeService: !s.offersHomeService })} style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: s.offersHomeService ? "rgba(201,168,118,0.2)" : "transparent", color: "#8C6E50", fontSize: 12, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
+                          {s.offersHomeService ? "Domicilio" : "Spa"}
+                        </button>
+                        {isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
+                      </div>
                     </div>
                   );
                 })}
@@ -414,7 +422,7 @@ export default function ConfiguracionPage() {
             </div>
 
             {/* Categorias */}
-            <div className="alma-card" style={cardPadding}>
+            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
                 <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Categorias</h3>
                 <button onClick={() => setShowCatForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
@@ -471,7 +479,7 @@ export default function ConfiguracionPage() {
             </div>
 
             {/* Gabinetes */}
-            <div className="alma-card" style={cardPadding}>
+            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
                 <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Gabinetes</h3>
                 <button onClick={() => setShowRoomForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
@@ -495,7 +503,7 @@ export default function ConfiguracionPage() {
             </div>
 
             {/* Horario de atencion */}
-            <div className="alma-card" style={cardPadding}>
+            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Horario de atencion</h3>
               <BusinessHoursPanel />
             </div>
