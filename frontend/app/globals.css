@@ -82,6 +82,15 @@
   --chart-4: #6B5540;
   --chart-5: #A89A87;
   --radius: 0.5rem;
+
+  /* Motion tokens */
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --motion-slow: 300ms;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
   --sidebar: #F7F5F0;
   --sidebar-foreground: #6B5540;
   --sidebar-primary: #8C6E50;
@@ -90,6 +99,14 @@
   --sidebar-accent-foreground: #3A2F26;
   --sidebar-border: rgba(168, 154, 135, 0.35);
   --sidebar-ring: #8C6E50;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
 }
 
 @layer base {
@@ -110,5 +127,16 @@
     border: 1px solid #DDD6CC;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(107, 85, 64, 0.08);
+  }
+
+  button,
+  [role="button"],
+  [tabindex="0"] {
+    transition: transform var(--motion-fast) var(--ease-spring);
+  }
+  button:active,
+  [role="button"]:active,
+  [tabindex="0"]:active {
+    transform: scale(0.97);
   }
 }
