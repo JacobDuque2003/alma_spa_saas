@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, ShieldCheck, X, ToggleLeft, ToggleRight, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { useAnimatedMount } from "@/lib/use-animated-mount";
 
 const PLATFORM_SUPPORT_USER = {
   id: "platform-support",
@@ -54,7 +55,7 @@ const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBot
 const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 
-function NewUserModal({ onClose, onSaved }) {
+function NewUserModal({ phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -99,6 +100,7 @@ function NewUserModal({ onClose, onSaved }) {
 
   return (
     <div
+      className={`alma-backdrop alma-anim-${phase}`}
       onClick={onClose}
       style={{
         position: "fixed",
@@ -112,7 +114,7 @@ function NewUserModal({ onClose, onSaved }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="alma-card"
+        className={`alma-card alma-modal alma-anim-${phase}`}
         style={{
           width: "100%",
           maxWidth: 420,
@@ -232,6 +234,8 @@ export default function PersonalPage() {
   const [toggling, setToggling] = useState(null);
   const isMobile = useIsMobile();
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
+  const newUserAnim = useAnimatedMount(showNewUser, 220);
+  const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -401,21 +405,23 @@ export default function PersonalPage() {
                         : permissionsSummary(user)}
                     </p>
                   </div>
-                  {!user.isProtected && !user.active && (
-                    <span
-                      style={{
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        background: "rgba(194,84,80,0.12)",
-                        color: "#C25450",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        flexShrink: 0,
-                      }}
-                    >
-                      Inactiva
-                    </span>
-                  )}
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "rgba(194,84,80,0.12)",
+                      color: "#C25450",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      flexShrink: 0,
+                      opacity: !user.isProtected && !user.active ? 1 : 0,
+                      transform: !user.isProtected && !user.active ? "scale(1)" : "scale(0.8)",
+                      transition: "opacity var(--motion-fast) var(--ease-out-quart), transform var(--motion-fast) var(--ease-spring)",
+                      pointerEvents: !user.isProtected && !user.active ? "auto" : "none",
+                    }}
+                  >
+                    Inactiva
+                  </span>
                   {!user.isProtected && (
                     <button
                       title={user.active ? "Desactivar cuenta" : "Activar cuenta"}
@@ -446,9 +452,10 @@ export default function PersonalPage() {
       )}
 
       {/* Detail / permissions panel */}
-      {(!isMobile || mobileShowDetail) && (
+      {(!isMobile || mobileDetailAnim.shouldRender) && (
       <div
-        className="alma-card"
+        key={isMobile ? undefined : selectedId}
+        className={`alma-card${isMobile ? ` alma-slide-right alma-anim-${mobileDetailAnim.phase}` : " alma-stagger"}`}
         style={{
           flex: 1,
           padding: isMobile ? 20 : 28,
@@ -620,8 +627,9 @@ export default function PersonalPage() {
       </div>
       )}
 
-      {showNewUser && (
+      {newUserAnim.shouldRender && (
         <NewUserModal
+          phase={newUserAnim.phase}
           onClose={() => setShowNewUser(false)}
           onSaved={(created) => {
             setShowNewUser(false);

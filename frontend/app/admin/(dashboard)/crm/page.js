@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, Send, Settings, X, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { useAnimatedMount } from "@/lib/use-animated-mount";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
@@ -35,6 +36,7 @@ export default function CRMPage() {
   const [editingReplyIdx, setEditingReplyIdx] = useState(null);
   const isMobile = useIsMobile();
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
+  const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
   const [editReplyText, setEditReplyText] = useState("");
   const [newReplyText, setNewReplyText] = useState("");
 
@@ -289,8 +291,10 @@ export default function CRMPage() {
       )}
 
       {/* Chat area */}
-      {(!isMobile || mobileShowDetail) && (
+      {(!isMobile || mobileDetailAnim.shouldRender) && (
       <div
+        key={isMobile ? undefined : selectedId}
+        className={isMobile ? `alma-slide-right alma-anim-${mobileDetailAnim.phase}` : "alma-stagger"}
         style={{
           flex: 1,
           display: "flex",

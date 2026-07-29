@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Loader2, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { useAnimatedMount } from "@/lib/use-animated-mount";
 
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true },
@@ -34,6 +35,47 @@ function getInitials(name) {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+}
+
+function DrawerOverlay({ drawerOpen, onClose, navContent }) {
+  const { shouldRender, phase } = useAnimatedMount(drawerOpen, 300);
+  if (!shouldRender) return null;
+  return (
+    <div
+      className={`alma-drawer-overlay alma-anim-${phase}`}
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(58,47,38,0.4)" }}
+    >
+      <aside
+        className={`alma-drawer alma-anim-${phase}`}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 280,
+          height: "100%",
+          background: "#F7F5F0",
+          display: "flex",
+          flexDirection: "column",
+          padding: "16px 12px",
+          boxShadow: "4px 0 24px rgba(0,0,0,0.15)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px 16px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+            <span className="font-heading" style={{ fontSize: 18, fontWeight: 600, letterSpacing: 2.5, color: "#6B5540" }}>ALMA</span>
+            <span style={{ fontFamily: "var(--font-pinyon), 'Pinyon Script', cursive", fontSize: 16, color: "#C9A876" }}>Spa</span>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", color: "#A89A87", borderRadius: 8 }}
+            aria-label="Cerrar menú"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        {navContent}
+      </aside>
+    </div>
+  );
 }
 
 function Shell({ children }) {
@@ -230,69 +272,7 @@ function Shell({ children }) {
         </header>
 
         {/* Drawer overlay */}
-        {drawerOpen && (
-          <div
-            onClick={() => setDrawerOpen(false)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 50,
-              background: "rgba(58,47,38,0.4)",
-            }}
-          >
-            <aside
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: 280,
-                height: "100%",
-                background: "#F7F5F0",
-                display: "flex",
-                flexDirection: "column",
-                padding: "16px 12px",
-                boxShadow: "4px 0 24px rgba(0,0,0,0.15)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px 16px" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span
-                    className="font-heading"
-                    style={{ fontSize: 18, fontWeight: 600, letterSpacing: 2.5, color: "#6B5540" }}
-                  >
-                    ALMA
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-pinyon), 'Pinyon Script', cursive",
-                      fontSize: 16,
-                      color: "#C9A876",
-                    }}
-                  >
-                    Spa
-                  </span>
-                </div>
-                <button
-                  onClick={() => setDrawerOpen(false)}
-                  style={{
-                    width: 44,
-                    height: 44,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "#A89A87",
-                    borderRadius: 8,
-                  }}
-                  aria-label="Cerrar menú"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              {navContent}
-            </aside>
-          </div>
-        )}
+        <DrawerOverlay drawerOpen={drawerOpen} onClose={() => setDrawerOpen(false)} navContent={navContent} />
 
         {/* Main content */}
         <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{children}</main>
@@ -346,7 +326,7 @@ function NavItem({ item, active, isMobile }) {
     borderRadius: 8,
     fontSize: isMobile ? 15 : 13,
     textDecoration: "none",
-    transition: "background 0.15s, color 0.15s",
+    transition: "background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart)",
     minHeight: isMobile ? 44 : "auto",
   };
 

@@ -257,7 +257,7 @@ function MobileRow({ row, ac, isExpanded, onToggle }) {
               size={16}
               style={{
                 color: "#A89A87",
-                transition: "transform 0.2s",
+                transition: `transform var(--motion-fast) var(--ease-out-quart)`,
                 transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
               }}
             />
@@ -272,15 +272,19 @@ function MobileRow({ row, ac, isExpanded, onToggle }) {
         <td style={{ padding: "10px 6px", color: "#6B5540", textTransform: "capitalize", fontSize: 11 }}>{row.entity}</td>
         <td style={{ padding: "10px 6px", color: "#6B5540", fontSize: 11, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.actorEmail}</td>
       </tr>
-      {isExpanded && (
+      {hasDetail && (
         <tr style={{ borderBottom: "1px solid rgba(168,154,135,0.15)" }}>
-          <td colSpan={5} style={{ padding: "8px 12px 12px", background: "rgba(168,154,135,0.06)" }}>
-            <div style={{ fontSize: 11, color: "#A89A87", marginBottom: 4 }}>
-              <b>ID:</b> <span style={{ fontFamily: "monospace" }}>{row.entityId?.slice(0, 16)}…</span>
-            </div>
-            <div style={{ fontSize: 11, color: "#6B5540" }}>
-              <b style={{ color: "#A89A87" }}>Detalle:</b>{" "}
-              <DetailCell detail={row.detail} />
+          <td colSpan={5} style={{ padding: 0 }}>
+            <div className={`alma-accordion-body${isExpanded ? " alma-accordion-open" : ""}`}>
+              <div style={{ padding: "8px 12px 12px", background: "rgba(168,154,135,0.06)" }}>
+                <div style={{ fontSize: 11, color: "#A89A87", marginBottom: 4 }}>
+                  <b>ID:</b> <span style={{ fontFamily: "monospace" }}>{row.entityId?.slice(0, 16)}…</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#6B5540" }}>
+                  <b style={{ color: "#A89A87" }}>Detalle:</b>{" "}
+                  <DetailCell detail={row.detail} />
+                </div>
+              </div>
             </div>
           </td>
         </tr>

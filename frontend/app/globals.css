@@ -139,4 +139,97 @@
   [tabindex="0"]:active {
     transform: scale(0.97);
   }
+
+  /* Modal backdrop */
+  .alma-backdrop {
+    opacity: 0;
+    transition: opacity var(--motion-base) var(--ease-out-quart);
+  }
+  .alma-backdrop.alma-anim-entered { opacity: 1; }
+  .alma-backdrop.alma-anim-exiting { opacity: 0; }
+
+  /* Modal content */
+  .alma-modal {
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity var(--motion-base) var(--ease-out-quart),
+                transform var(--motion-base) var(--ease-spring);
+  }
+  .alma-modal.alma-anim-entered { opacity: 1; transform: scale(1); }
+  .alma-modal.alma-anim-exiting { opacity: 0; transform: scale(0.95); }
+
+  /* Mobile drawer overlay */
+  .alma-drawer-overlay {
+    opacity: 0;
+    transition: opacity var(--motion-base) var(--ease-out-quart);
+  }
+  .alma-drawer-overlay.alma-anim-entered { opacity: 1; }
+  .alma-drawer-overlay.alma-anim-exiting { opacity: 0; }
+
+  /* Mobile drawer panel */
+  .alma-drawer {
+    transform: translateX(-100%);
+    transition: transform var(--motion-slow) var(--ease-out-quart);
+  }
+  .alma-drawer.alma-anim-entered { transform: translateX(0); }
+  .alma-drawer.alma-anim-exiting { transform: translateX(-100%); }
+
+  /* Split-view slide from right (mobile detail) */
+  .alma-slide-right {
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity var(--motion-base) var(--ease-out-quart),
+                transform var(--motion-base) var(--ease-out-quart);
+  }
+  .alma-slide-right.alma-anim-entered { opacity: 1; transform: translateX(0); }
+  .alma-slide-right.alma-anim-exiting { opacity: 0; transform: translateX(40px); }
+
+  /* Accordion expand (Logs mobile) */
+  .alma-accordion-body {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height var(--motion-base) var(--ease-out-quart),
+                opacity var(--motion-base) var(--ease-out-quart);
+  }
+  .alma-accordion-body.alma-anim-entered,
+  .alma-accordion-body.alma-accordion-open { max-height: 200px; opacity: 1; }
+  .alma-accordion-body.alma-anim-exiting { max-height: 0; opacity: 0; }
+
+  /* Staggered card entry */
+  @keyframes alma-fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .alma-stagger { animation: alma-fade-up var(--motion-slow) var(--ease-out-quart) both; }
+
+  /* Bar grow from zero */
+  @keyframes alma-bar-grow {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  .alma-bar-grow {
+    transform-origin: left;
+    animation: alma-bar-grow var(--motion-slow) var(--ease-out-quart) both;
+  }
+
+  /* Grid directional transition (Agenda navigation) */
+  @keyframes alma-slide-out-left {
+    to { opacity: 0; transform: translateX(-30px); }
+  }
+  @keyframes alma-slide-out-right {
+    to { opacity: 0; transform: translateX(30px); }
+  }
+  @keyframes alma-slide-in-left {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes alma-slide-in-right {
+    from { opacity: 0; transform: translateX(-30px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .alma-grid-exit-left { animation: alma-slide-out-left var(--motion-base) var(--ease-out-quart) forwards; }
+  .alma-grid-exit-right { animation: alma-slide-out-right var(--motion-base) var(--ease-out-quart) forwards; }
+  .alma-grid-enter-left { animation: alma-slide-in-left var(--motion-base) var(--ease-out-quart) both; }
+  .alma-grid-enter-right { animation: alma-slide-in-right var(--motion-base) var(--ease-out-quart) both; }
 }

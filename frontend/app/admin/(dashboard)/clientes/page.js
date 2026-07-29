@@ -5,6 +5,7 @@ import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, Search, X, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { useAnimatedMount } from "@/lib/use-animated-mount";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
@@ -79,6 +80,10 @@ export default function ClientesPage() {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showEditClient, setShowEditClient] = useState(false);
   const [showEditIntake, setShowEditIntake] = useState(false);
+  const paymentAnim = useAnimatedMount(showPaymentForm, 220);
+  const editClientAnim = useAnimatedMount(showEditClient, 220);
+  const editIntakeAnim = useAnimatedMount(showEditIntake, 220);
+  const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
 
   function registerPayment() {
     if (!selectedId) return;
@@ -214,8 +219,8 @@ export default function ClientesPage() {
       )}
 
       {/* Detail panel */}
-      {(!isMobile || mobileShowDetail) && (
-      <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 30px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
+      {(!isMobile || mobileDetailAnim.shouldRender) && (
+      <div key={isMobile ? undefined : selectedId} className={isMobile ? `alma-slide-right alma-anim-${mobileDetailAnim.phase}` : "alma-stagger"} style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 30px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
         {isMobile && (
           <button
             onClick={() => setMobileShowDetail(false)}
@@ -248,25 +253,28 @@ export default function ClientesPage() {
           </div>
         ) : detail ? (
           <>
-            {showPaymentForm && (
+            {paymentAnim.shouldRender && (
               <PaymentFormModal
                 clientName={detail.fullName}
+                phase={paymentAnim.phase}
                 onClose={() => setShowPaymentForm(false)}
                 onSaved={() => { setShowPaymentForm(false); fetchDetail(); }}
                 clientId={selectedId}
               />
             )}
-            {showEditClient && (
+            {editClientAnim.shouldRender && (
               <EditClientModal
                 client={detail}
+                phase={editClientAnim.phase}
                 onClose={() => setShowEditClient(false)}
                 onSaved={() => { setShowEditClient(false); fetchDetail(); fetchClients(); }}
               />
             )}
-            {showEditIntake && (
+            {editIntakeAnim.shouldRender && (
               <EditIntakeModal
                 clientId={selectedId}
                 intake={intake}
+                phase={editIntakeAnim.phase}
                 onClose={() => setShowEditIntake(false)}
                 onSaved={() => { setShowEditIntake(false); fetchDetail(); }}
               />
@@ -487,7 +495,7 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
 const modalInputStyle = { width: "100%", padding: "10px 14px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 14, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
 const modalLabelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
 
-function PaymentFormModal({ clientName, clientId, onClose, onSaved }) {
+function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
   const [amountUsd, setAmountUsd] = useState("");
   const [method, setMethod] = useState("efectivo");
   const [saving, setSaving] = useState(false);
@@ -513,8 +521,8 @@ function PaymentFormModal({ clientName, clientId, onClose, onSaved }) {
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
-      <div onClick={(e) => e.stopPropagation()} className="alma-card" style={{ width: "100%", maxWidth: 400, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+    <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 400, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
         </button>
@@ -544,7 +552,7 @@ function PaymentFormModal({ clientName, clientId, onClose, onSaved }) {
   );
 }
 
-function EditClientModal({ client, onClose, onSaved }) {
+function EditClientModal({ client, phase, onClose, onSaved }) {
   const [fullName, setFullName] = useState(client.fullName || "");
   const [whatsapp, setWhatsapp] = useState(client.whatsapp || "");
   const [email, setEmail] = useState(client.email || "");
@@ -562,8 +570,8 @@ function EditClientModal({ client, onClose, onSaved }) {
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
-      <div onClick={(e) => e.stopPropagation()} className="alma-card" style={{ width: "100%", maxWidth: 400, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+    <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 400, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}><X size={20} /></button>
         <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>Editar clienta</h2>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -581,7 +589,7 @@ function EditClientModal({ client, onClose, onSaved }) {
   );
 }
 
-function EditIntakeModal({ clientId, intake, onClose, onSaved }) {
+function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
   const [allergies, setAllergies] = useState(intake?.allergies || "");
   const [conditions, setConditions] = useState(intake?.conditions || "");
   const [consentSigned, setConsentSigned] = useState(intake?.consentSigned || false);
@@ -598,8 +606,8 @@ function EditIntakeModal({ clientId, intake, onClose, onSaved }) {
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
-      <div onClick={(e) => e.stopPropagation()} className="alma-card" style={{ width: "100%", maxWidth: 420, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+    <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 420, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}><X size={20} /></button>
         <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>Ficha de anamnesis</h2>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>

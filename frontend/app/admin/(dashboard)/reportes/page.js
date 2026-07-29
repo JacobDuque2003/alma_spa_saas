@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, Lock } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, Tooltip } from "recharts";
@@ -30,6 +30,7 @@ export default function ReportesPage() {
   const [to, setTo] = useState(toLocalDate(now));
   const [reports, setReports] = useState({});
   const [loading, setLoading] = useState(true);
+  const hasAnimated = useRef(false);
 
   const range = useMemo(() => ({ from: `${from}T00:00:00`, to: `${to}T23:59:59` }), [from, to]);
 
@@ -51,6 +52,10 @@ export default function ReportesPage() {
   useEffect(() => {
     fetchReports();
   }, [fetchReports]);
+
+  useEffect(() => {
+    if (!loading) hasAnimated.current = true;
+  }, [loading]);
 
   const occ = reports["ocupacion-gabinetes"]?.value?.data?.gabinetes || [];
   const income = reports["ingresos-servicio"];
@@ -110,7 +115,7 @@ export default function ReportesPage() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 16 : 20 }}>
           {/* Ocupacion */}
-          <RCard title="Ocupacion por gabinete" compact={isMobile}>
+          <RCard title="Ocupacion por gabinete" compact={isMobile} stagger={!hasAnimated.current} index={0}>
             <Bars
               items={occ.map((r) => ({ name: r.roomName, value: r.porcentaje, suffix: "%" }))}
               note="Horas reservadas sobre horas disponibles del periodo."
@@ -121,6 +126,8 @@ export default function ReportesPage() {
           <RCard
             title="Ingresos por servicio"
             compact={isMobile}
+            stagger={!hasAnimated.current}
+            index={1}
             action={income?.ok && <span style={{ fontSize: 18, fontWeight: 600, color: "#8C6E50" }}>{money(income.value.data.grandTotalUsd)}</span>}
           >
             {income?.ok ? (
@@ -138,12 +145,12 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Servicios mas vendidos */}
-          <RCard title="Servicios mas vendidos" compact={isMobile}>
+          <RCard title="Servicios mas vendidos" compact={isMobile} stagger={!hasAnimated.current} index={2}>
             <Rank items={sold.slice(0, 5).map((s) => ({ name: s.serviceName || "Servicio", value: `${s.count} sesiones` }))} />
           </RCard>
 
           {/* Desempeno */}
-          <RCard title="Desempeno por terapeuta" compact={isMobile}>
+          <RCard title="Desempeno por terapeuta" compact={isMobile} stagger={!hasAnimated.current} index={3}>
             <Bars
               items={staff.map((s) => ({
                 name: s.staffName,
@@ -155,7 +162,7 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Cancelaciones */}
-          <RCard title="Cancelaciones y no-show" compact={isMobile}>
+          <RCard title="Cancelaciones y no-show" compact={isMobile} stagger={!hasAnimated.current} index={4}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p className="font-heading" style={{ fontSize: 42, fontWeight: 600, color: "#8C6E50", margin: 0 }}>
                 {canc ? `${Number((canc.cancelaciones.rate || 0) + (canc.noShow.rate || 0)).toFixed(1)}%` : "—"}
@@ -171,7 +178,7 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Clientes */}
-          <RCard title="Clientes nuevas vs. recurrentes" compact={isMobile}>
+          <RCard title="Clientes nuevas vs. recurrentes" compact={isMobile} stagger={!hasAnimated.current} index={5}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
                 <span className="font-heading" style={{ fontSize: 42, fontWeight: 600, color: "#8C6E50" }}>
@@ -196,15 +203,16 @@ export default function ReportesPage() {
   );
 }
 
-function RCard({ title, action, children, compact }) {
+function RCard({ title, action, children, compact, stagger, index }) {
   return (
     <div
-      className="alma-card"
+      className={`alma-card${stagger ? " alma-stagger" : ""}`}
       style={{
         padding: compact ? 18 : 24,
         minHeight: compact ? 0 : 260,
         display: "flex",
         flexDirection: "column",
+        ...(stagger ? { animationDelay: `${index * 50}ms` } : {}),
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
@@ -229,7 +237,7 @@ function Bars({ items, note }) {
               <b>{item.label || `${item.value}${item.suffix || ""}`}</b>
             </div>
             <div style={{ height: 5, borderRadius: 999, background: "rgba(168,154,135,0.3)" }}>
-              <div style={{ height: "100%", borderRadius: 999, background: "#8C6E50", width: `${Math.min(100, Number(item.value) || 0)}%`, transition: "width 0.4s" }} />
+              <div className="alma-bar-grow" style={{ height: "100%", borderRadius: 999, background: "#8C6E50", width: `${Math.min(100, Number(item.value) || 0)}%` }} />
             </div>
           </div>
         ))

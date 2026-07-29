@@ -165,6 +165,7 @@ function RoomCard({ room, appointments }) {
             color: isOccupied ? "#EBE8E1" : "#8C6E50",
             fontSize: 12,
             fontWeight: 500,
+            transition: "background var(--motion-slow) var(--ease-in-out-quart), color var(--motion-slow) var(--ease-in-out-quart)",
           }}
         >
           <span
@@ -173,6 +174,7 @@ function RoomCard({ room, appointments }) {
               height: 7,
               borderRadius: "50%",
               background: isOccupied ? "#EBCDB5" : "#C9A876",
+              transition: "background var(--motion-slow) var(--ease-in-out-quart)",
             }}
           />
           {isOccupied ? "Ocupado" : "Libre"}

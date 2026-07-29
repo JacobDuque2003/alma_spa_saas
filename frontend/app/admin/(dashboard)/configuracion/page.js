@@ -4,15 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Download, Edit3, Loader2, Plus, Upload, X } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { useAnimatedMount } from "@/lib/use-animated-mount";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, phase, onClose, children }) {
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
-      <div onClick={(e) => e.stopPropagation()} className="alma-card" style={{ width: "100%", maxWidth: 420, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+    <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 420, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
         </button>
@@ -38,21 +39,21 @@ function Toggle({ checked, onChange }) {
       style={{
         width: 44, height: 24, borderRadius: 12, border: "none",
         background: checked ? "#C9A876" : "rgba(168,154,135,0.3)",
-        position: "relative", cursor: "pointer", transition: "background 0.2s",
+        position: "relative", cursor: "pointer", transition: "background var(--motion-fast) var(--ease-in-out-quart)",
         flexShrink: 0,
       }}
     >
       <span style={{
         position: "absolute", top: 2, left: checked ? 22 : 2,
         width: 20, height: 20, borderRadius: "50%",
-        background: "#F7F5F0", transition: "left 0.2s",
+        background: "#F7F5F0", transition: "left var(--motion-fast) var(--ease-in-out-quart)",
         boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
       }} />
     </button>
   );
 }
 
-function ServiceFormModal({ categories, onClose, onSaved }) {
+function ServiceFormModal({ categories, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
@@ -76,7 +77,7 @@ function ServiceFormModal({ categories, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Nuevo servicio" onClose={onClose}>
+    <Modal title="Nuevo servicio" phase={phase} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Masaje relajante" /></div>
         <div>
@@ -95,7 +96,7 @@ function ServiceFormModal({ categories, onClose, onSaved }) {
   );
 }
 
-function RoomFormModal({ categories, onClose, onSaved }) {
+function RoomFormModal({ categories, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [specialty, setSpecialty] = useState(categories[0] || "");
   const [saving, setSaving] = useState(false);
@@ -118,7 +119,7 @@ function RoomFormModal({ categories, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Nuevo gabinete" onClose={onClose}>
+    <Modal title="Nuevo gabinete" phase={phase} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Gabinete de masajes" /></div>
         <div>
@@ -137,7 +138,7 @@ function RoomFormModal({ categories, onClose, onSaved }) {
   );
 }
 
-function CategoryFormModal({ onClose, onSaved }) {
+function CategoryFormModal({ phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -153,7 +154,7 @@ function CategoryFormModal({ onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Nueva categoria" onClose={onClose}>
+    <Modal title="Nueva categoria" phase={phase} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="masajes, faciales, corporales..." autoFocus /></div>
         {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
@@ -321,6 +322,9 @@ export default function ConfiguracionPage() {
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
+  const serviceAnim = useAnimatedMount(showServiceForm, 220);
+  const roomAnim = useAnimatedMount(showRoomForm, 220);
+  const catAnim = useAnimatedMount(showCatForm, 220);
   const [editCatId, setEditCatId] = useState(null);
   const [editCatName, setEditCatName] = useState("");
   const [expandedRoomId, setExpandedRoomId] = useState(null);
@@ -516,9 +520,9 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {showServiceForm && <ServiceFormModal categories={categories} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
-      {showRoomForm && <RoomFormModal categories={derivedCategories} onClose={() => setShowRoomForm(false)} onSaved={(created) => { setShowRoomForm(false); setRooms((prev) => [...prev, created]); }} />}
-      {showCatForm && <CategoryFormModal onClose={() => setShowCatForm(false)} onSaved={(created) => { setShowCatForm(false); setDbCategories((prev) => [...prev, created]); }} />}
+      {serviceAnim.shouldRender && <ServiceFormModal categories={categories} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
+      {roomAnim.shouldRender && <RoomFormModal categories={derivedCategories} phase={roomAnim.phase} onClose={() => setShowRoomForm(false)} onSaved={(created) => { setShowRoomForm(false); setRooms((prev) => [...prev, created]); }} />}
+      {catAnim.shouldRender && <CategoryFormModal phase={catAnim.phase} onClose={() => setShowCatForm(false)} onSaved={(created) => { setShowCatForm(false); setDbCategories((prev) => [...prev, created]); }} />}
     </div>
   );
 }

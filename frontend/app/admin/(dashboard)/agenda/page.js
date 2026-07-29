@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, X, Search } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { useAnimatedMount } from "@/lib/use-animated-mount";
+import { useGridTransition } from "@/lib/use-grid-transition";
 
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 9);
 const STATUS_COLORS = {
@@ -109,6 +111,13 @@ export default function AgendaPage() {
   const [selected, setSelected] = useState(null);
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
   const [staffList, setStaffList] = useState([]);
+  const [navDirection, setNavDirection] = useState(0);
+
+  const detailAnim = useAnimatedMount(!!selected, 220);
+  const lastSelected = useRef(null);
+  if (selected) lastSelected.current = selected;
+  const newFormAnim = useAnimatedMount(showNewForm, 220);
+  const { gridClass, onAnimationEnd } = useGridTransition(navDirection, loading);
 
   const effectiveView = isMobile ? "day" : view;
 
@@ -144,6 +153,7 @@ export default function AgendaPage() {
   }, [fetchData]);
 
   function navigate(dir) {
+    setNavDirection(dir);
     const d = new Date(selectedDate + "T12:00:00");
     d.setDate(d.getDate() + (effectiveView === "day" ? dir : dir * 7));
     setSelectedDate(toLocalDate(d));
@@ -328,39 +338,42 @@ export default function AgendaPage() {
       )}
 
       {/* Grid */}
-      {loading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
-        </div>
-      ) : isMobile ? (
-        <MobileCardList
-          appointments={appointments}
-          date={selectedDate}
-          roomColorMap={roomColorMap}
-          rooms={rooms}
-          onSelect={setSelected}
-        />
-      ) : effectiveView === "week" ? (
-        <WeekGrid
-          appointments={appointments}
-          selectedDate={selectedDate}
-          today={today}
-          roomColorMap={roomColorMap}
-          onSelect={setSelected}
-        />
-      ) : (
-        <DayGrid
-          appointments={appointments}
-          date={selectedDate}
-          today={today}
-          roomColorMap={roomColorMap}
-          onSelect={setSelected}
-        />
-      )}
+      <div className={gridClass || undefined} onAnimationEnd={onAnimationEnd}>
+        {loading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
+          </div>
+        ) : isMobile ? (
+          <MobileCardList
+            appointments={appointments}
+            date={selectedDate}
+            roomColorMap={roomColorMap}
+            rooms={rooms}
+            onSelect={setSelected}
+          />
+        ) : effectiveView === "week" ? (
+          <WeekGrid
+            appointments={appointments}
+            selectedDate={selectedDate}
+            today={today}
+            roomColorMap={roomColorMap}
+            onSelect={setSelected}
+          />
+        ) : (
+          <DayGrid
+            appointments={appointments}
+            date={selectedDate}
+            today={today}
+            roomColorMap={roomColorMap}
+            onSelect={setSelected}
+          />
+        )}
+      </div>
 
-      {selected && (
+      {detailAnim.shouldRender && (
         <AppointmentDetail
-          appt={selected}
+          appt={selected || lastSelected.current}
+          phase={detailAnim.phase}
           rooms={rooms}
           staffList={staffList}
           onClose={() => setSelected(null)}
@@ -370,9 +383,10 @@ export default function AgendaPage() {
           }}
         />
       )}
-      {showNewForm && (
+      {newFormAnim.shouldRender && (
         <NewAppointmentForm
           defaultDate={selectedDate}
+          phase={newFormAnim.phase}
           onClose={() => setShowNewForm(false)}
           onCreated={handleCreated}
           preSelectedClient={preClientId ? { id: preClientId, fullName: preClientName || "" } : null}
@@ -717,7 +731,8 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
   );
 }
 
-function AppointmentDetail({ appt, rooms, staffList, onClose, onUpdated }) {
+function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }) {
+  if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -767,12 +782,13 @@ function AppointmentDetail({ appt, rooms, staffList, onClose, onUpdated }) {
 
   return (
     <div
+      className={`alma-backdrop alma-anim-${phase}`}
       onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="alma-card" style={{ width: "100%", maxWidth: 440, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)", maxHeight: "90vh", overflowY: "auto" }}
+        className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 440, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)", maxHeight: "90vh", overflowY: "auto" }}
       >
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
@@ -881,7 +897,7 @@ function AppointmentDetail({ appt, rooms, staffList, onClose, onUpdated }) {
   );
 }
 
-function NewAppointmentForm({ defaultDate, onClose, onCreated, preSelectedClient }) {
+function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -1014,6 +1030,7 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated, preSelectedClient
 
   return (
     <div
+      className={`alma-backdrop alma-anim-${phase}`}
       style={{
         position: "fixed",
         inset: 0,
@@ -1025,7 +1042,7 @@ function NewAppointmentForm({ defaultDate, onClose, onCreated, preSelectedClient
       }}
     >
       <div
-        className="alma-card"
+        className={`alma-card alma-modal alma-anim-${phase}`}
         style={{
           width: "100%",
           maxWidth: 480,
