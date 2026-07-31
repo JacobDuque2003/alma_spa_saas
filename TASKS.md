@@ -165,6 +165,17 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 
 - [ ] Import/Export Excel
 
+## P1-C — Seed limpio de producción — COMPLETADO (2026-07-31)
+
+- [x] Auditoría destructiva contra Railway (read-only) — tabla de conteos presentada al PM.
+- [x] Aprobación explícita del PM (incluye `whatsAppConnection`, `serviceCategory: mentales`, `Client` Camila Herrera).
+- [x] Ejecución del borrado dentro de un único `$transaction` de Prisma con `MIGRATION_DATABASE_URL` — el rol `alma_app` no tiene DELETE sobre `ClientIntakeAuditLog` por diseño (append-only de Fase 4), así que la limpieza usa el rol elevado documentado en el two-URL design de Oleada 1.
+- [x] Resultado: 15 tablas del tenant a 0 filas, 4 usuarios `.test` eliminados. Quedan 3 usuarios: `jacob@almaspa.com`, `gianella@almaspa.com`, `admin@nuvio.tech`.
+- [x] `Tenant.config` preservado byte-for-byte (`timezone`, `workDays`, `businessHours`).
+- [x] Camila Herrera y sus dependientes (3 ledger + 3 appointments + 2 treatmentHistories) eliminados con `Client`.
+- [x] `whatsAppConnection` (fila de prueba pre-Meta) eliminada — quedará pendiente hasta P0-1.
+- [x] Script versionado en `prisma/cleanProductionData.js` con `--confirm` obligatorio para reproducibilidad y auditoría.
+
 ## Hallazgos de seguridad en OTROS proyectos (no Alma Spa) — no perder de vista
 
 - [ ] **BarberBot / El Cubano Barbería (`barbershop/`, EN PRODUCCIÓN con cliente real)**: `src/routes/webhooks.js` tiene un bypass real de la verificación de firma del webhook de WhatsApp — `verifyWhatsAppSignature` hace `if (!appSecret) return true`, es decir **acepta webhooks sin firma válida** si `WHATSAPP_APP_SECRET` no está configurado. En un endpoint público esto permite que cualquiera inyecte payloads de webhook falsos (mensajes, cambios de estado). Además re-serializa el body (`Buffer.from(JSON.stringify(req.body))`) como fallback, que ni siquiera reproduce los bytes originales para el HMAC. Detectado al diseñar Fase 5 de Alma Spa (que deliberadamente NO copia este patrón). Revisar/corregir en barbershop cuando se retome ese proyecto.
