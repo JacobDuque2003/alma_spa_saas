@@ -30,6 +30,15 @@ export const metadata = {
     apple: "/apple-touch-icon.png",
   },
   manifest: "/site.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "ALMA Spa",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport = {
+  themeColor: "#8C6E50",
 };
 
 export default function RootLayout({ children }) {
