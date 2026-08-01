@@ -12,7 +12,11 @@ export async function authFetch(path, { method = "GET", body, query } = {}) {
   const res = await fetch(url, opts);
 
   if (res.status === 401) {
-    window.location.href = "/admin/login";
+    // Clear the (possibly stale) cookie server-side BEFORE redirecting.
+    // If we skip this, /admin/login's middleware sees the cookie, bounces
+    // us back to /admin/agenda, AuthProvider re-runs /auth/me, gets 401
+    // again → reload storm.
+    await logout();
     throw new Error("Sesión expirada");
   }
 
@@ -41,6 +45,7 @@ export async function login(email, password) {
 }
 
 export async function logout() {
-  await fetch("/api/auth/logout", { method: "POST" });
+  // Best-effort: if the network is down we still want to leave the app.
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
   window.location.href = "/admin/login";
 }
