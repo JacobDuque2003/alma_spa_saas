@@ -7,6 +7,7 @@ import { Loader2, X, Search } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useGridTransition } from "@/lib/use-grid-transition";
+import { NewClientModal } from "@/components/new-client-modal";
 
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 9);
 const STATUS_COLORS = {
@@ -906,8 +907,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [searching, setSearching] = useState(false);
   const [selectedClient, setSelectedClient] = useState(preSelectedClient || null);
   const [showNewClient, setShowNewClient] = useState(false);
-  const [newClientName, setNewClientName] = useState("");
-  const [newClientPhone, setNewClientPhone] = useState("");
+  const newClientAnim = useAnimatedMount(showNewClient, 220);
   const [serviceId, setServiceId] = useState("");
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState("");
@@ -982,21 +982,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     setSubmitting(true);
 
     try {
-      let clientId = selectedClient?.id;
-
-      if (showNewClient) {
-        if (!newClientName.trim() || !newClientPhone.trim()) {
-          setError("Nombre y WhatsApp del nuevo cliente son requeridos");
-          setSubmitting(false);
-          return;
-        }
-        const newClient = await authFetch("/clients", {
-          method: "POST",
-          body: { fullName: newClientName.trim(), whatsapp: newClientPhone.trim() },
-        });
-        clientId = newClient.id;
-      }
-
+      const clientId = selectedClient?.id;
       if (!clientId) { setError("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setError("Selecciona un servicio"); setSubmitting(false); return; }
       if (!staffId) { setError("Selecciona un terapeuta"); setSubmitting(false); return; }
@@ -1071,47 +1057,36 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
           {/* Client */}
           <div>
             <label style={labelStyle}>Cliente</label>
-            {showNewClient ? (
-              <div style={{ padding: 14, border: "1px solid rgba(168,154,135,0.4)", borderRadius: 10, background: "rgba(247,245,240,0.5)", display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: "#A89A87" }}>Nuevo cliente</span>
-                  <button type="button" onClick={() => setShowNewClient(false)} style={{ fontSize: 12, color: "#8C6E50", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Buscar existente</button>
-                </div>
-                <input style={inputStyle} placeholder="Nombre completo" value={newClientName} onChange={(e) => setNewClientName(e.target.value)} />
-                <input style={inputStyle} placeholder="WhatsApp (+593...)" value={newClientPhone} onChange={(e) => setNewClientPhone(e.target.value)} />
-              </div>
-            ) : (
+            <div style={{ position: "relative" }}>
               <div style={{ position: "relative" }}>
-                <div style={{ position: "relative" }}>
-                  <Search size={14} style={{ position: "absolute", left: 12, top: 13, color: "#A89A87" }} />
-                  <input
-                    style={{ ...inputStyle, paddingLeft: 34 }}
-                    placeholder="Buscar por nombre o WhatsApp…"
-                    value={clientSearch}
-                    onChange={(e) => searchClients(e.target.value)}
-                  />
-                </div>
-                {clientResults.length > 0 && !selectedClient && (
-                  <div style={{ position: "absolute", zIndex: 20, width: "100%", marginTop: 4, border: "1px solid rgba(168,154,135,0.4)", borderRadius: 10, background: "#F7F5F0", boxShadow: "0 8px 24px rgba(107,85,64,0.12)", maxHeight: 180, overflowY: "auto" }}>
-                    {clientResults.map((c) => (
-                      <button key={c.id} type="button" onClick={() => selectClient(c)} style={{ width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(168,154,135,0.2)", cursor: "pointer", display: "flex", justifyContent: "space-between", fontSize: 14, color: "#6B5540" }}>
-                        <span>{c.fullName}</span>
-                        <span style={{ fontSize: 12, color: "#A89A87" }}>{c.whatsapp}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {searching && (
-                  <div style={{ position: "absolute", zIndex: 20, width: "100%", marginTop: 4, border: "1px solid rgba(168,154,135,0.4)", borderRadius: 10, background: "#F7F5F0", padding: 14, textAlign: "center" }}>
-                    <Loader2 size={16} className="animate-spin" style={{ color: "#A89A87", margin: "0 auto" }} />
-                  </div>
-                )}
-                {selectedClient && <p style={{ fontSize: 12, color: "#8C6E50", marginTop: 6 }}>{selectedClient.whatsapp}</p>}
-                {!selectedClient && clientSearch.length >= 2 && clientResults.length === 0 && !searching && (
-                  <button type="button" onClick={() => { setShowNewClient(true); setNewClientName(clientSearch); }} style={{ fontSize: 12, color: "#8C6E50", background: "none", border: "none", cursor: "pointer", marginTop: 6, textDecoration: "underline" }}>+ Crear nueva clienta</button>
-                )}
+                <Search size={14} style={{ position: "absolute", left: 12, top: 13, color: "#A89A87" }} />
+                <input
+                  style={{ ...inputStyle, paddingLeft: 34 }}
+                  placeholder="Buscar por nombre o WhatsApp…"
+                  value={clientSearch}
+                  onChange={(e) => searchClients(e.target.value)}
+                />
               </div>
-            )}
+              {clientResults.length > 0 && !selectedClient && (
+                <div style={{ position: "absolute", zIndex: 20, width: "100%", marginTop: 4, border: "1px solid rgba(168,154,135,0.4)", borderRadius: 10, background: "#F7F5F0", boxShadow: "0 8px 24px rgba(107,85,64,0.12)", maxHeight: 180, overflowY: "auto" }}>
+                  {clientResults.map((c) => (
+                    <button key={c.id} type="button" onClick={() => selectClient(c)} style={{ width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(168,154,135,0.2)", cursor: "pointer", display: "flex", justifyContent: "space-between", fontSize: 14, color: "#6B5540" }}>
+                      <span>{c.fullName}</span>
+                      <span style={{ fontSize: 12, color: "#A89A87" }}>{c.whatsapp}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searching && (
+                <div style={{ position: "absolute", zIndex: 20, width: "100%", marginTop: 4, border: "1px solid rgba(168,154,135,0.4)", borderRadius: 10, background: "#F7F5F0", padding: 14, textAlign: "center" }}>
+                  <Loader2 size={16} className="animate-spin" style={{ color: "#A89A87", margin: "0 auto" }} />
+                </div>
+              )}
+              {selectedClient && <p style={{ fontSize: 12, color: "#8C6E50", marginTop: 6 }}>{selectedClient.whatsapp}</p>}
+              {!selectedClient && clientSearch.length >= 2 && clientResults.length === 0 && !searching && (
+                <button type="button" onClick={() => setShowNewClient(true)} style={{ fontSize: 12, color: "#8C6E50", background: "none", border: "none", cursor: "pointer", marginTop: 6, textDecoration: "underline" }}>+ Crear nueva clienta</button>
+              )}
+            </div>
           </div>
 
           {/* Service */}
@@ -1173,6 +1148,17 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
           </div>
         </form>
       </div>
+      {newClientAnim.shouldRender && (
+        <NewClientModal
+          phase={newClientAnim.phase}
+          initialName={clientSearch}
+          onClose={() => setShowNewClient(false)}
+          onSaved={(created) => {
+            setShowNewClient(false);
+            selectClient(created);
+          }}
+        />
+      )}
     </div>
   );
 }

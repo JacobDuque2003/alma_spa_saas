@@ -33,6 +33,7 @@ const CLIENT_SAFE_SELECT = {
   fullName: true,
   whatsapp: true,
   email: true,
+  birthday: true,
   active: true,
   createdAt: true,
   updatedAt: true,
@@ -47,10 +48,35 @@ function toClientSafeDto(client) {
     fullName: client.fullName,
     whatsapp: client.whatsapp,
     email: client.email,
+    birthday: client.birthday ? toISODate(client.birthday) : null,
     active: client.active,
     createdAt: client.createdAt,
     updatedAt: client.updatedAt,
   };
+}
+
+// @db.Date returns midnight UTC. We echo back a plain YYYY-MM-DD so the
+// frontend's <input type="date"> gets a clean value without timezone drift.
+function toISODate(d) {
+  const dt = new Date(d);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+// Parse "YYYY-MM-DD" into a Date at UTC midnight, so Prisma writes @db.Date
+// with the exact day the user picked (no local-timezone drift).
+const YYYY_MM_DD_RE = /^\d{4}-\d{2}-\d{2}$/;
+function parseBirthdayOrThrow(value) {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !YYYY_MM_DD_RE.test(value)) {
+    throw new BadRequestError('Formato de cumpleaños inválido. Usa YYYY-MM-DD');
+  }
+  const [y, m, d] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  // Reject calendar-invalid dates like 2026-02-30 which Date silently rolls over.
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+    throw new BadRequestError('Fecha de cumpleaños inválida');
+  }
+  return dt;
 }
 
 async function listClients(actor, query = {}) {
@@ -133,12 +159,14 @@ async function createClient(actor, data) {
   if (data.email && !isValidEmail(data.email)) {
     throw new BadRequestError('Formato de email inválido');
   }
+  const birthday = data.birthday !== undefined ? parseBirthdayOrThrow(data.birthday) : null;
   const client = await prisma.client.create({
     data: {
       tenantId,
       fullName: String(data.fullName).trim(),
       whatsapp,
       email: data.email ? String(data.email).trim().toLowerCase() : null,
+      birthday,
     },
     select: CLIENT_SAFE_SELECT,
   });
@@ -173,6 +201,9 @@ async function updateClient(actor, clientId, changes) {
     }
     data.whatsapp = normalized;
   }
+  if (changes.birthday !== undefined) {
+    data.birthday = parseBirthdayOrThrow(changes.birthday);
+  }
 
   if (Object.keys(data).length === 0) return toClientSafeDto(client);
 
@@ -184,4 +215,44 @@ async function updateClient(actor, clientId, changes) {
   return toClientSafeDto(updated);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient };
+/**
+ * Devuelve clientes activos con cumpleaños en los próximos `days` días,
+ * ordenados por proximidad. La comparación mes/día se hace en UTC porque
+ * `@db.Date` guarda la fecha como medianoche UTC; usar horas locales
+ * (Ecuador es UTC-5) daría off-by-one alrededor de medianoche.
+ * Cubre el año-wraparound: 31-dic → 1-ene devuelve daysUntil = 1, no -364.
+ */
+// Extracted for testability. `today` and `birthday` are both Date objects; only
+// the UTC month/day are read. Anchoring to year 2000 (leap) keeps Feb 29
+// working. If the birthday's month/day is before today's, we roll to next year
+// so 31-dec → 1-ene gives 1, not -364.
+function computeDaysUntilBirthday(birthday, today) {
+  const anchor = Date.UTC(2000, today.getUTCMonth(), today.getUTCDate());
+  let target = Date.UTC(2000, birthday.getUTCMonth(), birthday.getUTCDate());
+  if (target < anchor) target = Date.UTC(2001, birthday.getUTCMonth(), birthday.getUTCDate());
+  return Math.round((target - anchor) / 86_400_000);
+}
+
+async function listUpcomingBirthdays(actor, days = 7) {
+  if (!actor.tenantId) throw new BadRequestError('tenantId es requerido');
+  const window = Math.min(Math.max(Number(days) || 7, 1), 366);
+
+  const rows = await prisma.client.findMany({
+    where: { tenantId: actor.tenantId, active: true, birthday: { not: null } },
+    select: { id: true, fullName: true, whatsapp: true, birthday: true },
+  });
+
+  const today = new Date();
+  return rows
+    .map((c) => ({
+      id: c.id,
+      fullName: c.fullName,
+      whatsapp: c.whatsapp,
+      birthday: toISODate(c.birthday),
+      daysUntil: computeDaysUntilBirthday(new Date(c.birthday), today),
+    }))
+    .filter((r) => r.daysUntil <= window)
+    .sort((a, b) => a.daysUntil - b.daysUntil);
+}
+
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, listUpcomingBirthdays, computeDaysUntilBirthday };

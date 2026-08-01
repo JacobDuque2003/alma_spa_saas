@@ -6,6 +6,8 @@ import { authFetch } from "@/lib/auth-client";
 import { Loader2, Search, X, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
+import { ClientForm } from "@/components/client-form";
+import { NewClientModal } from "@/components/new-client-modal";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
@@ -25,6 +27,9 @@ export default function ClientesPage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("todas");
+  const [birthdayList, setBirthdayList] = useState([]);
+  const [birthdayLoading, setBirthdayLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [intake, setIntake] = useState(null);
   const [treatments, setTreatments] = useState([]);
@@ -51,6 +56,22 @@ export default function ClientesPage() {
     const t = setTimeout(fetchClients, 250);
     return () => clearTimeout(t);
   }, [fetchClients]);
+
+  const fetchBirthdays = useCallback(async () => {
+    setBirthdayLoading(true);
+    try {
+      const rows = await authFetch("/clients/birthdays", { query: { days: 30 } });
+      setBirthdayList(Array.isArray(rows) ? rows : []);
+    } catch {
+      setBirthdayList([]);
+    } finally {
+      setBirthdayLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "cumples") fetchBirthdays();
+  }, [view, fetchBirthdays]);
 
   const fetchDetail = useCallback(async () => {
     if (!selectedId) return;
@@ -80,9 +101,11 @@ export default function ClientesPage() {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showEditClient, setShowEditClient] = useState(false);
   const [showEditIntake, setShowEditIntake] = useState(false);
+  const [showNewClient, setShowNewClient] = useState(false);
   const paymentAnim = useAnimatedMount(showPaymentForm, 220);
   const editClientAnim = useAnimatedMount(showEditClient, 220);
   const editIntakeAnim = useAnimatedMount(showEditIntake, 220);
+  const newClientAnim = useAnimatedMount(showNewClient, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
 
   function registerPayment() {
@@ -139,9 +162,86 @@ export default function ClientesPage() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+            <button
+              onClick={() => setView("todas")}
+              style={{
+                flex: 1,
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(168,154,135,0.4)",
+                background: view === "todas" ? "#8C6E50" : "transparent",
+                color: view === "todas" ? "#F7F5F0" : "#8C6E50",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Todas
+            </button>
+            <button
+              onClick={() => setView("cumples")}
+              style={{
+                flex: 1,
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(168,154,135,0.4)",
+                background: view === "cumples" ? "#8C6E50" : "transparent",
+                color: view === "cumples" ? "#F7F5F0" : "#8C6E50",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              🎂 Cumpleaños
+            </button>
+          </div>
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 12px", overflowY: "auto" }}>
-          {loading ? (
+          {view === "cumples" ? (
+            birthdayLoading ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
+                <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
+              </div>
+            ) : birthdayList.length === 0 ? (
+              <p style={{ textAlign: "center", padding: "40px 0", fontSize: 13, color: "#A89A87" }}>Sin cumpleaños en los próximos 30 días</p>
+            ) : (
+              birthdayList.map((b) => {
+                const isSelected = b.id === selectedId;
+                const caption = b.daysUntil === 0 ? "Hoy 🎂" : b.daysUntil === 1 ? "Mañana" : `En ${b.daysUntil} días`;
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => { setSelectedId(b.id); if (isMobile) setMobileShowDetail(true); }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "13px 12px",
+                      borderRadius: 10,
+                      background: isSelected ? "rgba(235,205,181,0.45)" : "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                  >
+                    <span style={{ width: 36, height: 36, borderRadius: "50%", background: "#C9A876", color: "#F7F5F0", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
+                      {initials(b.fullName)}
+                    </span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: isSelected ? 600 : 500, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {b.fullName}
+                      </div>
+                      <div style={{ fontSize: 12, color: b.daysUntil === 0 ? "#8C6E50" : "#A89A87", fontWeight: b.daysUntil === 0 ? 600 : 400 }}>
+                        {caption}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )
+          ) : loading ? (
             <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
               <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
             </div>
@@ -199,6 +299,7 @@ export default function ClientesPage() {
         </div>
         <div style={{ padding: "14px 20px", borderTop: "1px solid rgba(168,154,135,0.35)" }}>
           <button
+            onClick={() => setShowNewClient(true)}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -277,6 +378,17 @@ export default function ClientesPage() {
                 phase={editIntakeAnim.phase}
                 onClose={() => setShowEditIntake(false)}
                 onSaved={() => { setShowEditIntake(false); fetchDetail(); }}
+              />
+            )}
+            {newClientAnim.shouldRender && (
+              <NewClientModal
+                phase={newClientAnim.phase}
+                onClose={() => setShowNewClient(false)}
+                onSaved={(created) => {
+                  setShowNewClient(false);
+                  setClients((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
+                  setSelectedId(created.id);
+                }}
               />
             )}
             {/* Header */}
@@ -552,40 +664,31 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
   );
 }
 
-function EditClientModal({ client, phase, onClose, onSaved }) {
-  const [fullName, setFullName] = useState(client.fullName || "");
-  const [whatsapp, setWhatsapp] = useState(client.whatsapp || "");
-  const [email, setEmail] = useState(client.email || "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!fullName.trim() || !whatsapp.trim()) { setError("Nombre y WhatsApp son obligatorios"); return; }
-    setSaving(true);
-    try {
-      await authFetch(`/clients/${client.id}`, { method: "PATCH", body: { fullName: fullName.trim(), whatsapp: whatsapp.trim(), email: email.trim() || null } });
-      onSaved();
-    } catch (err) { setError(err.message || "Error al guardar"); setSaving(false); }
-  }
-
+function ClientModalShell({ title, phase, onClose, children }) {
   return (
     <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
       <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 400, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}><X size={20} /></button>
-        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>Editar clienta</h2>
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div><label style={modalLabelStyle}>Nombre completo</label><input style={modalInputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
-          <div><label style={modalLabelStyle}>WhatsApp</label><input style={modalInputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} /></div>
-          <div><label style={modalLabelStyle}>Correo (opcional)</label><input type="email" style={modalInputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
-          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
-            <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando…" : "Guardar"}</button>
-          </div>
-        </form>
+        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>{title}</h2>
+        {children}
       </div>
     </div>
+  );
+}
+
+function EditClientModal({ client, phase, onClose, onSaved }) {
+  return (
+    <ClientModalShell title="Editar clienta" phase={phase} onClose={onClose}>
+      <ClientForm
+        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, birthday: client.birthday }}
+        onCancel={onClose}
+        submitLabel="Guardar"
+        onSubmit={async (payload) => {
+          await authFetch(`/clients/${client.id}`, { method: "PATCH", body: payload });
+          onSaved();
+        }}
+      />
+    </ClientModalShell>
   );
 }
 

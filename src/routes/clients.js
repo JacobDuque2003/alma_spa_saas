@@ -51,6 +51,18 @@ router.post('/clients', clientes, async (req, res, next) => {
   }
 });
 
+// Se monta ANTES de /clients/:clientId para que Express no interprete
+// "birthdays" como un clientId literal.
+router.get('/clients/birthdays', clientes, async (req, res, next) => {
+  try {
+    const days = req.query.days !== undefined ? Number(req.query.days) : 7;
+    const rows = await clientService.listUpcomingBirthdays(req.user, days);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/clients/:clientId', clientes, async (req, res, next) => {
   try {
     const client = await clientService.getClient(req.user, req.params.clientId);

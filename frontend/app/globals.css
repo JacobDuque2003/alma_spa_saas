@@ -213,6 +213,32 @@
     animation: alma-bar-grow var(--motion-slow) var(--ease-out-quart) both;
   }
 
+  /* Toast — cumpleaños diario */
+  .alma-toast {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity var(--motion-base) var(--ease-out-quart),
+                transform var(--motion-base) var(--ease-spring);
+  }
+  .alma-toast.alma-anim-entered { opacity: 1; transform: translateY(0); }
+  .alma-toast.alma-anim-exiting  { opacity: 0; transform: translateY(12px); }
+
+  /* Badge — contador en NavItem */
+  .alma-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #C9A876;
+    color: #F7F5F0;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: auto;
+  }
+
   /* Grid directional transition (Agenda navigation) */
   @keyframes alma-slide-out-left {
     to { opacity: 0; transform: translateX(-30px); }

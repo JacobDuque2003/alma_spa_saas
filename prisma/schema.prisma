@@ -157,14 +157,15 @@ model Plan {
 }
 
 model Client {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   tenantId  String
   fullName  String
   whatsapp  String
   email     String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  birthday  DateTime? @db.Date
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   tenant                Tenant                 @relation(fields: [tenantId], references: [id])
   intake                ClientIntake?

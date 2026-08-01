@@ -8,6 +8,8 @@ import { LogOut, Loader2, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
+import { authFetch } from "@/lib/auth-client";
+import { BirthdayToast } from "@/components/birthday-toast";
 
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true },
@@ -83,6 +85,7 @@ function Shell({ children }) {
   const { user, loading, logout } = useAuth();
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [upcomingBirthdays, setUpcomingBirthdays] = useState([]);
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -91,6 +94,20 @@ function Shell({ children }) {
   useEffect(() => {
     if (!isMobile) setDrawerOpen(false);
   }, [isMobile]);
+
+  // Cumpleaños próximos (7 días): alimenta el badge en Clientes y el toast diario.
+  // 403 (personal sin permiso 'clientes') se ignora silenciosamente.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    authFetch("/clients/birthdays", { query: { days: 7 } })
+      .then((rows) => { if (!cancelled) setUpcomingBirthdays(Array.isArray(rows) ? rows : []); })
+      .catch(() => { /* sin permiso o error transitorio */ });
+    return () => { cancelled = true; };
+  }, [user, pathname]);
+
+  const badgeCount = upcomingBirthdays.length;
+  const todaysBirthdays = upcomingBirthdays.filter((b) => b.daysUntil === 0);
 
   if (loading) {
     return (
@@ -107,8 +124,9 @@ function Shell({ children }) {
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {navItems.map((item) => {
           const active = item.enabled && pathname.startsWith(item.href);
+          const badge = item.href === "/admin/clientes" ? badgeCount : 0;
           return (
-            <NavItem key={item.label} item={item} active={active} isMobile={isMobile} />
+            <NavItem key={item.label} item={item} active={active} isMobile={isMobile} badge={badge} />
           );
         })}
       </nav>
@@ -276,6 +294,7 @@ function Shell({ children }) {
 
         {/* Main content */}
         <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{children}</main>
+        <BirthdayToast todaysBirthdays={todaysBirthdays} />
       </div>
     );
   }
@@ -313,11 +332,12 @@ function Shell({ children }) {
       </aside>
 
       <main className="flex-1 overflow-y-auto bg-background">{children}</main>
+      <BirthdayToast todaysBirthdays={todaysBirthdays} />
     </div>
   );
 }
 
-function NavItem({ item, active, isMobile }) {
+function NavItem({ item, active, isMobile, badge = 0 }) {
   const baseStyle = {
     display: "flex",
     alignItems: "center",
@@ -359,6 +379,7 @@ function NavItem({ item, active, isMobile }) {
       >
         <span style={{ ...dotStyle, background: "#EBCDB5" }} />
         {item.label}
+        {badge > 0 && <span className="alma-badge">{badge}</span>}
       </Link>
     );
   }
@@ -376,6 +397,7 @@ function NavItem({ item, active, isMobile }) {
     >
       <span style={{ ...dotStyle, border: "1px solid #A89A87" }} />
       {item.label}
+      {badge > 0 && <span className="alma-badge">{badge}</span>}
     </Link>
   );
 }
