@@ -90,11 +90,19 @@ async function listClients(actor, query = {}) {
   if (query.q) {
     const q = String(query.q).trim();
     if (q) {
-      where.OR = [
+      const or = [
         { fullName: { contains: q, mode: 'insensitive' } },
         { whatsapp: { contains: q } },
         { email: { contains: q, mode: 'insensitive' } },
       ];
+      // Búsqueda de teléfono tolerante al formato local: si el input es
+      // numérico (con o sin +), buscamos también por los últimos dígitos.
+      // Así "0993629256" (formato Ecuador) encuentra "+593993629256" en DB.
+      const digits = q.replace(/[^0-9]/g, '');
+      if (digits.length >= 7) {
+        or.push({ whatsapp: { endsWith: digits.replace(/^0+/, '') } });
+      }
+      where.OR = or;
     }
   }
 
@@ -160,16 +168,32 @@ async function createClient(actor, data) {
     throw new BadRequestError('Formato de email inválido');
   }
   const birthday = data.birthday !== undefined ? parseBirthdayOrThrow(data.birthday) : null;
-  const client = await prisma.client.create({
-    data: {
-      tenantId,
-      fullName: String(data.fullName).trim(),
-      whatsapp,
-      email: data.email ? String(data.email).trim().toLowerCase() : null,
-      birthday,
-    },
-    select: CLIENT_SAFE_SELECT,
-  });
+  let client;
+  try {
+    client = await prisma.client.create({
+      data: {
+        tenantId,
+        fullName: String(data.fullName).trim(),
+        whatsapp,
+        email: data.email ? String(data.email).trim().toLowerCase() : null,
+        birthday,
+      },
+      select: CLIENT_SAFE_SELECT,
+    });
+  } catch (err) {
+    // P2002: unique constraint (tenantId, whatsapp). Reportamos con
+    // nombre del cliente existente para que el usuario sepa contra quién
+    // colisiona en vez de un "ya existe" opaco.
+    if (err && err.code === 'P2002') {
+      const existing = await prisma.client.findUnique({
+        where: { tenantId_whatsapp: { tenantId, whatsapp } },
+        select: { fullName: true },
+      });
+      const name = existing?.fullName || 'otra clienta';
+      throw new BadRequestError(`Ya existe una clienta con este WhatsApp: ${name}`);
+    }
+    throw err;
+  }
   return toClientSafeDto(client);
 }
 
