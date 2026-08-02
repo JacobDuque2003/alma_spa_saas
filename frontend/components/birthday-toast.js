@@ -5,6 +5,10 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 
+// sessionStorage se limpia cuando la pestaña se cierra → cada nuevo tab
+// muestra el toast. logout() (auth-client.js) también hace removeItem
+// explícito, así que un logout + login dentro de la misma pestaña
+// también vuelve a mostrar.
 const STORAGE_KEY = "alma:birthdayToastShown";
 
 function todayKey() {
@@ -12,67 +16,72 @@ function todayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// Shown once per calendar day when there's at least one client with birthday today.
-// Dismissal or auto-close writes today's date to localStorage; next check
-// against the same date is a no-op.
-export function BirthdayToast({ todaysBirthdays }) {
+function buildMessage(items) {
+  const today = items.filter((b) => b.daysUntil === 0);
+  const tomorrow = items.filter((b) => b.daysUntil === 1);
+  if (today.length === 1 && tomorrow.length === 0) return `🎉 ${today[0].fullName} cumple años hoy`;
+  if (today.length === 0 && tomorrow.length === 1) return `🎂 ${tomorrow[0].fullName} cumple años mañana`;
+  if (today.length > 0 && tomorrow.length === 0) return `🎉 ${today[0].fullName} y ${today.length - 1} más cumplen hoy`;
+  if (today.length === 0 && tomorrow.length > 0) return `🎂 ${tomorrow[0].fullName} y ${tomorrow.length - 1} más cumplen mañana`;
+  const total = today.length + tomorrow.length;
+  return `🎉 ${total} cumpleaños próximos (hoy y mañana)`;
+}
+
+// Muestra el toast una vez por sesión de navegador cuando hay clientes
+// con cumpleaños hoy o mañana. Dismissal/auto-close escribe la fecha
+// de hoy a sessionStorage.
+export function BirthdayToast({ nearBirthdays }) {
   const [open, setOpen] = useState(false);
   const anim = useAnimatedMount(open, 220);
 
   useEffect(() => {
-    if (!todaysBirthdays || todaysBirthdays.length === 0) return;
+    if (!nearBirthdays || nearBirthdays.length === 0) return;
     try {
-      if (localStorage.getItem(STORAGE_KEY) === todayKey()) return;
+      if (sessionStorage.getItem(STORAGE_KEY) === todayKey()) return;
     } catch { /* private mode etc — proceed anyway */ }
     setOpen(true);
     const t = setTimeout(() => close(), 8000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todaysBirthdays]);
+  }, [nearBirthdays]);
 
   function close() {
-    try { localStorage.setItem(STORAGE_KEY, todayKey()); } catch { /* noop */ }
+    try { sessionStorage.setItem(STORAGE_KEY, todayKey()); } catch { /* noop */ }
     setOpen(false);
   }
 
-  if (!anim.shouldRender || !todaysBirthdays || todaysBirthdays.length === 0) return null;
-
-  const first = todaysBirthdays[0];
-  const more = todaysBirthdays.length - 1;
-  const message = more > 0
-    ? `🎉 ${first.fullName} cumple años hoy — y ${more} más`
-    : `🎉 ${first.fullName} cumple años hoy`;
+  if (!anim.shouldRender || !nearBirthdays || nearBirthdays.length === 0) return null;
 
   return (
     <div
       className={`alma-toast alma-anim-${anim.phase}`}
       style={{
         position: "fixed",
-        right: 20,
-        bottom: 20,
-        zIndex: 70,
-        background: "#F7F5F0",
-        border: "1px solid rgba(201,168,118,0.5)",
+        right: 24,
+        bottom: 24,
+        zIndex: 9998,
+        background: "#8C6E50",
+        border: "1px solid #6B5540",
         borderRadius: 12,
-        padding: "12px 16px",
-        boxShadow: "0 12px 32px rgba(107,85,64,0.18)",
+        padding: "14px 18px",
+        boxShadow: "0 16px 40px rgba(58,47,38,0.28)",
         display: "flex",
         alignItems: "center",
         gap: 12,
-        maxWidth: 380,
+        maxWidth: 420,
       }}
     >
       <Link
         href="/admin/clientes"
         onClick={close}
-        style={{ fontSize: 13, color: "#6B5540", fontWeight: 500, textDecoration: "none", flex: 1 }}
+        style={{ fontSize: 13.5, color: "#F7F5F0", fontWeight: 500, textDecoration: "none", flex: 1, lineHeight: 1.35 }}
       >
-        {message}
+        {buildMessage(nearBirthdays)}
       </Link>
       <button
         onClick={close}
         aria-label="Cerrar"
-        style={{ background: "none", border: "none", cursor: "pointer", color: "#A89A87", padding: 4, display: "inline-flex" }}
+        style={{ background: "none", border: "none", cursor: "pointer", color: "#F7F5F0", opacity: 0.75, padding: 4, display: "inline-flex" }}
       >
         <X size={16} />
       </button>

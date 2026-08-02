@@ -108,7 +108,7 @@ function Shell({ children }) {
   }, [user, pathname]);
 
   const badgeCount = upcomingBirthdays.length;
-  const todaysBirthdays = upcomingBirthdays.filter((b) => b.daysUntil === 0);
+  const nearBirthdays = upcomingBirthdays.filter((b) => b.daysUntil <= 1);
 
   if (loading) {
     return (
@@ -295,7 +295,7 @@ function Shell({ children }) {
 
         {/* Main content */}
         <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{children}</main>
-        <BirthdayToast todaysBirthdays={todaysBirthdays} />
+        <BirthdayToast nearBirthdays={nearBirthdays} />
       </div>
     );
   }
