@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/auth-client";
 import { Loader2, ShieldCheck, X, ToggleLeft, ToggleRight, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
+import { useToast } from "@/components/toast-provider";
 
 const PLATFORM_SUPPORT_USER = {
   id: "platform-support",
@@ -65,20 +66,21 @@ function NewUserModal({ phase, onClose, onSaved }) {
   );
   const [canAttendAppointments, setCanAttendAppointments] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [validation, setValidation] = useState("");
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !password) {
-      setError("Nombre, email y contraseña son requeridos");
+      setValidation("Nombre, email y contraseña son requeridos");
       return;
     }
     if (password.length < 10) {
-      setError("La contraseña debe tener al menos 10 caracteres");
+      setValidation("La contraseña debe tener al menos 10 caracteres");
       return;
     }
     setSaving(true);
-    setError("");
+    setValidation("");
     try {
       const created = await authFetch("/users", {
         method: "POST",
@@ -91,9 +93,10 @@ function NewUserModal({ phase, onClose, onSaved }) {
           permissions: role === "personal" ? permissions : undefined,
         },
       });
+      toast.success(`${created.name} agregado`);
       onSaved(created);
     } catch (err) {
-      setError(err.message || "Error al crear la cuenta");
+      toast.error(err.message || "Error al crear la cuenta");
       setSaving(false);
     }
   }
@@ -207,7 +210,7 @@ function NewUserModal({ phase, onClose, onSaved }) {
             </div>
           )}
 
-          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+          {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={pillSecondary}>
@@ -229,17 +232,18 @@ export default function PersonalPage() {
   const [draft, setDraft] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [showNewUser, setShowNewUser] = useState(false);
   const [toggling, setToggling] = useState(null);
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const newUserAnim = useAnimatedMount(showNewUser, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setLoadError("");
     try {
       const data = await authFetch("/users");
       const visibleUsers = data.some((u) => u.isProtected) ? data : [PLATFORM_SUPPORT_USER, ...data];
@@ -250,7 +254,7 @@ export default function PersonalPage() {
         visibleUsers[0];
       setSelectedId((current) => current || editable?.id || null);
     } catch (err) {
-      setError(err.message);
+      setLoadError(err.message);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -264,15 +268,15 @@ export default function PersonalPage() {
   async function toggleActive(user) {
     if (user.isProtected) return;
     setToggling(user.id);
-    setError("");
     try {
       const updated = await authFetch(`/users/${user.id}`, {
         method: "PATCH",
         body: { active: !user.active },
       });
       setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
+      toast.success(updated.active ? `${updated.name} activada` : `${updated.name} desactivada`);
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message || "No se pudo cambiar el estado");
     } finally {
       setToggling(null);
     }
@@ -290,8 +294,9 @@ export default function PersonalPage() {
     try {
       await authFetch(`/users/${selected.id}/permissions`, { method: "PATCH", body: draft });
       setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, rolePermission: { ...u.rolePermission, ...draft } } : u)));
+      toast.success("Permisos guardados");
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message || "Error al guardar permisos");
     } finally {
       setSaving(false);
     }
@@ -577,9 +582,9 @@ export default function PersonalPage() {
                   ))}
                 </div>
 
-                {error && (
+                {loadError && (
                   <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>
-                    {error}
+                    {loadError}
                   </div>
                 )}
 

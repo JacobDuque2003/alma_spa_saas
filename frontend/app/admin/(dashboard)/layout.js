@@ -10,6 +10,7 @@ import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { authFetch } from "@/lib/auth-client";
 import { BirthdayToast } from "@/components/birthday-toast";
+import { ToastProvider } from "@/components/toast-provider";
 
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true },
@@ -405,7 +406,9 @@ function NavItem({ item, active, isMobile, badge = 0 }) {
 export default function DashboardLayout({ children }) {
   return (
     <AuthProvider>
-      <Shell>{children}</Shell>
+      <ToastProvider>
+        <Shell>{children}</Shell>
+      </ToastProvider>
     </AuthProvider>
   );
 }

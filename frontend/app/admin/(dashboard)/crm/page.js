@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/auth-client";
 import { Loader2, Send, Settings, X, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
+import { useToast } from "@/components/toast-provider";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
@@ -24,7 +25,8 @@ export default function CRMPage() {
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const toast = useToast();
   const [quickReplies, setQuickReplies] = useState([
     "Hola, gracias por escribirnos a Alma Spa. ¿En qué podemos ayudarte?",
     "Tu cita ha sido confirmada. Te esperamos.",
@@ -42,7 +44,7 @@ export default function CRMPage() {
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setLoadError("");
     try {
       const data = await authFetch("/crm/conversations", {
         query: {
@@ -54,7 +56,7 @@ export default function CRMPage() {
       setConversations(items);
       setSelectedId((current) => current || items[0]?.id || null);
     } catch (err) {
-      setError(err.message);
+      setLoadError(err.message);
       setConversations([]);
     } finally {
       setLoading(false);
@@ -78,9 +80,9 @@ export default function CRMPage() {
       setMessages(msgs.items || []);
       await authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" }).catch(() => null);
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
-  }, [selectedId]);
+  }, [selectedId, toast]);
 
   useEffect(() => {
     fetchConversation();
@@ -94,9 +96,10 @@ export default function CRMPage() {
     try {
       await authFetch(`/crm/conversations/${selectedId}/messages`, { method: "POST", body: { body } });
       setBody("");
+      toast.success("Mensaje enviado");
       await Promise.all([fetchConversation(), fetchConversations()]);
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message || "No se pudo enviar");
     } finally {
       setSending(false);
     }
@@ -107,9 +110,10 @@ export default function CRMPage() {
     setSending(true);
     try {
       await authFetch(`/crm/conversations/${selectedId}/reminder`, { method: "POST" });
+      toast.success("Recordatorio enviado");
       await Promise.all([fetchConversation(), fetchConversations()]);
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message || "No se pudo enviar el recordatorio");
     } finally {
       setSending(false);
     }
@@ -381,9 +385,9 @@ export default function CRMPage() {
               </button>
             </div>
 
-            {error && (
+            {loadError && (
               <div style={{ margin: "12px 24px 0", padding: 12, borderRadius: 8, background: "rgba(201,168,118,0.15)", color: "#8C6E50", fontSize: 13 }}>
-                {error}
+                {loadError}
               </div>
             )}
 

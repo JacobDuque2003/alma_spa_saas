@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/auth-client";
 import { Download, Edit3, Loader2, Plus, Upload, X } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
+import { useToast } from "@/components/toast-provider";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
@@ -58,20 +59,23 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
   const [category, setCategory] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim() || !category.trim() || !Number(priceUsd)) {
-      setError("Nombre, categoría y precio son requeridos");
+      setValidation("Nombre, categoría y precio son requeridos");
       return;
     }
+    setValidation(null);
     setSaving(true);
     try {
       const created = await authFetch("/services", { method: "POST", body: { name: name.trim(), category: category.trim(), priceUsd: Number(priceUsd), offersHomeService: false } });
+      toast.success(`Servicio "${created.name}" creado`);
       onSaved(created);
     } catch (err) {
-      setError(err.message || "Error al crear servicio");
+      toast.error(err.message || "Error al crear servicio");
       setSaving(false);
     }
   }
@@ -86,7 +90,7 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
           {categories.length > 0 && <datalist id="cat-suggestions">{categories.map((c) => <option key={c} value={c} />)}</datalist>}
         </div>
         <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
-        {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+        {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear servicio"}</button>
@@ -100,20 +104,23 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [specialty, setSpecialty] = useState(categories[0] || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim() || !specialty) {
-      setError("Nombre y especialidad son requeridos");
+      setValidation("Nombre y especialidad son requeridos");
       return;
     }
+    setValidation(null);
     setSaving(true);
     try {
       const created = await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty } });
+      toast.success(`Gabinete "${created.name}" creado`);
       onSaved(created);
     } catch (err) {
-      setError(err.message || "Error al crear gabinete");
+      toast.error(err.message || "Error al crear gabinete");
       setSaving(false);
     }
   }
@@ -128,7 +135,7 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+        {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear gabinete"}</button>
@@ -141,23 +148,26 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
 function CategoryFormModal({ phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim()) { setError("El nombre es requerido"); return; }
+    if (!name.trim()) { setValidation("El nombre es requerido"); return; }
+    setValidation(null);
     setSaving(true);
     try {
       const created = await authFetch("/categories", { method: "POST", body: { name: name.trim() } });
+      toast.success(`Categoría "${created.name}" creada`);
       onSaved(created);
-    } catch (err) { setError(err.message || "Error al crear categoria"); setSaving(false); }
+    } catch (err) { toast.error(err.message || "Error al crear categoria"); setSaving(false); }
   }
 
   return (
     <Modal title="Nueva categoria" phase={phase} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="masajes, faciales, corporales..." autoFocus /></div>
-        {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+        {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear categoria"}</button>
@@ -314,10 +324,11 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
 
 export default function ConfiguracionPage() {
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [dbCategories, setDbCategories] = useState([]);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
@@ -338,31 +349,42 @@ export default function ConfiguracionPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setLoadError("");
     try {
       const [s, r, cats] = await Promise.all([authFetch("/services"), authFetch("/rooms"), authFetch("/categories").catch(() => [])]);
       setServices(s);
       setRooms(r);
       setDbCategories(Array.isArray(cats) ? cats : []);
     } catch (err) {
-      setError(err.message);
+      setLoadError(err.message);
+      toast.error(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   async function updateService(service, changes) {
-    const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
-    setServices((prev) => prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s)));
+    try {
+      const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
+      setServices((prev) => prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s)));
+      toast.success("Servicio actualizado");
+    } catch (err) {
+      toast.error(err.message || "Error al actualizar servicio");
+    }
   }
 
   async function updateRoom(room, changes) {
-    const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
-    setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, ...updated } : r)));
+    try {
+      const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
+      setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, ...updated } : r)));
+      toast.success("Gabinete actualizado");
+    } catch (err) {
+      toast.error(err.message || "Error al actualizar gabinete");
+    }
   }
 
   return (
@@ -373,7 +395,7 @@ export default function ConfiguracionPage() {
           <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Servicios, categorias, gabinetes y horario de atencion</p>
         </div>
 
-        {error && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{error}</div>}
+        {loadError && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>}
 
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
@@ -468,7 +490,13 @@ export default function ConfiguracionPage() {
                       <span style={{ fontSize: 13, color: "#6B5540" }}>{catName}</span>
                       {dbCat && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar esta categoria?")) authFetch(`/categories/${dbCat.id}`, { method: "DELETE" }).then(() => setDbCategories((prev) => prev.filter((c) => c.id !== dbCat.id))); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!confirm("¿Eliminar esta categoria?")) return;
+                            authFetch(`/categories/${dbCat.id}`, { method: "DELETE" })
+                              .then(() => { setDbCategories((prev) => prev.filter((c) => c.id !== dbCat.id)); toast.success(`Categoría "${catName}" eliminada`); })
+                              .catch((err) => toast.error(err.message || "No se pudo eliminar"));
+                          }}
                           style={{ background: "rgba(168,154,135,0.2)", border: "none", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#8C6E50", padding: 0 }}
                           title="Eliminar"
                         >

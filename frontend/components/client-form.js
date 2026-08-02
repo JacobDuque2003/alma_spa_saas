@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "./toast-provider";
 
 // Shared fields for creating or editing a client. Used from Clientes
 // (Nueva/Editar) AND from Agenda's "Nueva reserva → + Crear nueva clienta".
@@ -32,15 +33,16 @@ export function ClientForm({
   const [email, setEmail] = useState(initial.email || "");
   const [birthday, setBirthday] = useState(initial.birthday || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!fullName.trim() || !whatsapp.trim()) {
-      setError("Nombre y WhatsApp son obligatorios");
+      setValidation("Nombre y WhatsApp son obligatorios");
       return;
     }
-    setError(null);
+    setValidation(null);
     setSaving(true);
     try {
       await onSubmit({
@@ -50,7 +52,7 @@ export function ClientForm({
         birthday: birthday || null,
       });
     } catch (err) {
-      setError(err?.message || "Error al guardar");
+      toast.error(err?.message || "Error al guardar");
       setSaving(false);
     }
   }
@@ -73,7 +75,7 @@ export function ClientForm({
         <label style={labelStyle}>Cumpleaños (opcional)</label>
         <input type="date" style={inputStyle} value={birthday} onChange={(e) => setBirthday(e.target.value)} />
       </div>
-      {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+      {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         {onCancel && (
           <button

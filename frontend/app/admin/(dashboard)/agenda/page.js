@@ -8,6 +8,7 @@ import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useGridTransition } from "@/lib/use-grid-transition";
 import { NewClientModal } from "@/components/new-client-modal";
+import { useToast } from "@/components/toast-provider";
 
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 9);
 const STATUS_COLORS = {
@@ -735,9 +736,9 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
 function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }) {
   if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
   const [editDate, setEditDate] = useState(toLocalDate(new Date(appt.startsAt)));
   const [editTime, setEditTime] = useState(formatTime(appt.startsAt));
   const [editRoomId, setEditRoomId] = useState(appt.room?.id || "");
@@ -745,12 +746,12 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
 
   async function changeStatus(newStatus) {
     setSaving(true);
-    setError(null);
     try {
       const updated = await authFetch(`/appointments/${appt.id}/status`, { method: "PATCH", body: { status: newStatus } });
       onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: appt.room, staff: appt.staff });
+      toast.success(`Cita marcada como ${newStatus}`);
     } catch (err) {
-      setError(err.message || "Error al cambiar estado");
+      toast.error(err.message || "Error al cambiar estado");
     } finally {
       setSaving(false);
     }
@@ -758,7 +759,6 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
 
   async function saveReschedule() {
     setSaving(true);
-    setError(null);
     try {
       const body = {};
       const newStartsAt = `${editDate}T${editTime}:00`;
@@ -770,8 +770,9 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
       const newRoom = rooms.find((r) => r.id === (updated.roomId || editRoomId));
       const newStaff = staffList.find((s) => s.id === (updated.staffId || editStaffId));
       onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: newRoom || appt.room, staff: newStaff || appt.staff });
+      toast.success("Cita reprogramada");
     } catch (err) {
-      setError(err.message || "Error al reprogramar");
+      toast.error(err.message || "Error al reprogramar");
     } finally {
       setSaving(false);
     }
@@ -842,8 +843,6 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
               )}
             </div>
 
-            {error && <p style={{ fontSize: 13, color: "#C25450", margin: "12px 0 0", textAlign: "center" }}>{error}</p>}
-
             {canChange && (
               <>
                 <div style={{ borderTop: "1px solid rgba(168,154,135,0.3)", margin: "18px 0" }} />
@@ -886,9 +885,8 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                 {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setEditing(false); setError(null); }} style={{ ...pillBtn("transparent", "#8C6E50", "1px solid #8C6E50"), flex: 1 }}>Cancelar</button>
+              <button onClick={() => setEditing(false)} style={{ ...pillBtn("transparent", "#8C6E50", "1px solid #8C6E50"), flex: 1 }}>Cancelar</button>
               <button disabled={saving} onClick={saveReschedule} style={{ ...pillBtn("#8C6E50", "#F7F5F0"), flex: 1 }}>{saving ? "Guardando…" : "Guardar"}</button>
             </div>
           </div>
@@ -916,7 +914,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [roomId, setRoomId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
   const searchTimer = useRef(null);
 
   useEffect(() => {
@@ -978,24 +977,25 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError(null);
+    setValidation(null);
     setSubmitting(true);
 
     try {
       const clientId = selectedClient?.id;
-      if (!clientId) { setError("Selecciona o crea un cliente"); setSubmitting(false); return; }
-      if (!serviceId) { setError("Selecciona un servicio"); setSubmitting(false); return; }
-      if (!staffId) { setError("Selecciona un terapeuta"); setSubmitting(false); return; }
-      if (!roomId) { setError("Selecciona un gabinete"); setSubmitting(false); return; }
+      if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
+      if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
+      if (!staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
+      if (!roomId) { setValidation("Selecciona un gabinete"); setSubmitting(false); return; }
 
       await authFetch("/appointments", {
         method: "POST",
         body: { clientId, serviceId, staffId, roomId, startsAt: time, modality: "presencial" },
       });
 
+      toast.success("Reserva creada");
       onCreated();
     } catch (err) {
-      setError(err.message || "Error al crear la cita");
+      toast.error(err.message || "Error al crear la cita");
     } finally {
       setSubmitting(false);
     }
@@ -1138,7 +1138,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
             </div>
           </div>
 
-          {error && <p style={{ fontSize: 13, color: "#C25450", textAlign: "center", margin: 0 }}>{error}</p>}
+          {validation && <p style={{ fontSize: 13, color: "#C25450", textAlign: "center", margin: 0 }}>{validation}</p>}
 
           <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>Cancelar</button>

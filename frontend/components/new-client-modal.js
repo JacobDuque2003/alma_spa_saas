@@ -3,11 +3,13 @@
 import { X } from "lucide-react";
 import { authFetch } from "@/lib/auth-client";
 import { ClientForm } from "./client-form";
+import { useToast } from "./toast-provider";
 
 // Standalone "Nueva clienta" modal reused from Clientes and from Agenda's
 // "Nueva reserva → + Crear nueva clienta" flow. Same fields, same endpoint,
 // same UX in both places.
 export function NewClientModal({ phase, initialName = "", onClose, onSaved }) {
+  const toast = useToast();
   return (
     <div
       className={`alma-backdrop alma-anim-${phase}`}
@@ -50,6 +52,7 @@ export function NewClientModal({ phase, initialName = "", onClose, onSaved }) {
           submitLabel="Crear clienta"
           onSubmit={async (payload) => {
             const created = await authFetch("/clients", { method: "POST", body: payload });
+            toast.success(`${created.fullName} agregada`);
             onSaved(created);
           }}
         />

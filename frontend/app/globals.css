@@ -223,6 +223,30 @@
   .alma-toast.alma-anim-entered { opacity: 1; transform: translateY(0); }
   .alma-toast.alma-anim-exiting  { opacity: 0; transform: translateY(12px); }
 
+  /* Toast items — sistema global (top-right stack) */
+  .alma-toast-item {
+    min-width: 260px;
+    max-width: 380px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(107,85,64,0.18);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity var(--motion-base) var(--ease-out-quart),
+                transform var(--motion-base) var(--ease-spring);
+    border: 1px solid transparent;
+  }
+  .alma-toast-item.alma-anim-entered { opacity: 1; transform: translateX(0); }
+  .alma-toast-item.alma-anim-exiting  { opacity: 0; transform: translateX(20px); }
+  .alma-toast-success { background: #F1F3E8; border-color: #6B8E23; color: #4A5D1F; }
+  .alma-toast-error   { background: rgba(194,84,80,0.10); border-color: #C25450; color: #8B2C28; }
+  .alma-toast-info    { background: #F7F5F0; border-color: rgba(201,168,118,0.6); color: #6B5540; }
+
   /* Badge — contador en NavItem */
   .alma-badge {
     display: inline-flex;

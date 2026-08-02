@@ -8,6 +8,7 @@ import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { ClientForm } from "@/components/client-form";
 import { NewClientModal } from "@/components/new-client-modal";
+import { useToast } from "@/components/toast-provider";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
@@ -611,23 +612,26 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
   const [amountUsd, setAmountUsd] = useState("");
   const [method, setMethod] = useState("efectivo");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!Number(amountUsd) || Number(amountUsd) <= 0) {
-      setError("Ingresa un monto válido");
+      setValidation("Ingresa un monto válido");
       return;
     }
+    setValidation(null);
     setSaving(true);
     try {
       await authFetch(`/clients/${clientId}/payments`, {
         method: "POST",
         body: { amountUsd: Number(amountUsd), method, description: "Pago registrado desde panel" },
       });
+      toast.success(`Pago de ${Number(amountUsd).toFixed(2)} registrado`);
       onSaved();
     } catch (err) {
-      setError(err.message || "Error al registrar pago");
+      toast.error(err.message || "Error al registrar pago");
       setSaving(false);
     }
   }
@@ -653,7 +657,7 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
               <option value="tarjeta">Tarjeta</option>
             </select>
           </div>
-          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
+          {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
             <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Registrando…" : "Registrar pago"}</button>
@@ -677,6 +681,7 @@ function ClientModalShell({ title, phase, onClose, children }) {
 }
 
 function EditClientModal({ client, phase, onClose, onSaved }) {
+  const toast = useToast();
   return (
     <ClientModalShell title="Editar clienta" phase={phase} onClose={onClose}>
       <ClientForm
@@ -685,6 +690,7 @@ function EditClientModal({ client, phase, onClose, onSaved }) {
         submitLabel="Guardar"
         onSubmit={async (payload) => {
           await authFetch(`/clients/${client.id}`, { method: "PATCH", body: payload });
+          toast.success("Cambios guardados");
           onSaved();
         }}
       />
@@ -697,15 +703,16 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
   const [conditions, setConditions] = useState(intake?.conditions || "");
   const [consentSigned, setConsentSigned] = useState(intake?.consentSigned || false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     try {
       await authFetch(`/clients/${clientId}/intake`, { method: "PUT", body: { allergies, conditions, consentSigned } });
+      toast.success("Ficha guardada");
       onSaved();
-    } catch (err) { setError(err.message || "Error al guardar"); setSaving(false); }
+    } catch (err) { toast.error(err.message || "Error al guardar"); setSaving(false); }
   }
 
   return (
@@ -720,7 +727,6 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
             <input type="checkbox" checked={consentSigned} onChange={(e) => setConsentSigned(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#8C6E50" }} />
             <span style={{ fontSize: 13, color: "#6B5540" }}>Consentimiento firmado</span>
           </label>
-          {error && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{error}</p>}
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
             <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando…" : "Guardar"}</button>
