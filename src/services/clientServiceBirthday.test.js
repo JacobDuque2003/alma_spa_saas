@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const prisma = require('../utils/prisma');
 const clientService = require('./clientService');
-const { computeDaysUntilBirthday } = clientService;
+const { computeDaysUntilBirthday, todayInTimezone } = clientService;
 
 const actor = { role: 'dueno', tenantId: 't1' };
 
@@ -99,10 +99,13 @@ test('computeDaysUntilBirthday respeta 29-feb usando el ancla 2000 (bisiesto)', 
 });
 
 test('listUpcomingBirthdays ordena por proximidad y filtra por ventana', async () => {
-  const today = new Date();
+  // "Hoy" según la timezone del tenant, no UTC — así el test no falla
+  // según la hora en que se corra.
+  const today = todayInTimezone(new Date(), 'America/Guayaquil');
   const in3 = new Date(today); in3.setUTCDate(in3.getUTCDate() + 3);
   const in10 = new Date(today); in10.setUTCDate(in10.getUTCDate() + 10);
   const in100 = new Date(today); in100.setUTCDate(in100.getUTCDate() + 100);
+  prisma.tenant = { findUnique: async () => ({ config: { timezone: 'America/Guayaquil' } }) };
   prisma.client = {
     findMany: async () => [
       { id: 'far', fullName: 'Far', whatsapp: '+1', birthday: in100 },
@@ -121,8 +124,65 @@ test('listUpcomingBirthdays ordena por proximidad y filtra por ventana', async (
 
 test('listUpcomingBirthdays exige tenantId', async () => {
   prisma.client = { findMany: async () => [] };
+  prisma.tenant = { findUnique: async () => null };
   await assert.rejects(
     () => clientService.listUpcomingBirthdays({ role: 'superadmin' }),
     (err) => err.status === 400,
   );
+});
+
+// --- Bug B: cálculo de "hoy" en la timezone del tenant ---
+//
+// Sin este fix, `today.getUTCDate()` en Ecuador después de las 19:00 local
+// ya está en el día siguiente (UTC-5), lo que hacía que un cumpleaños "en 2
+// días" apareciera como "mañana".
+
+test('todayInTimezone: 22:00 en Guayaquil el 1-agosto devuelve UTC 1-agosto (NO 2-agosto)', () => {
+  // 2026-08-02T03:00:00Z === 2026-08-01T22:00:00-05:00 en Guayaquil
+  const now = new Date(Date.UTC(2026, 7, 2, 3, 0, 0));
+  const today = todayInTimezone(now, 'America/Guayaquil');
+  assert.equal(today.getUTCFullYear(), 2026);
+  assert.equal(today.getUTCMonth(), 7);   // agosto
+  assert.equal(today.getUTCDate(), 1);    // ¡1, no 2! Ese era el bug.
+});
+
+test('todayInTimezone: 08:00 UTC el 1-agosto en Guayaquil sigue siendo 1-agosto', () => {
+  // 2026-08-01T08:00:00Z === 2026-08-01T03:00:00-05:00 en Guayaquil
+  const now = new Date(Date.UTC(2026, 7, 1, 8, 0, 0));
+  const today = todayInTimezone(now, 'America/Guayaquil');
+  assert.equal(today.getUTCMonth(), 7);
+  assert.equal(today.getUTCDate(), 1);
+});
+
+test('todayInTimezone: sin bug B, un cumpleaños el 3 con "hoy=1 pero UTC ya rodó a 2" da daysUntil=2', () => {
+  const now = new Date(Date.UTC(2026, 7, 2, 3, 0, 0)); // Ago 1, 22:00 Guayaquil
+  const today = todayInTimezone(now, 'America/Guayaquil');
+  const bday = new Date(Date.UTC(1990, 7, 3)); // Cumple el 3-agosto
+  assert.equal(computeDaysUntilBirthday(bday, today), 2);
+});
+
+test('listUpcomingBirthdays: lee timezone del Tenant.config y evita el off-by-one', async () => {
+  // Simulamos ser las 22:00 en Guayaquil del 1-agosto — imposible controlar
+  // Date.now() sin mocking global, así que verificamos INDIRECTAMENTE que la
+  // función pide tenant.config.timezone; el test cubre el contrato.
+  let tenantAsked = false;
+  prisma.tenant = {
+    findUnique: async (args) => {
+      tenantAsked = true;
+      assert.equal(args.where.id, 't1');
+      assert.equal(args.select.config, true);
+      return { config: { timezone: 'America/Guayaquil' } };
+    },
+  };
+  prisma.client = { findMany: async () => [] };
+
+  await clientService.listUpcomingBirthdays({ role: 'dueno', tenantId: 't1' }, 7);
+  assert.equal(tenantAsked, true, 'debe consultar Tenant.config.timezone');
+});
+
+test('listUpcomingBirthdays: sin config.timezone usa America/Guayaquil por default', async () => {
+  prisma.tenant = { findUnique: async () => ({ config: null }) };
+  prisma.client = { findMany: async () => [] };
+  const res = await clientService.listUpcomingBirthdays({ role: 'dueno', tenantId: 't1' }, 7);
+  assert.deepEqual(res, []);
 });

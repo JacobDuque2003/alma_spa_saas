@@ -257,16 +257,41 @@ function computeDaysUntilBirthday(birthday, today) {
   return Math.round((target - anchor) / 86_400_000);
 }
 
+// Devuelve un Date cuyas componentes UTC (getUTCFullYear/Month/Date) coinciden
+// con la fecha calendario LOCAL en la timezone `tz`. Necesario porque después
+// de las 19:00 en Ecuador (UTC-5) `new Date().getUTCDate()` ya está en el día
+// siguiente. Usar Intl para pedirle al motor la fecha en la zona correcta
+// evita implementar TZ math a mano.
+function todayInTimezone(now, tz) {
+  // en-CA da formato YYYY-MM-DD estable
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const y = Number(parts.find((p) => p.type === 'year').value);
+  const m = Number(parts.find((p) => p.type === 'month').value);
+  const d = Number(parts.find((p) => p.type === 'day').value);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+const DEFAULT_TZ = 'America/Guayaquil';
+
 async function listUpcomingBirthdays(actor, days = 7) {
   if (!actor.tenantId) throw new BadRequestError('tenantId es requerido');
   const window = Math.min(Math.max(Number(days) || 7, 1), 366);
 
-  const rows = await prisma.client.findMany({
-    where: { tenantId: actor.tenantId, active: true, birthday: { not: null } },
-    select: { id: true, fullName: true, whatsapp: true, birthday: true },
-  });
+  const [tenant, rows] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: actor.tenantId }, select: { config: true } }),
+    prisma.client.findMany({
+      where: { tenantId: actor.tenantId, active: true, birthday: { not: null } },
+      select: { id: true, fullName: true, whatsapp: true, birthday: true },
+    }),
+  ]);
 
-  const today = new Date();
+  // La timezone del tenant es data confiable (viene de la config administrada
+  // por el dueño, nunca del payload del request); si no está, cae al default
+  // del producto (Ecuador). No aceptamos override por query — evita bypass.
+  const tz = tenant?.config?.timezone || DEFAULT_TZ;
+  const today = todayInTimezone(new Date(), tz);
   return rows
     .map((c) => ({
       id: c.id,
@@ -279,4 +304,4 @@ async function listUpcomingBirthdays(actor, days = 7) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, listUpcomingBirthdays, computeDaysUntilBirthday };
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
