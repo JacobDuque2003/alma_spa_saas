@@ -335,8 +335,8 @@ export default function PersonalPage() {
           <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
             <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
           </div>
-        ) : error && users.length === 0 ? (
-          <div style={{ padding: 16, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{error}</div>
+        ) : loadError && users.length === 0 ? (
+          <div style={{ padding: 16, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", flex: 1 }}>
             {users.map((user) => {
