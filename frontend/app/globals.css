@@ -223,18 +223,20 @@
   .alma-toast.alma-anim-entered { opacity: 1; transform: translateY(0); }
   .alma-toast.alma-anim-exiting  { opacity: 0; transform: translateY(12px); }
 
-  /* Toast items — sistema global (top-right stack) */
+  /* Toast items — sistema global (top-right stack).
+     Fondos sólidos, alto contraste, sobre todo z-index de la app. */
   .alma-toast-item {
-    min-width: 260px;
-    max-width: 380px;
-    padding: 12px 16px;
+    min-width: 280px;
+    max-width: 420px;
+    padding: 14px 18px;
     border-radius: 12px;
-    box-shadow: 0 12px 32px rgba(107,85,64,0.18);
+    box-shadow: 0 16px 40px rgba(58,47,38,0.28);
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 500;
+    line-height: 1.35;
     opacity: 0;
     transform: translateX(20px);
     transition: opacity var(--motion-base) var(--ease-out-quart),
@@ -243,9 +245,12 @@
   }
   .alma-toast-item.alma-anim-entered { opacity: 1; transform: translateX(0); }
   .alma-toast-item.alma-anim-exiting  { opacity: 0; transform: translateX(20px); }
-  .alma-toast-success { background: #F1F3E8; border-color: #6B8E23; color: #4A5D1F; }
-  .alma-toast-error   { background: rgba(194,84,80,0.10); border-color: #C25450; color: #8B2C28; }
-  .alma-toast-info    { background: #F7F5F0; border-color: rgba(201,168,118,0.6); color: #6B5540; }
+  /* Success — verde oliva sólido, texto crema */
+  .alma-toast-success { background: #556B2F; border-color: #4A5D1F; color: #F7F5F0; }
+  /* Error — rojo terracota sólido, texto crema */
+  .alma-toast-error   { background: #C25450; border-color: #A43D3A; color: #F7F5F0; }
+  /* Info — bronce sólido, texto crema (paleta principal de marca) */
+  .alma-toast-info    { background: #8C6E50; border-color: #6B5540; color: #F7F5F0; }
 
   /* Badge — contador en NavItem */
   .alma-badge {

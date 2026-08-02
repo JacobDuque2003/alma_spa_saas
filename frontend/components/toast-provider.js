@@ -59,13 +59,17 @@ function ToastContainer({ toasts, onDismiss }) {
     <div
       style={{
         position: "fixed",
-        top: 20,
-        right: 20,
-        zIndex: 80,
+        top: 24,
+        right: 24,
+        // z-index deliberadamente muy alto: modales usan 50, drawer 50,
+        // NewClientModal (Agenda over) 60, BirthdayToast 70. Los toasts
+        // globales siempre deben ganar la disputa de stacking.
+        zIndex: 9999,
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: 10,
         pointerEvents: "none",
+        maxWidth: "calc(100vw - 48px)",
       }}
     >
       {toasts.map((t) => (
