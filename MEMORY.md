@@ -93,3 +93,10 @@ Seguridad de la anamnesis: la auditoría vive en el service (no en la ruta), ord
 ## Próximo paso
 
 Fase 5: CRM — bandeja de WhatsApp manual + recordatorios. El gancho `TODO Fase 5` ya está en `appointmentService.js`.
+
+## Ronda UX Configuracion � toasts activar/desactivar (2026-08-03)
+
+Se corrigio el feedback visual de Configuracion: updateService y updateRoom ahora distinguen cambios de ctive y muestran mensajes especificos (Servicio/Gabinete habilitado en success oliva, Servicio/Gabinete deshabilitado en warning terracota suave). Los cambios normales de datos siguen usando ctualizado con variante info bronce. Archivos tocados: rontend/app/admin/(dashboard)/configuracion/page.js, rontend/components/toast-provider.js, rontend/app/globals.css. Verificacion local: ESLint focalizado limpio, 
+pm run build frontend verde y 
+pm test backend 230/230.
+

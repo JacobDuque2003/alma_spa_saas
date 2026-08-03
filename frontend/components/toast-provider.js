@@ -10,6 +10,7 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 //   toast.success("Guardado");
 //   toast.error(err.message);
 //   toast.info("Cumpleaños en 3 días");
+//   toast.warning("Deshabilitado");
 // Cada toast se auto-cierra a los 4s. Se pueden apilar.
 // Animación via useAnimatedMount (mismo patrón que el resto del sistema).
 
@@ -37,6 +38,7 @@ export function ToastProvider({ children }) {
     success: (message, opts) => push("success", message, opts),
     error:   (message, opts) => push("error",   message, opts),
     info:    (message, opts) => push("info",    message, opts),
+    warning: (message, opts) => push("warning", message, opts),
     dismiss,
   }), [push, dismiss]);
 

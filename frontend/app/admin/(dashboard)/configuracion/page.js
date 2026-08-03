@@ -371,7 +371,9 @@ export default function ConfiguracionPage() {
     try {
       const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
       setServices((prev) => prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s)));
-      toast.success("Servicio actualizado");
+      if (changes.active === true) toast.success("Servicio habilitado");
+      else if (changes.active === false) toast.warning("Servicio deshabilitado");
+      else toast.info("Servicio actualizado");
     } catch (err) {
       toast.error(err.message || "Error al actualizar servicio");
     }
@@ -381,7 +383,9 @@ export default function ConfiguracionPage() {
     try {
       const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
       setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, ...updated } : r)));
-      toast.success("Gabinete actualizado");
+      if (changes.active === true) toast.success("Gabinete habilitado");
+      else if (changes.active === false) toast.warning("Gabinete deshabilitado");
+      else toast.info("Gabinete actualizado");
     } catch (err) {
       toast.error(err.message || "Error al actualizar gabinete");
     }

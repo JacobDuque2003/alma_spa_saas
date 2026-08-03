@@ -249,6 +249,8 @@
   .alma-toast-success { background: #556B2F; border-color: #4A5D1F; color: #F7F5F0; }
   /* Error — rojo terracota sólido, texto crema */
   .alma-toast-error   { background: #C25450; border-color: #A43D3A; color: #F7F5F0; }
+  /* Warning — terracota suave para acciones de desactivación */
+  .alma-toast-warning { background: #B86A5E; border-color: #9F5148; color: #F7F5F0; }
   /* Info — bronce sólido, texto crema (paleta principal de marca) */
   .alma-toast-info    { background: #8C6E50; border-color: #6B5540; color: #F7F5F0; }
 
