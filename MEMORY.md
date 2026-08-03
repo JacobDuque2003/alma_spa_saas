@@ -136,3 +136,10 @@ Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part
 - Agenda: citas con la misma hora se dibujan en columnas para no montarse visualmente; la regla backend mantiene el bloqueo si comparten gabinete o terapeuta.
 - Gabinetes: Ver dia queda controlado por un solo gabinete abierto a la vez.
 - Verificacion: npm test backend 233/233, lint focalizado de Clientes/Agenda/Gabinetes limpio, build frontend verde con red habilitada para fuentes Google.
+
+## Ajuste minimo de contrasena a 8 caracteres (2026-08-03)
+
+- Se bajo la regla minima de contrasena de 10 a 8 caracteres en backend para crear usuarios y cambiar contrasena propia.
+- Se actualizaron los mensajes/placeholder en Personal y Perfil para mostrar minimo 8 caracteres.
+- Se agrego prueba que confirma que una contrasena de exactamente 8 caracteres es aceptada y sigue sin exponer passwordHash.
+- Verificacion: user/auth tests focalizados 26/26, npm test completo 234/234, lint Perfil/Personal limpio, build frontend verde.

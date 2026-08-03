@@ -75,8 +75,8 @@ function NewUserModal({ phase, onClose, onSaved }) {
       setValidation("Nombre, email y contraseña son requeridos");
       return;
     }
-    if (password.length < 10) {
-      setValidation("La contraseña debe tener al menos 10 caracteres");
+    if (password.length < 8) {
+      setValidation("La contraseña debe tener al menos 8 caracteres");
       return;
     }
     setSaving(true);
@@ -150,7 +150,7 @@ function NewUserModal({ phase, onClose, onSaved }) {
           </div>
           <div>
             <label style={labelStyle}>Contraseña</label>
-            <input type="password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 10 caracteres" />
+            <input type="password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="m?nimo 8 caracteres" />
           </div>
           <div>
             <label style={labelStyle}>Rol</label>

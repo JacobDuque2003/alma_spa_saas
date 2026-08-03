@@ -49,8 +49,8 @@ export default function PerfilPage() {
       setError("Todos los campos son obligatorios");
       return;
     }
-    if (newPassword.length < 10) {
-      setError("La nueva contraseña debe tener al menos 10 caracteres");
+    if (newPassword.length < 8) {
+      setError("La nueva contraseña debe tener al menos 8 caracteres");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -141,7 +141,7 @@ export default function PerfilPage() {
               <input type="password" style={inputStyle} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
             </div>
             <div>
-              <label style={labelStyle}>Nueva contraseña (mínimo 10 caracteres)</label>
+              <label style={labelStyle}>Nueva contraseña (m?nimo 8 caracteres)</label>
               <input type="password" style={inputStyle} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
             </div>
             <div>

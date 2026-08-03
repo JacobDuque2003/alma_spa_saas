@@ -101,8 +101,8 @@ router.patch('/me/password', authenticate, passwordChangeRateLimit, async (req, 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'currentPassword y newPassword son requeridos' });
     }
-    if (newPassword.length < 10) {
-      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 10 caracteres' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 8 caracteres' });
     }
     if (newPassword.length > 128) {
       return res.status(400).json({ error: 'La contraseña no puede exceder 128 caracteres' });

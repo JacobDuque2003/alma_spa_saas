@@ -48,7 +48,7 @@ async function listUsers(actor, query = {}) {
 }
 
 const ALLOWED_ROLES_FOR_CREATION = ['personal', 'dueno'];
-const MIN_PASSWORD_LENGTH = 10;
+const MIN_PASSWORD_LENGTH = 8;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function createUser(actor, data) {

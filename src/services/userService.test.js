@@ -255,7 +255,7 @@ test('[SECURITY] actor de tenant A no puede crear usuario en tenant B', async ()
   assert.equal(capturedData.tenantId, 'tenant-a', 'Debe usar tenant del JWT, no el del body');
 });
 
-test('[SECURITY] password menor a 10 caracteres es rechazado con 400', async () => {
+test('[SECURITY] password menor a 8 caracteres es rechazado con 400', async () => {
   mockPrisma({ user: { create: async () => ({}) } });
   await assert.rejects(
     () => userService.createUser(
@@ -268,6 +268,25 @@ test('[SECURITY] password menor a 10 caracteres es rechazado con 400', async () 
       return true;
     }
   );
+});
+
+test('[SECURITY] password de exactamente 8 caracteres es aceptado', async () => {
+  let capturedData;
+  mockPrisma({
+    user: {
+      create: async (args) => { capturedData = args.data; return { id: 'u8', ...args.data, rolePermission: { id: 'rp8' } }; },
+    },
+  });
+
+  const result = await userService.createUser(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { email: 'ocho@spa.test', password: '12345678', name: 'Ocho', role: 'personal' }
+  );
+
+  assert.equal(userService.MIN_PASSWORD_LENGTH, 8);
+  assert.ok(capturedData.passwordHash);
+  assert.equal(result.id, 'u8');
+  assert.equal('passwordHash' in result, false);
 });
 
 test('[SECURITY] email sin formato valido es rechazado con 400', async () => {
