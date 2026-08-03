@@ -114,3 +114,9 @@ Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part
 - El confeti ahora adapta tama?o/posici?n en m?vil con safe-area, evitando que quede cortado o demasiado grande en pantallas peque?as.
 - La vista de Gabinetes qued? responsive: tarjetas en una columna en m?vil, grilla flexible en escritorio y encabezado/leyenda con wrap.
 - Se evit? usar Date.now() durante render en Gabinetes; se calcula al refrescar datos para mantener limpio el build/lint.
+## Redise?o compacto de Gabinetes (2026-08-03)
+
+- La vista de Gabinetes cambi? de tarjetas anchas a mosaico compacto responsive.
+- Se a?adi? resumen superior con gabinetes libres, ocupados, citas del d?a y citas a domicilio.
+- Cada gabinete muestra categor?a, horario, estado, pr?xima cita o cita en curso, mini l?nea de tiempo y detalle expandible del d?a.
+- En escritorio los cuadros usan auto-fill con ancho m?ximo para evitar tarjetas gigantes cuando hay pocos gabinetes; en m?vil usan una sola columna.

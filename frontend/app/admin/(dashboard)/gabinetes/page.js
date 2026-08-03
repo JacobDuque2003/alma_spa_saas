@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
@@ -38,6 +38,14 @@ function formatNow() {
   });
 }
 
+function sortByStart(appts) {
+  return [...appts].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+}
+
+function statusLabel(status) {
+  return status === "confirmado" ? "Confirm?" : "Sin confirmar";
+}
+
 export default function GabinetesPage() {
   const isMobile = useIsMobile();
   const [rooms, setRooms] = useState([]);
@@ -53,7 +61,7 @@ export default function GabinetesPage() {
       const [roomsData, apptsData] = await Promise.all([
         authFetch("/rooms"),
         authFetch("/appointments", {
-          query: { from: `${today}T00:00:00`, to: `${today}T23:59:59` },
+          query: { from: today + "T00:00:00", to: today + "T23:59:59" },
         }),
       ]);
       setRooms(Array.isArray(roomsData) ? roomsData : []);
@@ -74,50 +82,75 @@ export default function GabinetesPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const activeAppts = appointments.filter(
-    (a) => a.status === "pendiente" || a.status === "confirmado"
+  const activeRooms = useMemo(() => rooms.filter((r) => r.active), [rooms]);
+  const activeAppts = useMemo(
+    () => sortByStart(appointments.filter((a) => a.status === "pendiente" || a.status === "confirmado")),
+    [appointments]
   );
-  const domicilioAppts = activeAppts.filter((a) => a.modality === "domicilio");
+  const domicilioAppts = useMemo(
+    () => activeAppts.filter((a) => a.modality === "domicilio"),
+    [activeAppts]
+  );
+  const roomAppts = useMemo(
+    () => activeAppts.filter((a) => a.modality !== "domicilio" && a.roomId),
+    [activeAppts]
+  );
+  const occupiedCount = useMemo(
+    () => activeRooms.filter((room) => roomAppts.some((a) => a.roomId === room.id && isNowBetween(a.startsAt, a.endsAt, nowMs))).length,
+    [activeRooms, roomAppts, nowMs]
+  );
+  const freeCount = Math.max(activeRooms.length - occupiedCount, 0);
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", gap: isMobile ? 16 : 22, overflowY: "auto", overflowX: "hidden" }}>
-      {/* Header */}
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20, overflowY: "auto", overflowX: "hidden" }}>
       <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "flex-end", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 18 }}>
         <div>
-          <h1 className="font-heading" style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
+          <h1 className="font-heading" style={{ fontSize: isMobile ? 24 : 28, fontWeight: 600, color: "#6B5540", margin: "0 0 5px" }}>
             Gabinetes
           </h1>
           <p style={{ margin: 0, fontSize: isMobile ? 12 : 14, color: "#A89A87" }}>
-            Estado en tiempo real · {timestamp}
+            Estado en tiempo real ? {timestamp || "actualizando?"}
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 18, fontSize: 12, color: "#6B5540", flexWrap: "wrap" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#C9A876" }} />
-            Libre
-          </span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#6B5540" }} />
-            Ocupado
-          </span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <span style={{ width: 9, height: 9, borderRadius: "50%", border: "1.5px dashed #8C6E50", boxSizing: "border-box" }} />
-            A domicilio
-          </span>
-        </div>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          style={{
+            border: "1px solid rgba(140,110,80,0.45)",
+            borderRadius: 999,
+            background: loading ? "rgba(201,168,118,0.16)" : "#F7F5F0",
+            color: "#8C6E50",
+            padding: "10px 16px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: loading ? "default" : "pointer",
+            boxShadow: "0 8px 20px rgba(80, 62, 42, 0.06)",
+          }}
+        >
+          {loading ? "Actualizando?" : "Actualizar"}
+        </button>
       </div>
 
-      {loading && rooms.length === 0 ? (
+      <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(150px, 1fr))", gap: isMobile ? 10 : 12 }}>
+        <SummaryTile label="Libres" value={freeCount} tone="soft" />
+        <SummaryTile label="Ocupados" value={occupiedCount} tone="dark" />
+        <SummaryTile label="Citas hoy" value={roomAppts.length} tone="line" />
+        <SummaryTile label="A domicilio" value={domicilioAppts.length} tone="dash" />
+      </section>
+
+      {loading && activeRooms.length === 0 ? (
         <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
           <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
         </div>
+      ) : activeRooms.length === 0 && domicilioAppts.length === 0 ? (
+        <EmptyState />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(260px, 1fr))", gap: isMobile ? 14 : 20, alignItems: "start" }}>
-          {rooms.filter((r) => r.active).map((room) => (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(230px, 290px))", gap: isMobile ? 12 : 16, alignItems: "stretch", justifyContent: isMobile ? "stretch" : "start" }}>
+          {activeRooms.map((room) => (
             <RoomCard
               key={room.id}
               room={room}
-              appointments={activeAppts.filter((a) => a.roomId === room.id)}
+              appointments={roomAppts.filter((a) => a.roomId === room.id)}
               isMobile={isMobile}
               nowMs={nowMs}
             />
@@ -131,223 +164,189 @@ export default function GabinetesPage() {
   );
 }
 
+function SummaryTile({ label, value, tone }) {
+  const styles = {
+    soft: { bg: "rgba(201,168,118,0.18)", dot: "#C9A876", border: "rgba(201,168,118,0.32)" },
+    dark: { bg: "rgba(107,85,64,0.1)", dot: "#6B5540", border: "rgba(107,85,64,0.24)" },
+    line: { bg: "rgba(235,232,225,0.62)", dot: "#A89A87", border: "rgba(168,154,135,0.28)" },
+    dash: { bg: "rgba(247,245,240,0.76)", dot: "transparent", border: "rgba(140,110,80,0.36)" },
+  }[tone];
+
+  return (
+    <div style={{ border: "1px solid " + styles.border, background: styles.bg, borderRadius: 18, padding: "14px 16px", minHeight: 82, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, color: "#8C6E50", fontWeight: 600 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: styles.dot, border: tone === "dash" ? "1.5px dashed #8C6E50" : "none" }} />
+        {label}
+      </span>
+      <strong className="font-heading" style={{ color: "#6B5540", fontSize: 28, fontWeight: 600, lineHeight: 1 }}>{value}</strong>
+    </div>
+  );
+}
+
 function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
   const [expanded, setExpanded] = useState(false);
   const current = appointments.find((a) => isNowBetween(a.startsAt, a.endsAt, nowMs));
+  const next = appointments.find((a) => new Date(a.startsAt).getTime() > nowMs) || appointments[0];
   const isOccupied = !!current;
-
   const progress = current
-    ? Math.min(
-        100,
-        ((nowMs - new Date(current.startsAt).getTime()) /
-          (new Date(current.endsAt).getTime() - new Date(current.startsAt).getTime())) *
-          100
-      )
+    ? Math.min(100, Math.max(0, ((nowMs - new Date(current.startsAt).getTime()) / (new Date(current.endsAt).getTime() - new Date(current.startsAt).getTime())) * 100))
     : 0;
 
   return (
-    <div
+    <article
       className="alma-card"
       style={{
-        padding: isMobile ? 16 : 24,
-        border: isOccupied ? "1px solid rgba(107,85,64,0.45)" : undefined,
-        gridRow: !isMobile && expanded ? "span 2" : "auto",
+        padding: 0,
+        overflow: "hidden",
+        minHeight: isMobile ? 186 : 202,
+        border: isOccupied ? "1px solid rgba(107,85,64,0.48)" : "1px solid rgba(168,154,135,0.28)",
+        boxShadow: isOccupied ? "0 16px 34px rgba(80,62,42,0.12)" : "0 10px 26px rgba(80,62,42,0.07)",
       }}
     >
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
-          {room.name}
-        </h2>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 7,
-            padding: "5px 14px",
-            borderRadius: 999,
-            background: isOccupied ? "#6B5540" : "rgba(201,168,118,0.25)",
-            color: isOccupied ? "#EBE8E1" : "#8C6E50",
-            fontSize: 12,
-            fontWeight: 500,
-            transition: "background var(--motion-slow) var(--ease-in-out-quart), color var(--motion-slow) var(--ease-in-out-quart)",
-          }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: isOccupied ? "#EBCDB5" : "#C9A876",
-              transition: "background var(--motion-slow) var(--ease-in-out-quart)",
-            }}
-          />
-          {isOccupied ? "Ocupado" : "Libre"}
-        </span>
+      <div style={{ padding: isMobile ? 16 : 18, background: isOccupied ? "linear-gradient(135deg, rgba(107,85,64,0.96), rgba(140,110,80,0.88))" : "linear-gradient(135deg, #fffdf8, #f3eee5)", color: isOccupied ? "#F7F5F0" : "#6B5540" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 22, fontWeight: 600, margin: "0 0 5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {room.name}
+            </h2>
+            <p style={{ margin: 0, fontSize: 12, color: isOccupied ? "rgba(247,245,240,0.78)" : "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {room.specialty} ? {room.opensAt || "09:00"}-{room.closesAt || "19:00"}
+            </p>
+          </div>
+          <StatusPill occupied={isOccupied} />
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          {current ? (
+            <>
+              <p style={{ margin: "0 0 8px", fontSize: 12, color: "rgba(247,245,240,0.82)" }}>En curso hasta {formatTime(current.endsAt)}</p>
+              <strong style={{ display: "block", fontSize: 15, color: "#FFFFFF", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {current.client?.fullName || "Cliente"}
+              </strong>
+              <span style={{ display: "block", marginTop: 3, fontSize: 12, color: "rgba(247,245,240,0.76)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {current.service?.name || "Servicio"}
+              </span>
+              <div style={{ height: 4, borderRadius: 999, background: "rgba(247,245,240,0.22)", marginTop: 13 }}>
+                <div style={{ width: progress + "%", height: "100%", borderRadius: 999, background: "#EBCDB5", transition: "width 1s" }} />
+              </div>
+            </>
+          ) : next ? (
+            <>
+              <p style={{ margin: "0 0 7px", fontSize: 12, color: "#A89A87" }}>Pr?xima cita ? {formatTime(next.startsAt)}</p>
+              <strong style={{ display: "block", fontSize: 15, color: "#6B5540", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {next.client?.fullName || "Cliente"}
+              </strong>
+              <span style={{ display: "block", marginTop: 3, fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {next.service?.name || "Servicio"}
+              </span>
+            </>
+          ) : (
+            <div style={{ display: "flex", minHeight: 58, alignItems: "center" }}>
+              <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Sin citas programadas hoy</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Current appointment info */}
-      {current ? (
-        <>
-          <p style={{ margin: "0 0 16px", fontSize: 13, color: "#A89A87" }}>
-            En curso: {current.service?.name} · {current.client?.fullName} · termina {formatTime(current.endsAt)}
-          </p>
-          <div style={{ height: 4, borderRadius: 999, background: "rgba(168,154,135,0.3)", marginBottom: 20 }}>
-            <div style={{ width: `${progress}%`, height: "100%", borderRadius: 999, background: "#8C6E50", transition: "width 1s" }} />
-          </div>
-        </>
-      ) : (
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "#A89A87" }}>
-          {appointments.length > 0
-            ? `Siguiente: ${appointments[0].service?.name} · ${formatTime(appointments[0].startsAt)}`
-            : "Sin citas programadas hoy"}
-        </p>
-      )}
-
-      {/* Expand toggle */}
-      {appointments.length > 0 && (
-        <>
+      <div style={{ padding: isMobile ? "13px 16px 15px" : "14px 18px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <MiniTimeline appointments={appointments} nowMs={nowMs} />
+        {appointments.length > 0 && (
           <button
             onClick={() => setExpanded(!expanded)}
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "9px 18px",
+              alignSelf: "flex-start",
+              border: "1px solid rgba(140,110,80,0.46)",
               borderRadius: 999,
-              border: expanded ? "none" : "1px solid #8C6E50",
-              background: expanded ? "#8C6E50" : "none",
+              background: expanded ? "#8C6E50" : "transparent",
               color: expanded ? "#F7F5F0" : "#8C6E50",
-              fontSize: 13,
-              fontWeight: 500,
+              padding: "8px 13px",
+              fontSize: 12,
+              fontWeight: 600,
               cursor: "pointer",
-              marginBottom: expanded ? 18 : 0,
             }}
           >
-            {expanded ? "Ocultar clientes reservados ▴" : `Ver ${appointments.length} cita${appointments.length !== 1 ? "s" : ""} del día ▾`}
+            {expanded ? "Ocultar d?a" : "Ver d?a"}
           </button>
+        )}
+        {expanded && <AppointmentList appointments={appointments} nowMs={nowMs} />}
+      </div>
+    </article>
+  );
+}
 
-          {expanded && (
-            <div style={{ display: "flex", flexDirection: "column", borderTop: "1px solid rgba(168,154,135,0.35)" }}>
-              {appointments.map((appt, i) => {
-                const isCurrent = isNowBetween(appt.startsAt, appt.endsAt, nowMs);
-                const isConfirmed = appt.status === "confirmado";
-                return (
-                  <div
-                    key={appt.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "13px 4px",
-                      borderBottom: i < appointments.length - 1 ? "1px solid rgba(168,154,135,0.25)" : "none",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: "#6B5540" }}>
-                        {appt.client?.fullName || "Cliente"}
-                      </div>
-                      <div style={{ fontSize: 12, color: "#A89A87" }}>
-                        {formatTime(appt.startsAt)} · {appt.service?.name}
-                      </div>
-                    </div>
-                    {isConfirmed ? (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "4px 12px",
-                          borderRadius: 999,
-                          background: "rgba(201,168,118,0.2)",
-                          color: "#8C6E50",
-                          fontSize: 12,
-                          fontWeight: 500,
-                        }}
-                      >
-                        ✓ Confirmó{isCurrent ? " · en curso" : ""}
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "4px 12px",
-                          borderRadius: 999,
-                          border: "1px solid #A89A87",
-                          color: "#A89A87",
-                          fontSize: 12,
-                        }}
-                      >
-                        Sin confirmar
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+function StatusPill({ occupied }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 11px", borderRadius: 999, background: occupied ? "rgba(247,245,240,0.16)" : "rgba(201,168,118,0.22)", color: occupied ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: occupied ? "#EBCDB5" : "#C9A876" }} />
+      {occupied ? "Ocupado" : "Libre"}
+    </span>
+  );
+}
+
+function MiniTimeline({ appointments, nowMs }) {
+  if (appointments.length === 0) {
+    return <div style={{ height: 6, borderRadius: 999, background: "rgba(168,154,135,0.16)" }} />;
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 5, height: 7 }} aria-label="Citas del d?a">
+      {appointments.slice(0, 6).map((appt) => {
+        const active = isNowBetween(appt.startsAt, appt.endsAt, nowMs);
+        return (
+          <span
+            key={appt.id}
+            title={(appt.client?.fullName || "Cliente") + " ? " + formatTime(appt.startsAt)}
+            style={{ flex: 1, minWidth: 16, borderRadius: 999, background: active ? "#6B5540" : appt.status === "confirmado" ? "#C9A876" : "rgba(168,154,135,0.32)" }}
+          />
+        );
+      })}
+      {appointments.length > 6 && <span style={{ fontSize: 11, color: "#A89A87", lineHeight: "7px" }}>+{appointments.length - 6}</span>}
+    </div>
+  );
+}
+
+function AppointmentList({ appointments, nowMs }) {
+  return (
+    <div style={{ borderTop: "1px solid rgba(168,154,135,0.26)", paddingTop: 4 }}>
+      {appointments.map((appt, i) => {
+        const isCurrent = isNowBetween(appt.startsAt, appt.endsAt, nowMs);
+        return (
+          <div key={appt.id} style={{ display: "grid", gridTemplateColumns: "52px 1fr auto", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: i < appointments.length - 1 ? "1px solid rgba(168,154,135,0.18)" : "none" }}>
+            <span style={{ fontSize: 12, color: isCurrent ? "#6B5540" : "#A89A87", fontWeight: isCurrent ? 700 : 500 }}>{formatTime(appt.startsAt)}</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#6B5540", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{appt.client?.fullName || "Cliente"}</div>
+              <div style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{appt.service?.name || "Servicio"}</div>
             </div>
-          )}
-        </>
-      )}
+            <span style={{ borderRadius: 999, padding: "4px 9px", background: appt.status === "confirmado" ? "rgba(201,168,118,0.2)" : "transparent", border: appt.status === "confirmado" ? "none" : "1px solid rgba(168,154,135,0.45)", color: appt.status === "confirmado" ? "#8C6E50" : "#A89A87", fontSize: 11, whiteSpace: "nowrap" }}>
+              {appt.status === "confirmado" ? "? " : ""}{statusLabel(appt.status)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function DomicilioCard({ appointments, isMobile = false }) {
   return (
-    <div
-      className="alma-card"
-      style={{
-        padding: isMobile ? 16 : 24,
-        border: "1.5px dashed rgba(140,110,80,0.5)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
-          A domicilio
-        </h2>
-        <span style={{ fontSize: 13, color: "#A89A87" }}>{appointments.length} hoy</span>
+    <article className="alma-card" style={{ padding: isMobile ? 16 : 18, minHeight: isMobile ? 176 : 202, border: "1.5px dashed rgba(140,110,80,0.48)", background: "rgba(247,245,240,0.72)", width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+        <div>
+          <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 22, fontWeight: 600, color: "#6B5540", margin: 0 }}>A domicilio</h2>
+          <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 12 }}>{appointments.length} cita{appointments.length !== 1 ? "s" : ""} hoy</p>
+        </div>
+        <span style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px dashed #8C6E50" }} />
       </div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {appointments.map((appt, i) => (
-          <div
-            key={appt.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "13px 4px",
-              borderBottom: i < appointments.length - 1 ? "1px solid rgba(168,154,135,0.25)" : "none",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: "#6B5540" }}>
-                {appt.client?.fullName || "Cliente"}
-              </div>
-              <div style={{ fontSize: 12, color: "#A89A87" }}>
-                {formatTime(appt.startsAt)} · {appt.service?.name}
-              </div>
-            </div>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "4px 12px",
-                borderRadius: 999,
-                background: appt.status === "confirmado" ? "rgba(201,168,118,0.2)" : "transparent",
-                border: appt.status !== "confirmado" ? "1px solid #A89A87" : "none",
-                color: appt.status === "confirmado" ? "#8C6E50" : "#A89A87",
-                fontSize: 12,
-                fontWeight: appt.status === "confirmado" ? 500 : 400,
-              }}
-            >
-              {appt.status === "confirmado" ? "✓ Confirmó" : "Sin confirmar"}
-            </span>
-          </div>
-        ))}
-      </div>
+      <AppointmentList appointments={appointments} nowMs={0} />
+    </article>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="alma-card" style={{ padding: "34px 28px", maxWidth: 520, textAlign: "center", alignSelf: "center", marginTop: 40 }}>
+      <h2 className="font-heading" style={{ margin: "0 0 8px", color: "#6B5540", fontSize: 24 }}>Sin gabinetes activos</h2>
+      <p style={{ margin: 0, color: "#A89A87", fontSize: 14 }}>Cuando agregues gabinetes activos, aparecer?n aqu? como cuadros peque?os.</p>
     </div>
   );
 }
