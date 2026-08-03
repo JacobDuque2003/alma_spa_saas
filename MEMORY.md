@@ -94,7 +94,7 @@ Seguridad de la anamnesis: la auditoría vive en el service (no en la ruta), ord
 
 Fase 5: CRM — bandeja de WhatsApp manual + recordatorios. El gancho `TODO Fase 5` ya está en `appointmentService.js`.
 
-## Ronda UX Configuracion � toasts activar/desactivar (2026-08-03)
+## Ronda UX Configuracion � toasts activar/desactivar (2026-08-03)
 
 Se corrigio el feedback visual de Configuracion: updateService y updateRoom ahora distinguen cambios de ctive y muestran mensajes especificos (Servicio/Gabinete habilitado en success oliva, Servicio/Gabinete deshabilitado en warning terracota suave). Los cambios normales de datos siguen usando ctualizado con variante info bronce. Archivos tocados: rontend/app/admin/(dashboard)/configuracion/page.js, rontend/components/toast-provider.js, rontend/app/globals.css. Verificacion local: ESLint focalizado limpio, 
 pm run build frontend verde y 
@@ -108,3 +108,9 @@ Se redise?aron los toasts globales: fondo crema transl?cido, borde/acento latera
 ## Ajuste visual confeti cumplea?os (2026-08-03)
 
 Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part?culas, nace desde ambos lados del toast, dura 1.6s y no queda recortado dentro de la tarjeta. No cambia l?gica ni backend; sigue mostrando solo cumplea?os de hoy y respeta prefers-reduced-motion. Verificaci?n: ESLint focalizado limpio, build frontend verde y backend tests 230/230.
+## Ajuste responsive de confeti y Gabinetes (2026-08-03)
+
+- Se aument? la duraci?n y el tama?o del confeti de cumplea?os para que no desaparezca tan r?pido.
+- El confeti ahora adapta tama?o/posici?n en m?vil con safe-area, evitando que quede cortado o demasiado grande en pantallas peque?as.
+- La vista de Gabinetes qued? responsive: tarjetas en una columna en m?vil, grilla flexible en escritorio y encabezado/leyenda con wrap.
+- Se evit? usar Date.now() durante render en Gabinetes; se calcula al refrescar datos para mantener limpio el build/lint.

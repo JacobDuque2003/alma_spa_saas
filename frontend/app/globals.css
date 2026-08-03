@@ -284,32 +284,32 @@
     position: absolute;
     top: 50%;
     left: var(--sx, 50%);
-    width: var(--w, 7px);
-    height: var(--h, 4px);
+    width: var(--w, 9px);
+    height: var(--h, 5px);
     border-radius: 2px;
     background: #C9A876;
     opacity: 0;
-    animation: alma-confetti-pop 1600ms var(--ease-out-quart) both;
+    animation: alma-confetti-pop 2200ms var(--ease-out-quart) both;
   }
   .alma-birthday-confetti span:nth-child(4n) { background: #EBCDB5; }
   .alma-birthday-confetti span:nth-child(4n + 1) { background: #8C6E50; }
   .alma-birthday-confetti span:nth-child(4n + 2) { background: #D8B26E; }
-  .alma-birthday-confetti span:nth-child(1)  { --sx: 0%;   --x: 118px;  --y: -38px; --r: -38deg; --w: 8px; --h: 4px; animation-delay: 0ms; }
+  .alma-birthday-confetti span:nth-child(1)  { --sx: 0%;   --x: 118px;  --y: -38px; --r: -38deg; --w: 11px; --h: 5px; animation-delay: 0ms; }
   .alma-birthday-confetti span:nth-child(2)  { --sx: 0%;   --x: 148px;  --y:  10px; --r:  28deg; animation-delay: 40ms; }
-  .alma-birthday-confetti span:nth-child(3)  { --sx: 0%;   --x: 105px;  --y:  46px; --r:  72deg; --w: 5px; --h: 5px; animation-delay: 80ms; }
+  .alma-birthday-confetti span:nth-child(3)  { --sx: 0%;   --x: 105px;  --y:  46px; --r:  72deg; --w: 7px; --h: 7px; animation-delay: 80ms; }
   .alma-birthday-confetti span:nth-child(4)  { --sx: 0%;   --x: 184px;  --y: -4px;  --r: -84deg; animation-delay: 110ms; }
   .alma-birthday-confetti span:nth-child(5)  { --sx: 0%;   --x: 138px;  --y: -68px; --r:  52deg; animation-delay: 150ms; }
-  .alma-birthday-confetti span:nth-child(6)  { --sx: 0%;   --x: 205px;  --y:  38px; --r: -20deg; --w: 9px; --h: 4px; animation-delay: 190ms; }
+  .alma-birthday-confetti span:nth-child(6)  { --sx: 0%;   --x: 205px;  --y:  38px; --r: -20deg; --w: 12px; --h: 5px; animation-delay: 190ms; }
   .alma-birthday-confetti span:nth-child(7)  { --sx: 0%;   --x: 232px;  --y: -34px; --r:  96deg; animation-delay: 230ms; }
   .alma-birthday-confetti span:nth-child(8)  { --sx: 0%;   --x: 168px;  --y:  74px; --r: -58deg; animation-delay: 260ms; }
   .alma-birthday-confetti span:nth-child(9)  { --sx: 0%;   --x: 260px;  --y:  6px;  --r:  38deg; animation-delay: 300ms; }
   .alma-birthday-confetti span:nth-child(10) { --sx: 0%;   --x: 225px;  --y: -78px; --r: -28deg; animation-delay: 340ms; }
-  .alma-birthday-confetti span:nth-child(11) { --sx: 100%; --x: -118px; --y: -38px; --r:  38deg; --w: 8px; --h: 4px; animation-delay: 0ms; }
+  .alma-birthday-confetti span:nth-child(11) { --sx: 100%; --x: -118px; --y: -38px; --r:  38deg; --w: 11px; --h: 5px; animation-delay: 0ms; }
   .alma-birthday-confetti span:nth-child(12) { --sx: 100%; --x: -148px; --y:  10px; --r: -28deg; animation-delay: 40ms; }
-  .alma-birthday-confetti span:nth-child(13) { --sx: 100%; --x: -105px; --y:  46px; --r: -72deg; --w: 5px; --h: 5px; animation-delay: 80ms; }
+  .alma-birthday-confetti span:nth-child(13) { --sx: 100%; --x: -105px; --y:  46px; --r: -72deg; --w: 7px; --h: 7px; animation-delay: 80ms; }
   .alma-birthday-confetti span:nth-child(14) { --sx: 100%; --x: -184px; --y: -4px;  --r:  84deg; animation-delay: 110ms; }
   .alma-birthday-confetti span:nth-child(15) { --sx: 100%; --x: -138px; --y: -68px; --r: -52deg; animation-delay: 150ms; }
-  .alma-birthday-confetti span:nth-child(16) { --sx: 100%; --x: -205px; --y:  38px; --r:  20deg; --w: 9px; --h: 4px; animation-delay: 190ms; }
+  .alma-birthday-confetti span:nth-child(16) { --sx: 100%; --x: -205px; --y:  38px; --r:  20deg; --w: 12px; --h: 5px; animation-delay: 190ms; }
   .alma-birthday-confetti span:nth-child(17) { --sx: 100%; --x: -232px; --y: -34px; --r: -96deg; animation-delay: 230ms; }
   .alma-birthday-confetti span:nth-child(18) { --sx: 100%; --x: -168px; --y:  74px; --r:  58deg; animation-delay: 260ms; }
   .alma-birthday-confetti span:nth-child(19) { --sx: 100%; --x: -260px; --y:  6px;  --r: -38deg; animation-delay: 300ms; }
@@ -319,6 +319,23 @@
     14%  { opacity: 0.98; }
     72%  { opacity: 0.9; }
     100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1.08) rotate(var(--r)); }
+  }
+  @media (max-width: 640px) {
+    .alma-birthday-toast {
+      right: max(14px, env(safe-area-inset-right));
+      left: max(14px, env(safe-area-inset-left));
+      bottom: max(14px, env(safe-area-inset-bottom));
+      max-width: none;
+      padding: 12px 14px;
+    }
+    .alma-birthday-confetti {
+      inset: -44px -30px;
+      transform: scale(0.78);
+      transform-origin: center;
+    }
+    .alma-birthday-confetti span {
+      animation-duration: 1900ms;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .alma-birthday-confetti { display: none; }

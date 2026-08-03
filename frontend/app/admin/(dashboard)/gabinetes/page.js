@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2 } from "lucide-react";
+import { useIsMobile } from "@/lib/use-mobile";
 
 function toLocalDate(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
@@ -19,9 +20,8 @@ function formatTime(iso) {
   });
 }
 
-function isNowBetween(startsAt, endsAt) {
-  const now = Date.now();
-  return now >= new Date(startsAt).getTime() && now < new Date(endsAt).getTime();
+function isNowBetween(startsAt, endsAt, nowMs) {
+  return nowMs >= new Date(startsAt).getTime() && nowMs < new Date(endsAt).getTime();
 }
 
 function formatNow() {
@@ -39,10 +39,12 @@ function formatNow() {
 }
 
 export default function GabinetesPage() {
+  const isMobile = useIsMobile();
   const [rooms, setRooms] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [timestamp, setTimestamp] = useState("");
+  const [nowMs, setNowMs] = useState(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -57,6 +59,7 @@ export default function GabinetesPage() {
       setRooms(Array.isArray(roomsData) ? roomsData : []);
       setAppointments(Array.isArray(apptsData) ? apptsData : []);
       setTimestamp(formatNow());
+      setNowMs(Date.now());
     } catch {
       setRooms([]);
       setAppointments([]);
@@ -77,18 +80,18 @@ export default function GabinetesPage() {
   const domicilioAppts = activeAppts.filter((a) => a.modality === "domicilio");
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", display: "flex", flexDirection: "column", gap: 22, overflow: "hidden" }}>
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", gap: isMobile ? 16 : 22, overflowY: "auto", overflowX: "hidden" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "flex-end", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 18 }}>
         <div>
-          <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
+          <h1 className="font-heading" style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
             Gabinetes
           </h1>
-          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>
+          <p style={{ margin: 0, fontSize: isMobile ? 12 : 14, color: "#A89A87" }}>
             Estado en tiempo real · {timestamp}
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 12, color: "#6B5540" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 18, fontSize: 12, color: "#6B5540", flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#C9A876" }} />
             Libre
@@ -109,16 +112,18 @@ export default function GabinetesPage() {
           <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(260px, 1fr))", gap: isMobile ? 14 : 20, alignItems: "start" }}>
           {rooms.filter((r) => r.active).map((room) => (
             <RoomCard
               key={room.id}
               room={room}
               appointments={activeAppts.filter((a) => a.roomId === room.id)}
+              isMobile={isMobile}
+              nowMs={nowMs}
             />
           ))}
           {domicilioAppts.length > 0 && (
-            <DomicilioCard appointments={domicilioAppts} />
+            <DomicilioCard appointments={domicilioAppts} isMobile={isMobile} />
           )}
         </div>
       )}
@@ -126,15 +131,15 @@ export default function GabinetesPage() {
   );
 }
 
-function RoomCard({ room, appointments }) {
+function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
   const [expanded, setExpanded] = useState(false);
-  const current = appointments.find((a) => isNowBetween(a.startsAt, a.endsAt));
+  const current = appointments.find((a) => isNowBetween(a.startsAt, a.endsAt, nowMs));
   const isOccupied = !!current;
 
   const progress = current
     ? Math.min(
         100,
-        ((Date.now() - new Date(current.startsAt).getTime()) /
+        ((nowMs - new Date(current.startsAt).getTime()) /
           (new Date(current.endsAt).getTime() - new Date(current.startsAt).getTime())) *
           100
       )
@@ -144,14 +149,14 @@ function RoomCard({ room, appointments }) {
     <div
       className="alma-card"
       style={{
-        padding: 24,
+        padding: isMobile ? 16 : 24,
         border: isOccupied ? "1px solid rgba(107,85,64,0.45)" : undefined,
-        gridRow: expanded ? "span 2" : "auto",
+        gridRow: !isMobile && expanded ? "span 2" : "auto",
       }}
     >
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <h2 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
+        <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           {room.name}
         </h2>
         <span
@@ -225,7 +230,7 @@ function RoomCard({ room, appointments }) {
           {expanded && (
             <div style={{ display: "flex", flexDirection: "column", borderTop: "1px solid rgba(168,154,135,0.35)" }}>
               {appointments.map((appt, i) => {
-                const isCurrent = isNowBetween(appt.startsAt, appt.endsAt);
+                const isCurrent = isNowBetween(appt.startsAt, appt.endsAt, nowMs);
                 const isConfirmed = appt.status === "confirmado";
                 return (
                   <div
@@ -289,17 +294,17 @@ function RoomCard({ room, appointments }) {
   );
 }
 
-function DomicilioCard({ appointments }) {
+function DomicilioCard({ appointments, isMobile = false }) {
   return (
     <div
       className="alma-card"
       style={{
-        padding: 24,
+        padding: isMobile ? 16 : 24,
         border: "1.5px dashed rgba(140,110,80,0.5)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <h2 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
+        <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           A domicilio
         </h2>
         <span style={{ fontSize: 13, color: "#A89A87" }}>{appointments.length} hoy</span>
