@@ -120,3 +120,9 @@ Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part
 - Se a?adi? resumen superior con gabinetes libres, ocupados, citas del d?a y citas a domicilio.
 - Cada gabinete muestra categor?a, horario, estado, pr?xima cita o cita en curso, mini l?nea de tiempo y detalle expandible del d?a.
 - En escritorio los cuadros usan auto-fill con ancho m?ximo para evitar tarjetas gigantes cuando hay pocos gabinetes; en m?vil usan una sola columna.
+## Gabinete automatico por servicio y tildes (2026-08-03)
+
+- Agenda > Nueva reserva ahora filtra gabinetes por la categoria del servicio seleccionado y autoasigna el gabinete cuando solo hay uno compatible.
+- Backend createManualAppointment rechaza gabinetes incompatibles con la categoria del servicio y puede autoasignar un gabinete compatible libre si no se envia roomId.
+- Se agregaron pruebas para impedir reservas manuales en gabinetes de otra categoria y para autoasignar un gabinete libre.
+- Gabinetes usa escapes Unicode/entidades para evitar que tildes, checkmarks y separadores se rendericen como signos de pregunta en Windows/deploy.

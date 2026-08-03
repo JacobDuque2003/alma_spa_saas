@@ -185,6 +185,42 @@ test('la query de candidatos de staff filtra explícitamente por canAttendAppoin
   assert.deepEqual(capturedWhere.role, { in: ['personal', 'dueno'] });
 });
 
+
+test('createManualAppointment rechaza gabinete incompatible con la categoria del servicio', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findFirst: async () => null },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', roomId: 'room-corporal', startsAt: '2026-08-01T17:00:00.000Z', modality: 'presencial' }
+    ),
+    (err) => err.status === 400 && /gabinete seleccionado/.test(err.message)
+  );
+});
+
+test('createManualAppointment autoasigna un gabinete compatible libre si no se envia roomId', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }, { id: 'room2' }] },
+    appointment: {
+      findMany: async () => [{ roomId: 'room1' }],
+      create: async (args) => ({ id: 'appt1', ...args.data }),
+    },
+  });
+
+  const result = await appointmentService.createManualAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2026-08-01T17:00:00.000Z', modality: 'presencial' }
+  );
+
+  assert.equal(result.roomId, 'room2');
+});
+
 test('getAvailability devuelve lista vacía si no hay ningún staff habilitado', async () => {
   mockPrisma({
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', offersHomeService: false }) },

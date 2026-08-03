@@ -43,7 +43,7 @@ function sortByStart(appts) {
 }
 
 function statusLabel(status) {
-  return status === "confirmado" ? "Confirm?" : "Sin confirmar";
+  return status === "confirmado" ? "Confirm\u00f3" : "Sin confirmar";
 }
 
 export default function GabinetesPage() {
@@ -109,7 +109,7 @@ export default function GabinetesPage() {
             Gabinetes
           </h1>
           <p style={{ margin: 0, fontSize: isMobile ? 12 : 14, color: "#A89A87" }}>
-            Estado en tiempo real ? {timestamp || "actualizando?"}
+            Estado en tiempo real &middot; {timestamp || "actualizando..."}
           </p>
         </div>
         <button
@@ -127,7 +127,7 @@ export default function GabinetesPage() {
             boxShadow: "0 8px 20px rgba(80, 62, 42, 0.06)",
           }}
         >
-          {loading ? "Actualizando?" : "Actualizar"}
+          {loading ? "Actualizando..." : "Actualizar"}
         </button>
       </div>
 
@@ -210,7 +210,7 @@ function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
               {room.name}
             </h2>
             <p style={{ margin: 0, fontSize: 12, color: isOccupied ? "rgba(247,245,240,0.78)" : "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {room.specialty} ? {room.opensAt || "09:00"}-{room.closesAt || "19:00"}
+              {room.specialty} &middot; {room.opensAt || "09:00"}-{room.closesAt || "19:00"}
             </p>
           </div>
           <StatusPill occupied={isOccupied} />
@@ -232,7 +232,7 @@ function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
             </>
           ) : next ? (
             <>
-              <p style={{ margin: "0 0 7px", fontSize: 12, color: "#A89A87" }}>Pr?xima cita ? {formatTime(next.startsAt)}</p>
+              <p style={{ margin: "0 0 7px", fontSize: 12, color: "#A89A87" }}>{"Pr\u00f3xima cita"} &middot; {formatTime(next.startsAt)}</p>
               <strong style={{ display: "block", fontSize: 15, color: "#6B5540", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {next.client?.fullName || "Cliente"}
               </strong>
@@ -265,7 +265,7 @@ function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
               cursor: "pointer",
             }}
           >
-            {expanded ? "Ocultar d?a" : "Ver d?a"}
+            {expanded ? "Ocultar d\u00eda" : "Ver d\u00eda"}
           </button>
         )}
         {expanded && <AppointmentList appointments={appointments} nowMs={nowMs} />}
@@ -289,13 +289,13 @@ function MiniTimeline({ appointments, nowMs }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: 5, height: 7 }} aria-label="Citas del d?a">
+    <div style={{ display: "flex", gap: 5, height: 7 }} aria-label="Citas del d\u00eda">
       {appointments.slice(0, 6).map((appt) => {
         const active = isNowBetween(appt.startsAt, appt.endsAt, nowMs);
         return (
           <span
             key={appt.id}
-            title={(appt.client?.fullName || "Cliente") + " ? " + formatTime(appt.startsAt)}
+            title={(appt.client?.fullName || "Cliente") + " \u00b7 " + formatTime(appt.startsAt)}
             style={{ flex: 1, minWidth: 16, borderRadius: 999, background: active ? "#6B5540" : appt.status === "confirmado" ? "#C9A876" : "rgba(168,154,135,0.32)" }}
           />
         );
@@ -318,7 +318,7 @@ function AppointmentList({ appointments, nowMs }) {
               <div style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{appt.service?.name || "Servicio"}</div>
             </div>
             <span style={{ borderRadius: 999, padding: "4px 9px", background: appt.status === "confirmado" ? "rgba(201,168,118,0.2)" : "transparent", border: appt.status === "confirmado" ? "none" : "1px solid rgba(168,154,135,0.45)", color: appt.status === "confirmado" ? "#8C6E50" : "#A89A87", fontSize: 11, whiteSpace: "nowrap" }}>
-              {appt.status === "confirmado" ? "? " : ""}{statusLabel(appt.status)}
+              {appt.status === "confirmado" ? "\u2713 " : ""}{statusLabel(appt.status)}
             </span>
           </div>
         );
@@ -346,7 +346,7 @@ function EmptyState() {
   return (
     <div className="alma-card" style={{ padding: "34px 28px", maxWidth: 520, textAlign: "center", alignSelf: "center", marginTop: 40 }}>
       <h2 className="font-heading" style={{ margin: "0 0 8px", color: "#6B5540", fontSize: 24 }}>Sin gabinetes activos</h2>
-      <p style={{ margin: 0, color: "#A89A87", fontSize: 14 }}>Cuando agregues gabinetes activos, aparecer?n aqu? como cuadros peque?os.</p>
+      <p style={{ margin: 0, color: "#A89A87", fontSize: 14 }}>{"Cuando agregues gabinetes activos, aparecer\u00e1n aqu\u00ed como cuadros peque\u00f1os."}</p>
     </div>
   );
 }

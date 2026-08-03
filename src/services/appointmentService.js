@@ -294,27 +294,58 @@ async function createManualAppointment(actor, data) {
 
   const service = await prisma.service.findFirst({ where: { id: data.serviceId, tenantId, active: true } });
   if (!service) {
-    throw new BadRequestError('serviceId inválido para este tenant');
+    throw new BadRequestError('serviceId invalido para este tenant');
   }
   const modality = data.modality === 'domicilio' ? 'domicilio' : 'spa';
   if (modality === 'domicilio' && !service.offersHomeService) {
     throw new BadRequestError('Este servicio no ofrece modalidad a domicilio');
   }
-  if (modality === 'spa') {
-    const room = await prisma.room.findFirst({ where: { id: data.roomId, tenantId, active: true } });
-    if (!room) {
-      throw new BadRequestError('roomId inválido para este tenant');
-    }
-  }
+
   const staff = await prisma.user.findFirst({
     where: { id: data.staffId, tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
   });
   if (!staff) {
-    throw new BadRequestError('staffId inválido: no es personal habilitado para atender citas en este tenant');
+    throw new BadRequestError('staffId invalido: no es personal habilitado para atender citas en este tenant');
   }
 
   const startsAt = new Date(data.startsAt);
   const endsAt = new Date(startsAt.getTime() + service.durationMins * 60_000);
+
+  let resolvedRoomId = null;
+  if (modality === 'spa') {
+    if (data.roomId) {
+      const room = await prisma.room.findFirst({
+        where: { id: data.roomId, tenantId, specialty: service.category, active: true },
+      });
+      if (!room) {
+        throw new BadRequestError('El gabinete seleccionado no corresponde a la categoria del servicio');
+      }
+      resolvedRoomId = room.id;
+    } else {
+      const roomCandidates = await prisma.room.findMany({
+        where: { tenantId, specialty: service.category, active: true },
+        orderBy: { id: 'asc' },
+      });
+      if (roomCandidates.length === 0) {
+        throw new SlotUnavailableError();
+      }
+      const conflictingRooms = await prisma.appointment.findMany({
+        where: {
+          tenantId,
+          startsAt,
+          status: { in: OPEN_STATUSES },
+          roomId: { in: roomCandidates.map((r) => r.id) },
+        },
+        select: { roomId: true },
+      });
+      const bookedRoomIds = new Set(conflictingRooms.map((a) => a.roomId).filter(Boolean));
+      const freeRoom = roomCandidates.find((r) => !bookedRoomIds.has(r.id));
+      if (!freeRoom) {
+        throw new SlotUnavailableError();
+      }
+      resolvedRoomId = freeRoom.id;
+    }
+  }
 
   try {
     return await prisma.appointment.create({
@@ -323,7 +354,7 @@ async function createManualAppointment(actor, data) {
         clientId: data.clientId,
         serviceId: data.serviceId,
         modality,
-        roomId: modality === 'spa' ? data.roomId : null,
+        roomId: modality === 'spa' ? resolvedRoomId : null,
         homeAddress: modality === 'domicilio' ? data.homeAddress : null,
         staffId: data.staffId,
         startsAt,

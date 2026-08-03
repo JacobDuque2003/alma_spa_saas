@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, X, Search } from "lucide-react";
@@ -917,6 +917,14 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [validation, setValidation] = useState(null);
   const toast = useToast();
   const searchTimer = useRef(null);
+  const selectedService = useMemo(
+    () => services.find((service) => service.id === serviceId) || null,
+    [services, serviceId]
+  );
+  const compatibleRooms = useMemo(
+    () => selectedService ? rooms.filter((room) => room.specialty === selectedService.category) : [],
+    [rooms, selectedService]
+  );
 
   useEffect(() => {
     Promise.all([
@@ -929,6 +937,14 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       setStaff(Array.isArray(u) ? u.filter((x) => x.canAttendAppointments && x.active) : []);
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedService) {
+      setRoomId("");
+      return;
+    }
+    setRoomId((prev) => compatibleRooms.some((room) => room.id === prev) ? prev : compatibleRooms[0]?.id || "");
+  }, [selectedService, compatibleRooms]);
 
   useEffect(() => {
     if (!serviceId || !date) {
@@ -985,11 +1001,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
       if (!staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
-      if (!roomId) { setValidation("Selecciona un gabinete"); setSubmitting(false); return; }
+      if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene gabinete compatible activo"); setSubmitting(false); return; }
 
       await authFetch("/appointments", {
         method: "POST",
-        body: { clientId, serviceId, staffId, roomId, startsAt: time, modality: "presencial" },
+        body: { clientId, serviceId, staffId, roomId: roomId || undefined, startsAt: time, modality: "presencial" },
       });
 
       toast.success("Reserva creada");
@@ -1124,10 +1140,26 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle} htmlFor="room">Gabinete</label>
-              <select id="room" style={selectStyle} value={roomId} onChange={(e) => setRoomId(e.target.value)}>
-                <option value="">Seleccionar</option>
-                {rooms.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
+              <select
+                id="room"
+                style={{ ...selectStyle, background: compatibleRooms.length <= 1 ? "rgba(247,245,240,0.72)" : selectStyle.background }}
+                value={roomId}
+                disabled={!selectedService || compatibleRooms.length <= 1}
+                onChange={(e) => setRoomId(e.target.value)}
+              >
+                <option value="">{!selectedService ? "Elige servicio" : compatibleRooms.length === 0 ? "Sin gabinete compatible" : "Seleccionar"}</option>
+                {compatibleRooms.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
               </select>
+              {selectedService && compatibleRooms.length === 1 && (
+                <p style={{ margin: "6px 0 0", fontSize: 12, color: "#8C6E50" }}>
+                  {"Se asigna autom\u00e1ticamente: "}{compatibleRooms[0].name}
+                </p>
+              )}
+              {selectedService && compatibleRooms.length > 1 && (
+                <p style={{ margin: "6px 0 0", fontSize: 12, color: "#A89A87" }}>
+                  {"Solo gabinetes de categor\u00eda "}{selectedService.category}
+                </p>
+              )}
             </div>
             <div>
               <label style={labelStyle} htmlFor="staff">Terapeuta</label>
