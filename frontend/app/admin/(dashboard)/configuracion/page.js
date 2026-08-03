@@ -33,6 +33,15 @@ const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid
 const cardPaddingDesktop = { padding: 24 };
 const cardPaddingMobile = { padding: 16 };
 
+function friendlyConfigError(message, fallback) {
+  const text = String(message || fallback || "");
+  const dependentRoom = text.match(/No se puede desactivar: el gabinete "([^"]+)" depende de la categoría "([^"]+)"/);
+  if (dependentRoom) {
+    return `No se pudo desactivar. El gabinete "${dependentRoom[1]}" usa la categoría "${dependentRoom[2]}" y necesita al menos un servicio activo.`;
+  }
+  return text || fallback;
+}
+
 function Toggle({ checked, onChange }) {
   return (
     <button
@@ -375,7 +384,7 @@ export default function ConfiguracionPage() {
       else if (changes.active === false) toast.warning("Servicio deshabilitado");
       else toast.info("Servicio actualizado");
     } catch (err) {
-      toast.error(err.message || "Error al actualizar servicio");
+      toast.error(friendlyConfigError(err.message, "Error al actualizar servicio"));
     }
   }
 
@@ -387,7 +396,7 @@ export default function ConfiguracionPage() {
       else if (changes.active === false) toast.warning("Gabinete deshabilitado");
       else toast.info("Gabinete actualizado");
     } catch (err) {
-      toast.error(err.message || "Error al actualizar gabinete");
+      toast.error(friendlyConfigError(err.message, "Error al actualizar gabinete"));
     }
   }
 

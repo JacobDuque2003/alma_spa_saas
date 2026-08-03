@@ -223,36 +223,135 @@
   .alma-toast.alma-anim-entered { opacity: 1; transform: translateY(0); }
   .alma-toast.alma-anim-exiting  { opacity: 0; transform: translateY(12px); }
 
-  /* Toast items — sistema global (top-right stack).
-     Fondos sólidos, alto contraste, sobre todo z-index de la app. */
+  .alma-birthday-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 9998;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 420px;
+    padding: 13px 16px;
+    border-radius: 16px;
+    color: #6B5540;
+    background: rgba(253,252,250,0.97);
+    border: 1px solid rgba(201,168,118,0.38);
+    border-left: 4px solid #C9A876;
+    box-shadow: 0 16px 40px rgba(58,47,38,0.16);
+    backdrop-filter: blur(10px);
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+    transition: opacity var(--motion-base) var(--ease-out-quart),
+                transform var(--motion-base) var(--ease-spring);
+    overflow: hidden;
+  }
+  .alma-birthday-toast.alma-anim-entered { opacity: 1; transform: translateY(0) scale(1); }
+  .alma-birthday-toast.alma-anim-exiting  { opacity: 0; transform: translateY(12px) scale(0.98); }
+  .alma-birthday-link {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: #6B5540;
+    font-size: 13.5px;
+    font-weight: 560;
+    line-height: 1.35;
+    text-decoration: none;
+    flex: 1;
+  }
+  .alma-birthday-icon { filter: saturate(0.82); }
+  .alma-birthday-close {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    padding: 4px;
+    color: #8C6E50;
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.66;
+  }
+  .alma-birthday-confetti {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .alma-birthday-confetti span {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 3px;
+    border-radius: 2px;
+    background: #C9A876;
+    opacity: 0;
+    animation: alma-confetti-pop 980ms var(--ease-out-quart) both;
+  }
+  .alma-birthday-confetti span:nth-child(3n) { background: #EBCDB5; }
+  .alma-birthday-confetti span:nth-child(3n + 1) { background: #8C6E50; }
+  .alma-birthday-confetti span:nth-child(1)  { --x: -180px; --y: -32px; --r: -34deg; animation-delay: 20ms; }
+  .alma-birthday-confetti span:nth-child(2)  { --x: -150px; --y:  22px; --r:  25deg; animation-delay: 40ms; }
+  .alma-birthday-confetti span:nth-child(3)  { --x: -112px; --y: -44px; --r:  62deg; animation-delay: 60ms; }
+  .alma-birthday-confetti span:nth-child(4)  { --x:  174px; --y: -30px; --r:  38deg; animation-delay: 20ms; }
+  .alma-birthday-confetti span:nth-child(5)  { --x:  138px; --y:  26px; --r: -25deg; animation-delay: 50ms; }
+  .alma-birthday-confetti span:nth-child(6)  { --x:  102px; --y: -46px; --r: -66deg; animation-delay: 80ms; }
+  .alma-birthday-confetti span:nth-child(7)  { --x: -72px;  --y:  42px; --r:  18deg; animation-delay: 90ms; }
+  .alma-birthday-confetti span:nth-child(8)  { --x:  70px;  --y:  42px; --r: -18deg; animation-delay: 100ms; }
+  .alma-birthday-confetti span:nth-child(9)  { --x: -210px; --y:   4px; --r:  80deg; animation-delay: 0ms; }
+  .alma-birthday-confetti span:nth-child(10) { --x:  210px; --y:   4px; --r: -80deg; animation-delay: 0ms; }
+  .alma-birthday-confetti span:nth-child(11) { --x: -38px;  --y: -52px; --r:  52deg; animation-delay: 110ms; }
+  .alma-birthday-confetti span:nth-child(12) { --x:  36px;  --y: -52px; --r: -52deg; animation-delay: 110ms; }
+  .alma-birthday-confetti span:nth-child(13) { --x: -18px;  --y:  48px; --r:  24deg; animation-delay: 130ms; }
+  .alma-birthday-confetti span:nth-child(14) { --x:  18px;  --y:  48px; --r: -24deg; animation-delay: 130ms; }
+  @keyframes alma-confetti-pop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(0deg); }
+    18%  { opacity: 0.95; }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1) rotate(var(--r)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .alma-birthday-confetti { display: none; }
+  }
+
+  /* Toast items - sistema global minimalista (top-right stack). */
   .alma-toast-item {
     min-width: 280px;
     max-width: 420px;
-    padding: 14px 18px;
-    border-radius: 12px;
-    box-shadow: 0 16px 40px rgba(58,47,38,0.28);
+    padding: 13px 16px;
+    border-radius: 14px;
+    box-shadow: 0 14px 34px rgba(58,47,38,0.16);
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     font-size: 13.5px;
     font-weight: 500;
     line-height: 1.35;
+    color: #6B5540;
+    background: rgba(253,252,250,0.96);
+    backdrop-filter: blur(10px);
     opacity: 0;
     transform: translateX(20px);
     transition: opacity var(--motion-base) var(--ease-out-quart),
                 transform var(--motion-base) var(--ease-spring);
-    border: 1px solid transparent;
+    border: 1px solid rgba(168,154,135,0.28);
+    border-left: 4px solid var(--toast-accent, #8C6E50);
+  }
+  .alma-toast-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--toast-accent, #8C6E50);
+    box-shadow: 0 0 0 4px rgba(201,168,118,0.14);
+    flex: 0 0 auto;
   }
   .alma-toast-item.alma-anim-entered { opacity: 1; transform: translateX(0); }
   .alma-toast-item.alma-anim-exiting  { opacity: 0; transform: translateX(20px); }
-  /* Success — verde oliva sólido, texto crema */
-  .alma-toast-success { background: #556B2F; border-color: #4A5D1F; color: #F7F5F0; }
-  /* Error — rojo terracota sólido, texto crema */
-  .alma-toast-error   { background: #C25450; border-color: #A43D3A; color: #F7F5F0; }
-  /* Warning — terracota suave para acciones de desactivación */
-  .alma-toast-warning { background: #B86A5E; border-color: #9F5148; color: #F7F5F0; }
-  /* Info — bronce sólido, texto crema (paleta principal de marca) */
-  .alma-toast-info    { background: #8C6E50; border-color: #6B5540; color: #F7F5F0; }
+  .alma-toast-success { --toast-accent: #6F7A43; }
+  .alma-toast-error   { --toast-accent: #B86A5E; }
+  .alma-toast-warning { --toast-accent: #C08A72; }
+  .alma-toast-info    { --toast-accent: #8C6E50; }
 
   /* Badge — contador en NavItem */
   .alma-badge {

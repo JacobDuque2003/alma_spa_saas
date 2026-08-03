@@ -18,6 +18,15 @@ const ToastContext = createContext(null);
 
 const DEFAULT_DURATION_MS = 4000;
 
+function getToastDuration(level, message, explicitDuration) {
+  if (explicitDuration != null) return explicitDuration;
+  const length = String(message || "").length;
+  if (level === "error") return Math.min(10000, Math.max(6500, 4200 + length * 35));
+  if (length > 110) return 8000;
+  if (length > 70) return 6000;
+  return DEFAULT_DURATION_MS;
+}
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const nextId = useRef(0);
@@ -28,7 +37,7 @@ export function ToastProvider({ children }) {
 
   const push = useCallback((level, message, opts = {}) => {
     const id = ++nextId.current;
-    const duration = opts.duration ?? DEFAULT_DURATION_MS;
+    const duration = getToastDuration(level, message, opts.duration);
     setToasts((prev) => [...prev, { id, level, message, duration }]);
     return id;
   }, []);
@@ -103,6 +112,7 @@ function ToastItem({ toast, onDismiss }) {
       style={{ pointerEvents: "auto" }}
       role={toast.level === "error" ? "alert" : "status"}
     >
+      <span className="alma-toast-dot" aria-hidden="true" />
       <span style={{ flex: 1 }}>{toast.message}</span>
       <button
         onClick={() => setOpen(false)}

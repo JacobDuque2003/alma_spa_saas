@@ -5,10 +5,8 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 
-// sessionStorage se limpia cuando la pestaña se cierra → cada nuevo tab
-// muestra el toast. logout() (auth-client.js) también hace removeItem
-// explícito, así que un logout + login dentro de la misma pestaña
-// también vuelve a mostrar.
+// sessionStorage resets when the tab closes. logout() also removes this key,
+// so logout + login inside the same tab shows the birthday toast again.
 const STORAGE_KEY = "alma:birthdayToastShown";
 
 function todayKey() {
@@ -16,31 +14,33 @@ function todayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function buildMessage(items) {
-  const today = items.filter((b) => b.daysUntil === 0);
-  const tomorrow = items.filter((b) => b.daysUntil === 1);
-  if (today.length === 1 && tomorrow.length === 0) return `🎉 ${today[0].fullName} cumple años hoy`;
-  if (today.length === 0 && tomorrow.length === 1) return `🎂 ${tomorrow[0].fullName} cumple años mañana`;
-  if (today.length > 0 && tomorrow.length === 0) return `🎉 ${today[0].fullName} y ${today.length - 1} más cumplen hoy`;
-  if (today.length === 0 && tomorrow.length > 0) return `🎂 ${tomorrow[0].fullName} y ${tomorrow.length - 1} más cumplen mañana`;
-  const total = today.length + tomorrow.length;
-  return `🎉 ${total} cumpleaños próximos (hoy y mañana)`;
+function formatNames(items) {
+  const names = items.map((b) => b.fullName).filter(Boolean);
+  if (names.length <= 1) return names[0] || "una clienta";
+  if (names.length === 2) return `${names[0]} y ${names[1]}`;
+  if (names.length === 3) return `${names[0]} , ${names[1]} y ${names[2]}`.replace(" ,", ",");
+  return `${names[0]} , ${names[1]} y ${names.length - 2} más`.replace(" ,", ",");
 }
 
-// Muestra el toast una vez por sesión de navegador cuando hay clientes
-// con cumpleaños hoy o mañana. Dismissal/auto-close escribe la fecha
-// de hoy a sessionStorage.
+function buildMessage(todayBirthdays) {
+  if (todayBirthdays.length === 1) return `Hoy cumple ${formatNames(todayBirthdays)}`;
+  return `Hoy cumplen ${formatNames(todayBirthdays)}`;
+}
+
+// Shows once per session only when there are birthdays today.
+// Tomorrow/upcoming birthdays stay in Clientes/Cumpleanos.
 export function BirthdayToast({ nearBirthdays }) {
   const [open, setOpen] = useState(false);
-  const anim = useAnimatedMount(open, 220);
+  const anim = useAnimatedMount(open, 260);
+  const todayBirthdays = (nearBirthdays || []).filter((b) => b.daysUntil === 0);
 
   useEffect(() => {
-    if (!nearBirthdays || nearBirthdays.length === 0) return;
+    if (todayBirthdays.length === 0) return;
     try {
       if (sessionStorage.getItem(STORAGE_KEY) === todayKey()) return;
-    } catch { /* private mode etc — proceed anyway */ }
+    } catch { /* private mode etc - proceed anyway */ }
     setOpen(true);
-    const t = setTimeout(() => close(), 8000);
+    const t = setTimeout(() => close(), 9000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nearBirthdays]);
@@ -50,40 +50,19 @@ export function BirthdayToast({ nearBirthdays }) {
     setOpen(false);
   }
 
-  if (!anim.shouldRender || !nearBirthdays || nearBirthdays.length === 0) return null;
+  if (!anim.shouldRender || todayBirthdays.length === 0) return null;
 
   return (
-    <div
-      className={`alma-toast alma-anim-${anim.phase}`}
-      style={{
-        position: "fixed",
-        right: 24,
-        bottom: 24,
-        zIndex: 9998,
-        background: "#8C6E50",
-        border: "1px solid #6B5540",
-        borderRadius: 12,
-        padding: "14px 18px",
-        boxShadow: "0 16px 40px rgba(58,47,38,0.28)",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        maxWidth: 420,
-      }}
-    >
-      <Link
-        href="/admin/clientes"
-        onClick={close}
-        style={{ fontSize: 13.5, color: "#F7F5F0", fontWeight: 500, textDecoration: "none", flex: 1, lineHeight: 1.35 }}
-      >
-        {buildMessage(nearBirthdays)}
+    <div className={`alma-birthday-toast alma-anim-${anim.phase}`}>
+      <div className="alma-birthday-confetti" aria-hidden="true">
+        {Array.from({ length: 14 }).map((_, i) => <span key={i} />)}
+      </div>
+      <Link href="/admin/clientes" onClick={close} className="alma-birthday-link">
+        <span className="alma-birthday-icon" aria-hidden="true">{"\u{1F389}"}</span>
+        <span>{buildMessage(todayBirthdays)}</span>
       </Link>
-      <button
-        onClick={close}
-        aria-label="Cerrar"
-        style={{ background: "none", border: "none", cursor: "pointer", color: "#F7F5F0", opacity: 0.75, padding: 4, display: "inline-flex" }}
-      >
-        <X size={16} />
+      <button onClick={close} aria-label="Cerrar" className="alma-birthday-close">
+        <X size={15} />
       </button>
     </div>
   );
