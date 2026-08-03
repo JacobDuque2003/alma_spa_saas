@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Search, X, ArrowLeft } from "lucide-react";
+import { Loader2, Search, X, ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { ClientForm } from "@/components/client-form";
@@ -21,6 +21,18 @@ function money(value) {
 function shortDate(value) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("es-EC", { day: "numeric", month: "short", year: "numeric", timeZone: "America/Guayaquil" });
+}
+
+function birthdayDateLabel(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  return date.toLocaleDateString("es-EC", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+function birthdayCaptionFromDays(daysUntil) {
+  if (daysUntil === 0) return "Hoy";
+  if (daysUntil === 1) return "Mañana";
+  return `En ${daysUntil} días`;
 }
 
 export default function ClientesPage() {
@@ -61,7 +73,7 @@ export default function ClientesPage() {
   const fetchBirthdays = useCallback(async () => {
     setBirthdayLoading(true);
     try {
-      const rows = await authFetch("/clients/birthdays", { query: { days: 30 } });
+      const rows = await authFetch("/clients/birthdays", { query: { days: 15 } });
       setBirthdayList(Array.isArray(rows) ? rows : []);
     } catch {
       setBirthdayList([]);
@@ -101,10 +113,12 @@ export default function ClientesPage() {
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showEditClient, setShowEditClient] = useState(false);
+  const [showDeleteClient, setShowDeleteClient] = useState(false);
   const [showEditIntake, setShowEditIntake] = useState(false);
   const [showNewClient, setShowNewClient] = useState(false);
   const paymentAnim = useAnimatedMount(showPaymentForm, 220);
   const editClientAnim = useAnimatedMount(showEditClient, 220);
+  const deleteClientAnim = useAnimatedMount(showDeleteClient, 220);
   const editIntakeAnim = useAnimatedMount(showEditIntake, 220);
   const newClientAnim = useAnimatedMount(showNewClient, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
@@ -114,7 +128,7 @@ export default function ClientesPage() {
     setShowPaymentForm(true);
   }
 
-  const selected = clients.find((c) => c.id === selectedId);
+  const selectedBirthdayInfo = useMemo(() => birthdayList.find((b) => b.id === selectedId) || null, [birthdayList, selectedId]);
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
@@ -135,7 +149,7 @@ export default function ClientesPage() {
             <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: 0 }}>
               Clientes
             </h1>
-            <span style={{ fontSize: 13, color: "#A89A87" }}>{clients.length}</span>
+            <span style={{ fontSize: 13, color: "#A89A87" }}>{clients.length} clientas</span>
           </div>
           <div
             style={{
@@ -158,7 +172,7 @@ export default function ClientesPage() {
                 color: "#6B5540",
                 width: "100%",
               }}
-              placeholder="Busca por nombre o WhatsApp…"
+              placeholder="Busca por nombre o WhatsApp..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -194,7 +208,7 @@ export default function ClientesPage() {
                 cursor: "pointer",
               }}
             >
-              🎂 Cumpleaños
+              {"\uD83C\uDF82 Cumplea\u00f1os"}
             </button>
           </div>
         </div>
@@ -205,11 +219,11 @@ export default function ClientesPage() {
                 <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
               </div>
             ) : birthdayList.length === 0 ? (
-              <p style={{ textAlign: "center", padding: "40px 0", fontSize: 13, color: "#A89A87" }}>Sin cumpleaños en los próximos 30 días</p>
+              <p style={{ textAlign: "center", padding: "40px 0", fontSize: 13, color: "#A89A87" }}>{"Sin cumplea\u00f1os en los pr\u00f3ximos 15 d\u00edas"}</p>
             ) : (
               birthdayList.map((b) => {
                 const isSelected = b.id === selectedId;
-                const caption = b.daysUntil === 0 ? "Hoy 🎂" : b.daysUntil === 1 ? "Mañana" : `En ${b.daysUntil} días`;
+                const caption = `${birthdayCaptionFromDays(b.daysUntil)} - ${birthdayDateLabel(b.birthday)}`;
                 return (
                   <button
                     key={b.id}
@@ -372,6 +386,19 @@ export default function ClientesPage() {
                 onSaved={() => { setShowEditClient(false); fetchDetail(); fetchClients(); }}
               />
             )}
+            {deleteClientAnim.shouldRender && (
+              <DeleteClientModal
+                client={detail}
+                phase={deleteClientAnim.phase}
+                onClose={() => setShowDeleteClient(false)}
+                onDeleted={() => {
+                  setShowDeleteClient(false);
+                  setDetail(null);
+                  setSelectedId(null);
+                  fetchClients();
+                }}
+              />
+            )}
             {editIntakeAnim.shouldRender && (
               <EditIntakeModal
                 clientId={selectedId}
@@ -419,6 +446,12 @@ export default function ClientesPage() {
                     <span>{detail.whatsapp}</span>
                     <span>·</span>
                     <span>Clienta desde {shortDate(detail.createdAt)}</span>
+                    {detail.birthday && (
+                      <>
+                        <span>??</span>
+                        <span>Cumple: {birthdayDateLabel(detail.birthday)}{selectedBirthdayInfo ? ` (${birthdayCaptionFromDays(selectedBirthdayInfo.daysUntil)})` : ""}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -439,6 +472,23 @@ export default function ClientesPage() {
                   }}
                 >
                   Editar
+                </button>
+                <button
+                  onClick={() => setShowDeleteClient(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "9px 16px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(194,84,80,0.38)",
+                    background: "rgba(194,84,80,0.06)",
+                    color: "#9A4E48",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Eliminar
                 </button>
                 <Link
                   href="/admin/crm"
@@ -533,8 +583,13 @@ function IntakeCard({ intake, onEdit }) {
 
 function PlansBalanceCard({ plans, balance, onPayment }) {
   const activePlan = (plans || []).find((p) => p.active) || plans?.[0];
-  const balanceAmount = balance?.balanceUsd || 0;
-  const hasDebt = balanceAmount < 0;
+  const balanceAmount = Number(balance?.balanceUsd || 0);
+  const entries = Array.isArray(balance?.entries) ? balance.entries : [];
+  const balanceLabel = balanceAmount > 0
+    ? `Saldo pendiente: ${money(balanceAmount)}`
+    : balanceAmount < 0
+      ? `Saldo a favor: ${money(Math.abs(balanceAmount))}`
+      : "Sin saldo pendiente";
 
   return (
     <div className="alma-card" style={{ padding: 22, flex: 1 }}>
@@ -580,7 +635,7 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
       >
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#EBE8E1" }}>
-            Saldo pendiente: {money(Math.abs(balanceAmount))}
+            {balanceLabel}
           </div>
         </div>
         <button
@@ -600,6 +655,34 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
         >
           Registrar pago
         </button>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>Movimientos</span>
+          <span style={{ fontSize: 11, color: "#A89A87" }}>{entries.length} registros</span>
+        </div>
+        {entries.length === 0 ? (
+          <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>Todavia no hay pagos ni cargos registrados.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 150, overflowY: "auto", paddingRight: 2 }}>
+            {entries.slice(0, 8).map((entry) => {
+              const isPayment = entry.type === "pago";
+              return (
+                <div key={entry.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 10px", borderRadius: 9, background: "rgba(253,252,250,0.72)", border: "1px solid rgba(168,154,135,0.18)" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{isPayment ? "Pago" : "Cargo"}</div>
+                    <div style={{ fontSize: 11, color: "#A89A87", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {entry.description || entry.method || shortDate(entry.createdAt)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isPayment ? "#6F7F45" : "#8C6E50", whiteSpace: "nowrap" }}>
+                    {isPayment ? "-" : "+"}{money(entry.amountUsd)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -698,6 +781,37 @@ function EditClientModal({ client, phase, onClose, onSaved }) {
   );
 }
 
+function DeleteClientModal({ client, phase, onClose, onDeleted }) {
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  async function handleDelete() {
+    setSaving(true);
+    try {
+      await authFetch(`/clients/${client.id}`, { method: "DELETE" });
+      toast.success("Clienta eliminada");
+      onDeleted();
+    } catch (err) {
+      toast.error(err.message || "No se pudo eliminar la clienta");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ClientModalShell title="Eliminar clienta" phase={phase} onClose={onClose}>
+      <p style={{ margin: "0 0 18px", fontSize: 14, lineHeight: 1.5, color: "#6B5540" }}>
+        Vas a quitar a <strong>{client.fullName}</strong> de la lista activa. Su historial queda guardado para auditoría y recuperación.
+      </p>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
+        <button type="button" disabled={saving} onClick={handleDelete} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#9A4E48", color: "#FDFBf7", fontSize: 14, fontWeight: 600, cursor: saving ? "wait" : "pointer", flex: 1, opacity: saving ? 0.65 : 1 }}>
+          {saving ? "Eliminando..." : "Eliminar"}
+        </button>
+      </div>
+    </ClientModalShell>
+  );
+}
+
 function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
   const [allergies, setAllergies] = useState(intake?.allergies || "");
   const [conditions, setConditions] = useState(intake?.conditions || "");
@@ -739,17 +853,41 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
 
 function TreatmentsCard({ treatments, clientId, onSaved }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingTreatment, setEditingTreatment] = useState(null);
   const [services, setServices] = useState([]);
   const [serviceId, setServiceId] = useState("");
   const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const toast = useToast();
 
   useEffect(() => {
     if (!showForm) return;
     authFetch("/services").then((s) => setServices(Array.isArray(s) ? s.filter((x) => x.active) : [])).catch(() => {});
   }, [showForm]);
+
+  function resetForm() {
+    setEditingTreatment(null);
+    setServiceId("");
+    setSessionDate(new Date().toISOString().split("T")[0]);
+    setNotes("");
+    setError("");
+  }
+
+  function openCreate() {
+    resetForm();
+    setShowForm(true);
+  }
+
+  function openEdit(treatment) {
+    setEditingTreatment(treatment);
+    setServiceId(treatment.serviceId || treatment.service?.id || "");
+    setSessionDate(treatment.sessionDate ? new Date(treatment.sessionDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+    setNotes(treatment.notes || "");
+    setError("");
+    setShowForm(true);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -757,10 +895,15 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
     setSaving(true);
     setError("");
     try {
-      await authFetch(`/clients/${clientId}/treatments`, { method: "POST", body: { serviceId, sessionDate, notes: notes || undefined } });
+      if (editingTreatment) {
+        await authFetch(`/treatments/${editingTreatment.id}`, { method: "PATCH", body: { sessionDate, notes: notes || null } });
+        toast.success("Tratamiento actualizado");
+      } else {
+        await authFetch(`/clients/${clientId}/treatments`, { method: "POST", body: { serviceId, sessionDate, notes: notes || undefined } });
+        toast.success("Tratamiento agregado");
+      }
       setShowForm(false);
-      setServiceId("");
-      setNotes("");
+      resetForm();
       onSaved?.();
     } catch (err) {
       setError(err.message || "Error al guardar");
@@ -769,83 +912,54 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
     }
   }
 
+  async function deleteTreatment(treatment) {
+    if (!window.confirm("Eliminar este tratamiento del historial?")) return;
+    try {
+      await authFetch(`/treatments/${treatment.id}`, { method: "DELETE" });
+      toast.success("Tratamiento eliminado");
+      onSaved?.();
+    } catch (err) {
+      toast.error(err.message || "No se pudo eliminar el tratamiento");
+    }
+  }
+
   const inputSt = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
 
   return (
     <div className="alma-card" style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
-          Historial de tratamientos
-        </h3>
+        <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>Historial de tratamientos</h3>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 13, color: "#A89A87" }}>{treatments.length} sesiones</span>
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}
-          >
-            {showForm ? "Cancelar" : "+ Agregar"}
-          </button>
+          <button onClick={() => (showForm ? (setShowForm(false), resetForm()) : openCreate())} style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{showForm ? "Cancelar" : "+ Agregar"}</button>
         </div>
       </div>
-
       {showForm && (
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, padding: 14, background: "rgba(201,168,118,0.08)", borderRadius: 10 }}>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Servicio</label>
-            <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} style={{ ...inputSt, appearance: "none", cursor: "pointer" }}>
-              <option value="">Seleccionar...</option>
-              {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Fecha</label>
-            <input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} style={inputSt} />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Notas (opcional)</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputSt, resize: "vertical" }} placeholder="Observaciones del tratamiento..." />
-          </div>
+          <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Servicio</label><select value={serviceId} onChange={(e) => setServiceId(e.target.value)} disabled={Boolean(editingTreatment)} style={{ ...inputSt, appearance: "none", cursor: editingTreatment ? "not-allowed" : "pointer", opacity: editingTreatment ? 0.72 : 1 }}><option value="">Seleccionar...</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+          <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Fecha</label><input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} style={inputSt} /></div>
+          <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Notas (opcional)</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputSt, resize: "vertical" }} placeholder="Observaciones del tratamiento..." /></div>
           {error && <p style={{ fontSize: 12, color: "#C25450", margin: 0 }}>{error}</p>}
-          <button type="submit" disabled={saving} style={{ padding: "8px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
-            {saving ? "Guardando..." : "Guardar tratamiento"}
-          </button>
+          <button type="submit" disabled={saving} style={{ padding: "8px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando..." : editingTreatment ? "Guardar cambios" : "Guardar tratamiento"}</button>
         </form>
       )}
-
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto" }}>
         {treatments.length === 0 ? (
-          <p style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#A89A87" }}>
-            Sin tratamientos registrados todavía.
-          </p>
+          <p style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#A89A87" }}>Sin tratamientos registrados todavia.</p>
         ) : (
           treatments.slice(0, 10).map((t) => (
-            <div
-              key={t.id}
-              style={{ padding: "14px 0", borderBottom: "1px solid rgba(168,154,135,0.25)" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "#6B5540" }}>Tratamiento</span>
-                <span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)}</span>
+            <div key={t.id} style={{ padding: "14px 0", borderBottom: "1px solid rgba(168,154,135,0.25)" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+                <div style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.service?.name || "Tratamiento"}</span><span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)}</span></div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil size={14} /></button>
+                  <button type="button" onClick={() => deleteTreatment(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
+                </div>
               </div>
-              {t.notes && (
-                <div style={{ fontSize: 13, color: "#8C6E50", marginBottom: 6 }}>{t.notes}</div>
-              )}
+              {t.notes && <div style={{ fontSize: 13, color: "#8C6E50", marginBottom: 6 }}>{t.notes}</div>}
               {Array.isArray(t.productsUsed) && t.productsUsed.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {t.productsUsed.map((p) => (
-                    <span
-                      key={p}
-                      style={{
-                        padding: "3px 10px",
-                        borderRadius: 999,
-                        background: "rgba(168,154,135,0.2)",
-                        color: "#6B5540",
-                        fontSize: 11,
-                      }}
-                    >
-                      {p}
-                    </span>
-                  ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {t.productsUsed.map((p) => <span key={p} style={{ padding: "3px 10px", borderRadius: 999, background: "rgba(168,154,135,0.2)", color: "#6B5540", fontSize: 11 }}>{p}</span>)}
                 </div>
               )}
             </div>

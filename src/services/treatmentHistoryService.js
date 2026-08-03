@@ -38,6 +38,7 @@ async function listTreatments(actor, clientId) {
   const records = await prisma.treatmentHistory.findMany({
     where: { tenantId: client.tenantId, clientId },
     orderBy: { sessionDate: 'desc' },
+    include: { service: { select: { id: true, name: true } } },
   });
   return records.map(toDTO);
 }

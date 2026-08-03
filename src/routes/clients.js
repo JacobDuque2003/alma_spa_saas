@@ -85,6 +85,17 @@ router.patch('/clients/:clientId', clientes, async (req, res, next) => {
   }
 });
 
+router.delete('/clients/:clientId', ownerOnly, async (req, res, next) => {
+  try {
+    const client = await clientService.deleteClient(req.user, req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.status(204).send();
+  } catch (err) {
+    logCrossTenant(req, err);
+    next(err);
+  }
+});
+
 // --- Anamnesis (ClientIntake) ---
 
 router.get('/clients/:clientId/intake', clientes, async (req, res, next) => {

@@ -116,8 +116,10 @@ export default function AgendaPage() {
   const [navDirection, setNavDirection] = useState(0);
 
   const detailAnim = useAnimatedMount(!!selected, 220);
-  const lastSelected = useRef(null);
-  if (selected) lastSelected.current = selected;
+  const [lastSelected, setLastSelected] = useState(null);
+  useEffect(() => {
+    if (selected) setLastSelected(selected);
+  }, [selected]);
   const newFormAnim = useAnimatedMount(showNewForm, 220);
   const { gridClass, onAnimationEnd } = useGridTransition(navDirection, loading);
 
@@ -374,7 +376,7 @@ export default function AgendaPage() {
 
       {detailAnim.shouldRender && (
         <AppointmentDetail
-          appt={selected || lastSelected.current}
+          appt={selected || lastSelected}
           phase={detailAnim.phase}
           rooms={rooms}
           staffList={staffList}
@@ -478,19 +480,29 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   );
 }
 
+function buildSlotLanes(items) {
+  const groups = new Map();
+  for (const appt of items) {
+    const key = [toLocalDate(new Date(appt.startsAt)), getEcuadorHour(appt.startsAt), getEcuadorMinutes(appt.startsAt)].join("-");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(appt);
+  }
+  const lanes = new Map();
+  for (const group of groups.values()) {
+    group.forEach((appt, index) => lanes.set(appt.id, { index, total: group.length }));
+  }
+  return lanes;
+}
+
+function lanePosition(lane, inset = 3) {
+  if (!lane || lane.total <= 1) return { left: inset, right: inset };
+  const width = 100 / lane.total;
+  return { left: "calc(" + (lane.index * width) + "% + " + inset + "px)", width: "calc(" + width + "% - " + (inset * 2) + "px)" };
+}
+
 function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect }) {
   const days = getWeekDays(selectedDate);
   const HOUR_HEIGHT = 66;
-
-  const byDayHour = {};
-  for (const appt of appointments) {
-    if (appt.status === "cancelado") continue;
-    const d = toLocalDate(new Date(appt.startsAt));
-    const h = getEcuadorHour(appt.startsAt);
-    const key = `${d}-${h}`;
-    if (!byDayHour[key]) byDayHour[key] = [];
-    byDayHour[key].push(appt);
-  }
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
@@ -564,6 +576,11 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
         </div>
         {days.map((d) => {
           const isToday = d === today;
+          const dayAppointments = (appointments || []).filter((a) => {
+            if (a.status === "cancelado") return false;
+            return toLocalDate(new Date(a.startsAt)) === d;
+          });
+          const laneMap = buildSlotLanes(dayAppointments);
           return (
             <div
               key={d}
@@ -587,12 +604,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
                   }}
                 />
               ))}
-              {(appointments || [])
-                .filter((a) => {
-                  if (a.status === "cancelado") return false;
-                  return toLocalDate(new Date(a.startsAt)) === d;
-                })
-                .map((appt) => {
+              {dayAppointments.map((appt) => {
                   const h = getEcuadorHour(appt.startsAt);
                   const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
                   const topOffset = (h - HOURS[0]) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
@@ -600,6 +612,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
                   const height = (duration / 60) * HOUR_HEIGHT;
                   const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
                   const isDomicilio = appt.modality === "domicilio";
+                  const lane = laneMap.get(appt.id);
 
                   return (
                     <button
@@ -608,8 +621,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
                       style={{
                         position: "absolute",
                         top: topOffset + 1,
-                        left: 3,
-                        right: 3,
+                        ...lanePosition(lane, 3),
                         height: Math.max(height - 2, 20),
                         borderRadius: 6,
                         padding: "4px 8px",
@@ -644,6 +656,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
 function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
   const HOUR_HEIGHT = 66;
   const active = appointments.filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date);
+  const laneMap = buildSlotLanes(active);
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
@@ -695,6 +708,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
             const height = (duration / 60) * HOUR_HEIGHT;
             const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
             const isDomicilio = appt.modality === "domicilio";
+            const lane = laneMap.get(appt.id);
 
             return (
               <button
@@ -703,8 +717,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
                 style={{
                   position: "absolute",
                   top: topOffset + 1,
-                  left: 6,
-                  right: 6,
+                  ...lanePosition(lane, 6),
                   height: Math.max(height - 2, 24),
                   borderRadius: 8,
                   padding: "6px 12px",
@@ -734,15 +747,24 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
 }
 
 function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }) {
-  if (!appt) return null;
-  const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editDate, setEditDate] = useState(toLocalDate(new Date(appt.startsAt)));
-  const [editTime, setEditTime] = useState(formatTime(appt.startsAt));
-  const [editRoomId, setEditRoomId] = useState(appt.room?.id || "");
-  const [editStaffId, setEditStaffId] = useState(appt.staff?.id || "");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editRoomId, setEditRoomId] = useState("");
+  const [editStaffId, setEditStaffId] = useState("");
+
+  useEffect(() => {
+    if (!appt) return;
+    setEditDate(toLocalDate(new Date(appt.startsAt)));
+    setEditTime(formatTime(appt.startsAt));
+    setEditRoomId(appt.room?.id || "");
+    setEditStaffId(appt.staff?.id || "");
+  }, [appt]);
+
+  if (!appt) return null;
+  const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
 
   async function changeStatus(newStatus) {
     setSaving(true);

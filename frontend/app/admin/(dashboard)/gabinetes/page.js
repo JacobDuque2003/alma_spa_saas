@@ -53,6 +53,7 @@ export default function GabinetesPage() {
   const [loading, setLoading] = useState(true);
   const [timestamp, setTimestamp] = useState("");
   const [nowMs, setNowMs] = useState(0);
+  const [expandedRoomId, setExpandedRoomId] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -153,6 +154,8 @@ export default function GabinetesPage() {
               appointments={roomAppts.filter((a) => a.roomId === room.id)}
               isMobile={isMobile}
               nowMs={nowMs}
+            expanded={expandedRoomId === room.id}
+              onToggle={() => setExpandedRoomId((current) => current === room.id ? null : room.id)}
             />
           ))}
           {domicilioAppts.length > 0 && (
@@ -183,8 +186,7 @@ function SummaryTile({ label, value, tone }) {
   );
 }
 
-function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
-  const [expanded, setExpanded] = useState(false);
+function RoomCard({ room, appointments, isMobile = false, nowMs = 0, expanded = false, onToggle }) {
   const current = appointments.find((a) => isNowBetween(a.startsAt, a.endsAt, nowMs));
   const next = appointments.find((a) => new Date(a.startsAt).getTime() > nowMs) || appointments[0];
   const isOccupied = !!current;
@@ -252,7 +254,7 @@ function RoomCard({ room, appointments, isMobile = false, nowMs = 0 }) {
         <MiniTimeline appointments={appointments} nowMs={nowMs} />
         {appointments.length > 0 && (
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={onToggle}
             style={{
               alignSelf: "flex-start",
               border: "1px solid rgba(140,110,80,0.46)",

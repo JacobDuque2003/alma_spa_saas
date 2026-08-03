@@ -80,7 +80,7 @@ function parseBirthdayOrThrow(value) {
 }
 
 async function listClients(actor, query = {}) {
-  const where = {};
+  const where = { active: true };
   if (actor.role === 'superadmin') {
     if (query.tenantId) where.tenantId = query.tenantId;
   } else {
@@ -239,6 +239,18 @@ async function updateClient(actor, clientId, changes) {
   return toClientSafeDto(updated);
 }
 
+async function deleteClient(actor, clientId) {
+  const client = await loadClientForActor(actor, clientId);
+  if (!client) return null;
+
+  const deleted = await prisma.client.update({
+    where: { id: clientId },
+    data: { active: false },
+    select: CLIENT_SAFE_SELECT,
+  });
+  return toClientSafeDto(deleted);
+}
+
 /**
  * Devuelve clientes activos con cumpleaños en los próximos `days` días,
  * ordenados por proximidad. La comparación mes/día se hace en UTC porque
@@ -304,4 +316,4 @@ async function listUpcomingBirthdays(actor, days = 7) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, deleteClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };

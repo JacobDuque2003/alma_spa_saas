@@ -126,3 +126,13 @@ Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part
 - Backend createManualAppointment rechaza gabinetes incompatibles con la categoria del servicio y puede autoasignar un gabinete compatible libre si no se envia roomId.
 - Se agregaron pruebas para impedir reservas manuales en gabinetes de otra categoria y para autoasignar un gabinete libre.
 - Gabinetes usa escapes Unicode/entidades para evitar que tildes, checkmarks y separadores se rendericen como signos de pregunta en Windows/deploy.
+
+## Ajustes Clientes, Agenda y Gabinetes (2026-08-03)
+
+- Clientes: el contador ahora se muestra como cantidad de clientas visibles, cumpleanos usa ventana de 15 dias y el detalle muestra la fecha de cumpleanos.
+- Planes y saldo: se muestra el resultado como pendiente/a favor/sin saldo y se listan movimientos recientes de cargos y pagos.
+- Historial de tratamientos: se agregaron acciones de editar y eliminar desde la UI; el listado incluye nombre del servicio.
+- Clientes: se agrego eliminacion segura por backend como soft-delete (active=false), restringida a dueno/superadmin y sin exponer ClientIntake.
+- Agenda: citas con la misma hora se dibujan en columnas para no montarse visualmente; la regla backend mantiene el bloqueo si comparten gabinete o terapeuta.
+- Gabinetes: Ver dia queda controlado por un solo gabinete abierto a la vez.
+- Verificacion: npm test backend 233/233, lint focalizado de Clientes/Agenda/Gabinetes limpio, build frontend verde con red habilitada para fuentes Google.
