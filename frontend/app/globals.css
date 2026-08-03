@@ -244,7 +244,7 @@
     transform: translateY(12px) scale(0.98);
     transition: opacity var(--motion-base) var(--ease-out-quart),
                 transform var(--motion-base) var(--ease-spring);
-    overflow: hidden;
+    overflow: visible;
   }
   .alma-birthday-toast.alma-anim-entered { opacity: 1; transform: translateY(0) scale(1); }
   .alma-birthday-toast.alma-anim-exiting  { opacity: 0; transform: translateY(12px) scale(0.98); }
@@ -275,41 +275,50 @@
   }
   .alma-birthday-confetti {
     position: absolute;
-    inset: 0;
+    inset: -52px -72px;
     pointer-events: none;
-    overflow: hidden;
+    overflow: visible;
+    z-index: 0;
   }
   .alma-birthday-confetti span {
     position: absolute;
     top: 50%;
-    left: 50%;
-    width: 6px;
-    height: 3px;
+    left: var(--sx, 50%);
+    width: var(--w, 7px);
+    height: var(--h, 4px);
     border-radius: 2px;
     background: #C9A876;
     opacity: 0;
-    animation: alma-confetti-pop 980ms var(--ease-out-quart) both;
+    animation: alma-confetti-pop 1600ms var(--ease-out-quart) both;
   }
-  .alma-birthday-confetti span:nth-child(3n) { background: #EBCDB5; }
-  .alma-birthday-confetti span:nth-child(3n + 1) { background: #8C6E50; }
-  .alma-birthday-confetti span:nth-child(1)  { --x: -180px; --y: -32px; --r: -34deg; animation-delay: 20ms; }
-  .alma-birthday-confetti span:nth-child(2)  { --x: -150px; --y:  22px; --r:  25deg; animation-delay: 40ms; }
-  .alma-birthday-confetti span:nth-child(3)  { --x: -112px; --y: -44px; --r:  62deg; animation-delay: 60ms; }
-  .alma-birthday-confetti span:nth-child(4)  { --x:  174px; --y: -30px; --r:  38deg; animation-delay: 20ms; }
-  .alma-birthday-confetti span:nth-child(5)  { --x:  138px; --y:  26px; --r: -25deg; animation-delay: 50ms; }
-  .alma-birthday-confetti span:nth-child(6)  { --x:  102px; --y: -46px; --r: -66deg; animation-delay: 80ms; }
-  .alma-birthday-confetti span:nth-child(7)  { --x: -72px;  --y:  42px; --r:  18deg; animation-delay: 90ms; }
-  .alma-birthday-confetti span:nth-child(8)  { --x:  70px;  --y:  42px; --r: -18deg; animation-delay: 100ms; }
-  .alma-birthday-confetti span:nth-child(9)  { --x: -210px; --y:   4px; --r:  80deg; animation-delay: 0ms; }
-  .alma-birthday-confetti span:nth-child(10) { --x:  210px; --y:   4px; --r: -80deg; animation-delay: 0ms; }
-  .alma-birthday-confetti span:nth-child(11) { --x: -38px;  --y: -52px; --r:  52deg; animation-delay: 110ms; }
-  .alma-birthday-confetti span:nth-child(12) { --x:  36px;  --y: -52px; --r: -52deg; animation-delay: 110ms; }
-  .alma-birthday-confetti span:nth-child(13) { --x: -18px;  --y:  48px; --r:  24deg; animation-delay: 130ms; }
-  .alma-birthday-confetti span:nth-child(14) { --x:  18px;  --y:  48px; --r: -24deg; animation-delay: 130ms; }
+  .alma-birthday-confetti span:nth-child(4n) { background: #EBCDB5; }
+  .alma-birthday-confetti span:nth-child(4n + 1) { background: #8C6E50; }
+  .alma-birthday-confetti span:nth-child(4n + 2) { background: #D8B26E; }
+  .alma-birthday-confetti span:nth-child(1)  { --sx: 0%;   --x: 118px;  --y: -38px; --r: -38deg; --w: 8px; --h: 4px; animation-delay: 0ms; }
+  .alma-birthday-confetti span:nth-child(2)  { --sx: 0%;   --x: 148px;  --y:  10px; --r:  28deg; animation-delay: 40ms; }
+  .alma-birthday-confetti span:nth-child(3)  { --sx: 0%;   --x: 105px;  --y:  46px; --r:  72deg; --w: 5px; --h: 5px; animation-delay: 80ms; }
+  .alma-birthday-confetti span:nth-child(4)  { --sx: 0%;   --x: 184px;  --y: -4px;  --r: -84deg; animation-delay: 110ms; }
+  .alma-birthday-confetti span:nth-child(5)  { --sx: 0%;   --x: 138px;  --y: -68px; --r:  52deg; animation-delay: 150ms; }
+  .alma-birthday-confetti span:nth-child(6)  { --sx: 0%;   --x: 205px;  --y:  38px; --r: -20deg; --w: 9px; --h: 4px; animation-delay: 190ms; }
+  .alma-birthday-confetti span:nth-child(7)  { --sx: 0%;   --x: 232px;  --y: -34px; --r:  96deg; animation-delay: 230ms; }
+  .alma-birthday-confetti span:nth-child(8)  { --sx: 0%;   --x: 168px;  --y:  74px; --r: -58deg; animation-delay: 260ms; }
+  .alma-birthday-confetti span:nth-child(9)  { --sx: 0%;   --x: 260px;  --y:  6px;  --r:  38deg; animation-delay: 300ms; }
+  .alma-birthday-confetti span:nth-child(10) { --sx: 0%;   --x: 225px;  --y: -78px; --r: -28deg; animation-delay: 340ms; }
+  .alma-birthday-confetti span:nth-child(11) { --sx: 100%; --x: -118px; --y: -38px; --r:  38deg; --w: 8px; --h: 4px; animation-delay: 0ms; }
+  .alma-birthday-confetti span:nth-child(12) { --sx: 100%; --x: -148px; --y:  10px; --r: -28deg; animation-delay: 40ms; }
+  .alma-birthday-confetti span:nth-child(13) { --sx: 100%; --x: -105px; --y:  46px; --r: -72deg; --w: 5px; --h: 5px; animation-delay: 80ms; }
+  .alma-birthday-confetti span:nth-child(14) { --sx: 100%; --x: -184px; --y: -4px;  --r:  84deg; animation-delay: 110ms; }
+  .alma-birthday-confetti span:nth-child(15) { --sx: 100%; --x: -138px; --y: -68px; --r: -52deg; animation-delay: 150ms; }
+  .alma-birthday-confetti span:nth-child(16) { --sx: 100%; --x: -205px; --y:  38px; --r:  20deg; --w: 9px; --h: 4px; animation-delay: 190ms; }
+  .alma-birthday-confetti span:nth-child(17) { --sx: 100%; --x: -232px; --y: -34px; --r: -96deg; animation-delay: 230ms; }
+  .alma-birthday-confetti span:nth-child(18) { --sx: 100%; --x: -168px; --y:  74px; --r:  58deg; animation-delay: 260ms; }
+  .alma-birthday-confetti span:nth-child(19) { --sx: 100%; --x: -260px; --y:  6px;  --r: -38deg; animation-delay: 300ms; }
+  .alma-birthday-confetti span:nth-child(20) { --sx: 100%; --x: -225px; --y: -78px; --r:  28deg; animation-delay: 340ms; }
   @keyframes alma-confetti-pop {
-    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(0deg); }
-    18%  { opacity: 0.95; }
-    100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1) rotate(var(--r)); }
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.25) rotate(0deg); }
+    14%  { opacity: 0.98; }
+    72%  { opacity: 0.9; }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1.08) rotate(var(--r)); }
   }
   @media (prefers-reduced-motion: reduce) {
     .alma-birthday-confetti { display: none; }

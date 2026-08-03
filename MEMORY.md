@@ -104,3 +104,7 @@ pm test backend 230/230.
 ## Ronda UX toasts minimalistas + cumplea?os de hoy (2026-08-03)
 
 Se redise?aron los toasts globales: fondo crema transl?cido, borde/acento lateral por estado, texto marr?n Alma y sombra m?s suave. La duraci?n ahora se calcula autom?ticamente: mensajes largos y errores duran m?s para que se puedan leer. En Configuraci?n se humaniz? el error de desactivar el ?ltimo servicio de una categor?a usada por un gabinete. El toast de cumplea?os ahora solo aparece si hay cumplea?os hoy; si hay varias clientas, agrupa nombres en un solo mensaje. Se agreg? confeti sutil con paleta Alma y respeto de prefers-reduced-motion. Verificaci?n: ESLint focalizado limpio, build frontend verde y backend tests 230/230.
+
+## Ajuste visual confeti cumplea?os (2026-08-03)
+
+Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part?culas, nace desde ambos lados del toast, dura 1.6s y no queda recortado dentro de la tarjeta. No cambia l?gica ni backend; sigue mostrando solo cumplea?os de hoy y respeta prefers-reduced-motion. Verificaci?n: ESLint focalizado limpio, build frontend verde y backend tests 230/230.

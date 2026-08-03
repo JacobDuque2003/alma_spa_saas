@@ -55,7 +55,7 @@ export function BirthdayToast({ nearBirthdays }) {
   return (
     <div className={`alma-birthday-toast alma-anim-${anim.phase}`}>
       <div className="alma-birthday-confetti" aria-hidden="true">
-        {Array.from({ length: 14 }).map((_, i) => <span key={i} />)}
+        {Array.from({ length: 20 }).map((_, i) => <span key={i} />)}
       </div>
       <Link href="/admin/clientes" onClick={close} className="alma-birthday-link">
         <span className="alma-birthday-icon" aria-hidden="true">{"\u{1F389}"}</span>
