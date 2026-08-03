@@ -333,7 +333,7 @@ function Shell({ children }) {
       </aside>
 
       <main className="flex-1 overflow-y-auto bg-background">{children}</main>
-      <BirthdayToast todaysBirthdays={todaysBirthdays} />
+      <BirthdayToast nearBirthdays={nearBirthdays} />
     </div>
   );
 }
