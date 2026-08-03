@@ -146,7 +146,7 @@ export default function GabinetesPage() {
       ) : activeRooms.length === 0 && domicilioAppts.length === 0 ? (
         <EmptyState />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(230px, 290px))", gap: isMobile ? 12 : 16, alignItems: "stretch", justifyContent: isMobile ? "stretch" : "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(230px, 290px))", gap: isMobile ? 12 : 16, alignItems: "start", justifyContent: isMobile ? "stretch" : "start" }}>
           {activeRooms.map((room) => (
             <RoomCard
               key={room.id}

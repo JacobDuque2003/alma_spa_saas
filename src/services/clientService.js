@@ -80,7 +80,8 @@ function parseBirthdayOrThrow(value) {
 }
 
 async function listClients(actor, query = {}) {
-  const where = { active: true };
+  const activeQuery = String(query.active ?? 'true').toLowerCase();
+  const where = { active: activeQuery === 'false' ? false : true };
   if (actor.role === 'superadmin') {
     if (query.tenantId) where.tenantId = query.tenantId;
   } else {
@@ -239,16 +240,24 @@ async function updateClient(actor, clientId, changes) {
   return toClientSafeDto(updated);
 }
 
-async function deleteClient(actor, clientId) {
+async function setClientActive(actor, clientId, active) {
   const client = await loadClientForActor(actor, clientId);
   if (!client) return null;
 
-  const deleted = await prisma.client.update({
+  const updated = await prisma.client.update({
     where: { id: clientId },
-    data: { active: false },
+    data: { active },
     select: CLIENT_SAFE_SELECT,
   });
-  return toClientSafeDto(deleted);
+  return toClientSafeDto(updated);
+}
+
+async function deleteClient(actor, clientId) {
+  return setClientActive(actor, clientId, false);
+}
+
+async function enableClient(actor, clientId) {
+  return setClientActive(actor, clientId, true);
 }
 
 /**
@@ -316,4 +325,4 @@ async function listUpcomingBirthdays(actor, days = 7) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, deleteClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };

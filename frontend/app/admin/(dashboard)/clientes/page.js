@@ -43,6 +43,8 @@ export default function ClientesPage() {
   const [view, setView] = useState("todas");
   const [birthdayList, setBirthdayList] = useState([]);
   const [birthdayLoading, setBirthdayLoading] = useState(false);
+  const [disabledClients, setDisabledClients] = useState([]);
+  const [disabledLoading, setDisabledLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [intake, setIntake] = useState(null);
   const [treatments, setTreatments] = useState([]);
@@ -50,6 +52,7 @@ export default function ClientesPage() {
   const [balance, setBalance] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
 
   const fetchClients = useCallback(async () => {
@@ -85,6 +88,24 @@ export default function ClientesPage() {
   useEffect(() => {
     if (view === "cumples") fetchBirthdays();
   }, [view, fetchBirthdays]);
+  const fetchDisabledClients = useCallback(async () => {
+    setDisabledLoading(true);
+    try {
+      const data = await authFetch("/clients", { query: { active: "false", ...(query ? { q: query } : {}) } });
+      setDisabledClients(Array.isArray(data) ? data : []);
+      if (view === "deshabilitadas") {
+        setSelectedId((current) => (Array.isArray(data) && data.some((c) => c.id === current) ? current : data[0]?.id || null));
+      }
+    } catch {
+      setDisabledClients([]);
+    } finally {
+      setDisabledLoading(false);
+    }
+  }, [query, view]);
+
+  useEffect(() => {
+    if (view === "deshabilitadas") fetchDisabledClients();
+  }, [view, fetchDisabledClients]);
 
   const fetchDetail = useCallback(async () => {
     if (!selectedId) return;
@@ -129,6 +150,19 @@ export default function ClientesPage() {
   }
 
   const selectedBirthdayInfo = useMemo(() => birthdayList.find((b) => b.id === selectedId) || null, [birthdayList, selectedId]);
+  async function handleEnableClient() {
+    if (!selectedId) return;
+    try {
+      await authFetch(`/clients/${selectedId}/enable`, { method: "PATCH" });
+      toast.success("Clienta habilitada");
+      setView("todas");
+      fetchClients();
+      fetchDisabledClients();
+      fetchDetail();
+    } catch (err) {
+      toast.error(err.message || "No se pudo habilitar la clienta");
+    }
+  }
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
@@ -149,7 +183,7 @@ export default function ClientesPage() {
             <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: 0 }}>
               Clientes
             </h1>
-            <span style={{ fontSize: 13, color: "#A89A87" }}>{clients.length} clientas</span>
+            <span style={{ fontSize: 13, color: "#A89A87" }}>{view === "deshabilitadas" ? disabledClients.length : view === "cumples" ? birthdayList.length : clients.length} clientas</span>
           </div>
           <div
             style={{
@@ -210,6 +244,22 @@ export default function ClientesPage() {
             >
               {"\uD83C\uDF82 Cumplea\u00f1os"}
             </button>
+            <button
+              onClick={() => setView("deshabilitadas")}
+              style={{
+                flex: 1,
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(168,154,135,0.4)",
+                background: view === "deshabilitadas" ? "#8C6E50" : "transparent",
+                color: view === "deshabilitadas" ? "#F7F5F0" : "#8C6E50",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Deshabilitadas
+            </button>
           </div>
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 12px", overflowY: "auto" }}>
@@ -250,6 +300,49 @@ export default function ClientesPage() {
                       </div>
                       <div style={{ fontSize: 12, color: b.daysUntil === 0 ? "#8C6E50" : "#A89A87", fontWeight: b.daysUntil === 0 ? 600 : 400 }}>
                         {caption}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )
+          ) : view === "deshabilitadas" ? (
+            disabledLoading ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
+                <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
+              </div>
+            ) : disabledClients.length === 0 ? (
+              <p style={{ textAlign: "center", padding: "40px 0", fontSize: 13, color: "#A89A87" }}>No hay clientas deshabilitadas.</p>
+            ) : (
+              disabledClients.map((client) => {
+                const isSelected = client.id === selectedId;
+                return (
+                  <button
+                    key={client.id}
+                    onClick={() => { setSelectedId(client.id); if (isMobile) setMobileShowDetail(true); }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "13px 12px",
+                      borderRadius: 10,
+                      background: isSelected ? "rgba(235,205,181,0.45)" : "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                      opacity: 0.72,
+                    }}
+                  >
+                    <span style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(168,154,135,0.32)", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
+                      {initials(client.fullName)}
+                    </span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: isSelected ? 600 : 500, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {client.fullName}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#A89A87" }}>
+                        Deshabilitada · {client.whatsapp}
                       </div>
                     </div>
                   </button>
@@ -383,7 +476,7 @@ export default function ClientesPage() {
                 client={detail}
                 phase={editClientAnim.phase}
                 onClose={() => setShowEditClient(false)}
-                onSaved={() => { setShowEditClient(false); fetchDetail(); fetchClients(); }}
+                onSaved={() => { setShowEditClient(false); fetchDetail(); fetchClients(); fetchDisabledClients(); }}
               />
             )}
             {deleteClientAnim.shouldRender && (
@@ -396,6 +489,7 @@ export default function ClientesPage() {
                   setDetail(null);
                   setSelectedId(null);
                   fetchClients();
+                  fetchDisabledClients();
                 }}
               />
             )}
@@ -473,23 +567,43 @@ export default function ClientesPage() {
                 >
                   Editar
                 </button>
-                <button
-                  onClick={() => setShowDeleteClient(true)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    padding: "9px 16px",
-                    borderRadius: 999,
-                    border: "1px solid rgba(194,84,80,0.38)",
-                    background: "rgba(194,84,80,0.06)",
-                    color: "#9A4E48",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                  }}
-                >
-                  Deshabilitar
-                </button>
+                {detail.active === false ? (
+                  <button
+                    onClick={handleEnableClient}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "9px 16px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(92,122,64,0.38)",
+                      background: "rgba(92,122,64,0.08)",
+                      color: "#5C7A40",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Habilitar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowDeleteClient(true)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "9px 16px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(194,84,80,0.38)",
+                      background: "rgba(194,84,80,0.06)",
+                      color: "#9A4E48",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Deshabilitar
+                  </button>
+                )}
                 <Link
                   href="/admin/crm"
                   style={{

@@ -44,6 +44,22 @@ test('listClients filtra por tenant del actor y usa select seguro sin ClientInta
   assert.equal(result[0].fullName, 'Camila Andrade');
 });
 
+test('listClients puede listar deshabilitados sin filtrar ClientIntake', async () => {
+  let argsSeen = null;
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [{ id: 'c2', tenantId: 't1', fullName: 'Cliente Inactiva', whatsapp: '+593', email: null, active: false }];
+    },
+  };
+
+  const result = await clientService.listClients({ role: 'dueno', tenantId: 't1' }, { active: 'false' });
+  assert.equal(argsSeen.where.tenantId, 't1');
+  assert.equal(argsSeen.where.active, false);
+  assert.equal(argsSeen.select.fullName, true);
+  assert.equal('intake' in argsSeen.select, false);
+  assert.equal(result[0].active, false);
+});
 test('getClient rechaza cross-tenant con 403 y no incluye ClientIntake en el select', async () => {
   let argsSeen = null;
   prisma.client = {

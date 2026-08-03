@@ -96,6 +96,16 @@ router.patch('/clients/:clientId/disable', ownerOnly, async (req, res, next) => 
   }
 });
 
+router.patch('/clients/:clientId/enable', ownerOnly, async (req, res, next) => {
+  try {
+    const client = await clientService.enableClient(req.user, req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json({ ok: true, client });
+  } catch (err) {
+    logCrossTenant(req, err);
+    next(err);
+  }
+});
 router.delete('/clients/:clientId', ownerOnly, async (req, res, next) => {
   try {
     const client = await clientService.deleteClient(req.user, req.params.clientId);

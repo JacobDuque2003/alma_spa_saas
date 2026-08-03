@@ -111,15 +111,21 @@ export default function AgendaPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [slotGroup, setSlotGroup] = useState(null);
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
   const [staffList, setStaffList] = useState([]);
   const [navDirection, setNavDirection] = useState(0);
 
   const detailAnim = useAnimatedMount(!!selected, 220);
+  const slotGroupAnim = useAnimatedMount(!!slotGroup, 220);
   const [lastSelected, setLastSelected] = useState(null);
+  const [lastSlotGroup, setLastSlotGroup] = useState(null);
   useEffect(() => {
     if (selected) setLastSelected(selected);
   }, [selected]);
+  useEffect(() => {
+    if (slotGroup) setLastSlotGroup(slotGroup);
+  }, [slotGroup]);
   const newFormAnim = useAnimatedMount(showNewForm, 220);
   const { gridClass, onAnimationEnd } = useGridTransition(navDirection, loading);
 
@@ -354,6 +360,7 @@ export default function AgendaPage() {
             roomColorMap={roomColorMap}
             rooms={rooms}
             onSelect={setSelected}
+            onSelectGroup={setSlotGroup}
           />
         ) : effectiveView === "week" ? (
           <WeekGrid
@@ -362,6 +369,7 @@ export default function AgendaPage() {
             today={today}
             roomColorMap={roomColorMap}
             onSelect={setSelected}
+            onSelectGroup={setSlotGroup}
           />
         ) : (
           <DayGrid
@@ -370,10 +378,22 @@ export default function AgendaPage() {
             today={today}
             roomColorMap={roomColorMap}
             onSelect={setSelected}
+            onSelectGroup={setSlotGroup}
           />
         )}
       </div>
 
+      {slotGroupAnim.shouldRender && (
+        <SlotGroupModal
+          appointments={slotGroup || lastSlotGroup || []}
+          phase={slotGroupAnim.phase}
+          onClose={() => setSlotGroup(null)}
+          onSelect={(appt) => {
+            setSlotGroup(null);
+            setSelected(appt);
+          }}
+        />
+      )}
       {detailAnim.shouldRender && (
         <AppointmentDetail
           appt={selected || lastSelected}
@@ -480,18 +500,36 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   );
 }
 
-function buildSlotLanes(items) {
+function appointmentSlotKey(appt) {
+  return [toLocalDate(new Date(appt.startsAt)), getEcuadorHour(appt.startsAt), getEcuadorMinutes(appt.startsAt)].join("-");
+}
+
+function groupAppointmentsBySlot(items) {
   const groups = new Map();
   for (const appt of items) {
-    const key = [toLocalDate(new Date(appt.startsAt)), getEcuadorHour(appt.startsAt), getEcuadorMinutes(appt.startsAt)].join("-");
+    const key = appointmentSlotKey(appt);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(appt);
   }
+  return Array.from(groups.entries()).map(([key, group]) => ({
+    key,
+    appointments: group.sort((a, b) => (a.room?.name || "").localeCompare(b.room?.name || "")),
+  }));
+}
+
+function buildSlotLanes(items) {
   const lanes = new Map();
-  for (const group of groups.values()) {
+  for (const { appointments: group } of groupAppointmentsBySlot(items)) {
     group.forEach((appt, index) => lanes.set(appt.id, { index, total: group.length }));
   }
   return lanes;
+}
+
+function visibleScheduleEntries(items) {
+  return groupAppointmentsBySlot(items).flatMap(({ key, appointments }) => {
+    if (appointments.length > 3) return [{ type: "group", key, appointments }];
+    return appointments.map((appt) => ({ type: "appointment", key: appt.id, appointment: appt }));
+  });
 }
 
 function lanePosition(lane, inset = 3) {
@@ -500,7 +538,7 @@ function lanePosition(lane, inset = 3) {
   return { left: "calc(" + (lane.index * width) + "% + " + inset + "px)", width: "calc(" + width + "% - " + (inset * 2) + "px)" };
 }
 
-function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect }) {
+function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, onSelectGroup }) {
   const days = getWeekDays(selectedDate);
   const HOUR_HEIGHT = 66;
 
@@ -581,6 +619,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
             return toLocalDate(new Date(a.startsAt)) === d;
           });
           const laneMap = buildSlotLanes(dayAppointments);
+          const entries = visibleScheduleEntries(dayAppointments);
           return (
             <div
               key={d}
@@ -604,47 +643,83 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
                   }}
                 />
               ))}
-              {dayAppointments.map((appt) => {
-                  const h = getEcuadorHour(appt.startsAt);
-                  const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
-                  const topOffset = (h - HOURS[0]) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
-                  const duration = appt.service?.durationMins || 60;
-                  const height = (duration / 60) * HOUR_HEIGHT;
-                  const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
-                  const isDomicilio = appt.modality === "domicilio";
-                  const lane = laneMap.get(appt.id);
+              {entries.map((entry) => {
+                const appt = entry.type === "group" ? entry.appointments[0] : entry.appointment;
+                const h = getEcuadorHour(appt.startsAt);
+                const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
+                const topOffset = (h - HOURS[0]) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+                const duration = appt.service?.durationMins || 60;
+                const height = (duration / 60) * HOUR_HEIGHT;
 
+                if (entry.type === "group") {
+                  const names = entry.appointments.slice(0, 2).map((a) => a.client?.fullName || "Cliente").join(", ");
                   return (
                     <button
-                      key={appt.id}
-                      onClick={() => onSelect(appt)}
+                      key={entry.key}
+                      onClick={() => onSelectGroup(entry.appointments)}
                       style={{
                         position: "absolute",
-                        top: topOffset + 1,
-                        ...lanePosition(lane, 3),
-                        height: Math.max(height - 2, 20),
-                        borderRadius: 6,
-                        padding: "4px 8px",
-                        fontSize: 11,
-                        lineHeight: "1.3",
-                        overflow: "hidden",
-                        cursor: "pointer",
-                        border: isDomicilio ? "1.5px dashed #8C6E50" : "none",
-                        background: isDomicilio ? "rgba(235,205,181,0.3)" : color || "#8C6E50",
-                        color: isDomicilio ? "#6B5540" : "#F7F5F0",
+                        top: topOffset + 3,
+                        left: 4,
+                        right: 4,
+                        height: Math.max(Math.min(height - 6, 58), 38),
+                        borderRadius: 8,
+                        padding: "6px 9px",
+                        border: "1px solid rgba(140,110,80,0.24)",
+                        background: "rgba(140,110,80,0.86)",
+                        color: "#F7F5F0",
                         textAlign: "left",
-                        zIndex: 1,
+                        cursor: "pointer",
+                        zIndex: 3,
+                        boxShadow: "0 8px 20px rgba(64,51,39,0.14)",
+                        overflow: "hidden",
                       }}
                     >
-                      <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {appt.client?.fullName || "Cliente"}
+                      <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {entry.appointments.length} citas · {formatTime(appt.startsAt)}
                       </div>
-                      <div style={{ opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {appt.service?.name}
+                      <div style={{ fontSize: 10, opacity: 0.82, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
+                        {names}{entry.appointments.length > 2 ? ` +${entry.appointments.length - 2} más` : ""}
                       </div>
                     </button>
                   );
-                })}
+                }
+
+                const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
+                const isDomicilio = appt.modality === "domicilio";
+                const lane = laneMap.get(appt.id);
+
+                return (
+                  <button
+                    key={appt.id}
+                    onClick={() => onSelect(appt)}
+                    style={{
+                      position: "absolute",
+                      top: topOffset + 1,
+                      ...lanePosition(lane, 3),
+                      height: Math.max(height - 2, 20),
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      lineHeight: "1.3",
+                      overflow: "hidden",
+                      cursor: "pointer",
+                      border: isDomicilio ? "1.5px dashed #8C6E50" : "none",
+                      background: isDomicilio ? "rgba(235,205,181,0.3)" : color || "#8C6E50",
+                      color: isDomicilio ? "#6B5540" : "#F7F5F0",
+                      textAlign: "left",
+                      zIndex: 1,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {appt.client?.fullName || "Cliente"}
+                    </div>
+                    <div style={{ opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {appt.service?.name}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           );
         })}
@@ -653,10 +728,11 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect })
   );
 }
 
-function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
+function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGroup }) {
   const HOUR_HEIGHT = 66;
   const active = appointments.filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date);
   const laneMap = buildSlotLanes(active);
+  const entries = visibleScheduleEntries(active);
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
@@ -700,12 +776,48 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
               }}
             />
           ))}
-          {active.map((appt) => {
+          {entries.map((entry) => {
+            const appt = entry.type === "group" ? entry.appointments[0] : entry.appointment;
             const h = getEcuadorHour(appt.startsAt);
             const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
             const topOffset = (h - HOURS[0]) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
             const duration = appt.service?.durationMins || 60;
             const height = (duration / 60) * HOUR_HEIGHT;
+
+            if (entry.type === "group") {
+              const names = entry.appointments.slice(0, 3).map((a) => a.client?.fullName || "Cliente").join(", ");
+              return (
+                <button
+                  key={entry.key}
+                  onClick={() => onSelectGroup(entry.appointments)}
+                  style={{
+                    position: "absolute",
+                    top: topOffset + 4,
+                    left: 8,
+                    right: 8,
+                    height: Math.max(Math.min(height - 8, 62), 44),
+                    borderRadius: 10,
+                    padding: "7px 12px",
+                    border: "1px solid rgba(140,110,80,0.24)",
+                    background: "rgba(140,110,80,0.86)",
+                    color: "#F7F5F0",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    zIndex: 3,
+                    boxShadow: "0 10px 24px rgba(64,51,39,0.14)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {entry.appointments.length} citas · {formatTime(appt.startsAt)}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.82, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
+                    {names}{entry.appointments.length > 3 ? ` +${entry.appointments.length - 3} más` : ""}
+                  </div>
+                </button>
+              );
+            }
+
             const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
             const isDomicilio = appt.modality === "domicilio";
             const lane = laneMap.get(appt.id);
@@ -746,6 +858,90 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect }) {
   );
 }
 
+function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
+  const list = appointments || [];
+  const first = list[0];
+  if (!first) return null;
+  const title = `${list.length} citas · ${formatTime(first.startsAt)}`;
+  const dateLabel = formatDayFull(toLocalDate(new Date(first.startsAt)));
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        background: phase === "entered" ? "rgba(64,51,39,0.34)" : "rgba(64,51,39,0)",
+        transition: "background 220ms ease",
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(460px, 100%)",
+          maxHeight: "min(620px, 86vh)",
+          overflow: "hidden",
+          background: "#FDFCFA",
+          border: "1px solid rgba(168,154,135,0.35)",
+          borderRadius: 18,
+          boxShadow: "0 24px 70px rgba(64,51,39,0.24)",
+          opacity: phase === "entered" ? 1 : 0,
+          transform: phase === "entered" ? "translateY(0) scale(1)" : "translateY(8px) scale(0.98)",
+          transition: "opacity 220ms ease, transform 220ms ease",
+        }}
+      >
+        <div style={{ padding: "22px 24px 16px", borderBottom: "1px solid rgba(168,154,135,0.18)", display: "flex", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <h3 className="font-heading" style={{ margin: 0, color: "#6B5540", fontSize: 24, fontWeight: 600 }}>{title}</h3>
+            <p style={{ margin: "6px 0 0", color: "#A89A87", fontSize: 13 }}>{dateLabel}</p>
+          </div>
+          <button onClick={onClose} style={{ border: "none", background: "transparent", color: "#A89A87", cursor: "pointer", height: 30 }} aria-label="Cerrar">
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ padding: "8px 18px 18px", overflowY: "auto", maxHeight: "calc(min(620px, 86vh) - 94px)" }}>
+          {list.map((appt) => {
+            const isDomicilio = appt.modality === "domicilio";
+            return (
+              <button
+                key={appt.id}
+                onClick={() => onSelect(appt)}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  background: "transparent",
+                  borderRadius: 12,
+                  padding: "13px 10px",
+                  display: "grid",
+                  gridTemplateColumns: "54px 1fr auto",
+                  alignItems: "center",
+                  gap: 12,
+                  textAlign: "left",
+                  cursor: "pointer",
+                  borderBottom: "1px solid rgba(168,154,135,0.14)",
+                }}
+              >
+                <span style={{ color: "#8C6E50", fontSize: 13, fontWeight: 700 }}>{formatTime(appt.startsAt)}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", color: "#6B5540", fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.client?.fullName || "Cliente"}</span>
+                  <span style={{ display: "block", color: "#A89A87", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.service?.name || "Servicio"}</span>
+                </span>
+                <span style={{ color: isDomicilio ? "#8C6E50" : "#A89A87", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {isDomicilio ? "A domicilio" : appt.room?.name || "Sin gabinete"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
