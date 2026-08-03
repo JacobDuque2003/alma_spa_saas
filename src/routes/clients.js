@@ -85,11 +85,22 @@ router.patch('/clients/:clientId', clientes, async (req, res, next) => {
   }
 });
 
+router.patch('/clients/:clientId/disable', ownerOnly, async (req, res, next) => {
+  try {
+    const client = await clientService.deleteClient(req.user, req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json({ ok: true, client });
+  } catch (err) {
+    logCrossTenant(req, err);
+    next(err);
+  }
+});
+
 router.delete('/clients/:clientId', ownerOnly, async (req, res, next) => {
   try {
     const client = await clientService.deleteClient(req.user, req.params.clientId);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
-    res.status(204).send();
+    res.json({ ok: true, client });
   } catch (err) {
     logCrossTenant(req, err);
     next(err);
@@ -167,7 +178,7 @@ router.delete('/treatments/:id', ownerOnly, async (req, res, next) => {
   try {
     const result = await treatmentHistoryService.deleteTreatment(req.user, req.params.id);
     if (!result) return res.status(404).json({ error: 'Tratamiento no encontrado' });
-    res.status(204).send();
+    res.json({ ok: true, result });
   } catch (err) {
     next(err);
   }

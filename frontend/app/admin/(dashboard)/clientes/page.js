@@ -488,7 +488,7 @@ export default function ClientesPage() {
                     cursor: "pointer",
                   }}
                 >
-                  Eliminar
+                  Deshabilitar
                 </button>
                 <Link
                   href="/admin/crm"
@@ -588,13 +588,13 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
   const balanceLabel = balanceAmount > 0
     ? `Saldo pendiente: ${money(balanceAmount)}`
     : balanceAmount < 0
-      ? `Saldo a favor: ${money(Math.abs(balanceAmount))}`
+      ? `Crédito disponible: ${money(Math.abs(balanceAmount))}`
       : "Sin saldo pendiente";
 
   return (
     <div className="alma-card" style={{ padding: 22, flex: 1 }}>
       <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: "0 0 14px" }}>
-        Planes y saldo
+        Pagos y saldo
       </h3>
       {activePlan ? (
         <div style={{ background: "rgba(235,205,181,0.4)", border: "1px solid rgba(201,168,118,0.5)", borderRadius: 10, padding: 16, marginBottom: 14 }}>
@@ -658,11 +658,11 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
       </div>
       <div style={{ marginTop: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>Movimientos</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>Pagos y cargos</span>
           <span style={{ fontSize: 11, color: "#A89A87" }}>{entries.length} registros</span>
         </div>
         {entries.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>Todavia no hay pagos ni cargos registrados.</p>
+          <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>Todavía no hay pagos ni cargos registrados.</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 150, overflowY: "auto", paddingRight: 2 }}>
             {entries.slice(0, 8).map((entry) => {
@@ -709,9 +709,9 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
     try {
       await authFetch(`/clients/${clientId}/payments`, {
         method: "POST",
-        body: { amountUsd: Number(amountUsd), method, description: "Pago registrado desde panel" },
+        body: { amountUsd: Number(amountUsd), method, description: "Abono registrado en caja" },
       });
-      toast.success(`Pago de ${Number(amountUsd).toFixed(2)} registrado`);
+      toast.success(`Abono de ${Number(amountUsd).toFixed(2)} registrado`);
       onSaved();
     } catch (err) {
       toast.error(err.message || "Error al registrar pago");
@@ -788,8 +788,8 @@ function DeleteClientModal({ client, phase, onClose, onDeleted }) {
   async function handleDelete() {
     setSaving(true);
     try {
-      await authFetch(`/clients/${client.id}`, { method: "DELETE" });
-      toast.success("Clienta eliminada");
+      await authFetch(`/clients/${client.id}/disable`, { method: "PATCH" });
+      toast.success("Clienta deshabilitada");
       onDeleted();
     } catch (err) {
       toast.error(err.message || "No se pudo eliminar la clienta");
@@ -798,14 +798,14 @@ function DeleteClientModal({ client, phase, onClose, onDeleted }) {
   }
 
   return (
-    <ClientModalShell title="Eliminar clienta" phase={phase} onClose={onClose}>
+    <ClientModalShell title="Deshabilitar clienta" phase={phase} onClose={onClose}>
       <p style={{ margin: "0 0 18px", fontSize: 14, lineHeight: 1.5, color: "#6B5540" }}>
-        Vas a quitar a <strong>{client.fullName}</strong> de la lista activa. Su historial queda guardado para auditoría y recuperación.
+        Vas a deshabilitar a <strong>{client.fullName}</strong>. Ya no aparecerá en la lista activa, cumpleaños ni recordatorios masivos. Su historial queda guardado para auditoría y recuperación.
       </p>
       <div style={{ display: "flex", gap: 10 }}>
         <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
         <button type="button" disabled={saving} onClick={handleDelete} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#9A4E48", color: "#FDFBf7", fontSize: 14, fontWeight: 600, cursor: saving ? "wait" : "pointer", flex: 1, opacity: saving ? 0.65 : 1 }}>
-          {saving ? "Eliminando..." : "Eliminar"}
+          {saving ? "Deshabilitando..." : "Deshabilitar"}
         </button>
       </div>
     </ClientModalShell>
@@ -851,9 +851,41 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
   );
 }
 
+function TreatmentDeleteModal({ treatment, phase, onClose, onDeleted }) {
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  async function handleDelete() {
+    setSaving(true);
+    try {
+      await authFetch(`/treatments/${treatment.id}`, { method: "DELETE" });
+      toast.success("Tratamiento eliminado");
+      onDeleted();
+    } catch (err) {
+      toast.error(err.message || "No se pudo eliminar el tratamiento");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ClientModalShell title="Eliminar tratamiento" phase={phase} onClose={onClose}>
+      <p style={{ margin: "0 0 18px", fontSize: 14, lineHeight: 1.5, color: "#6B5540" }}>
+        Vas a eliminar este registro del historial de tratamientos. Esta acción no cambia la ficha de la clienta ni sus pagos.
+      </p>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
+        <button type="button" disabled={saving} onClick={handleDelete} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#9A4E48", color: "#FDFBf7", fontSize: 14, fontWeight: 600, cursor: saving ? "wait" : "pointer", flex: 1, opacity: saving ? 0.65 : 1 }}>
+          {saving ? "Eliminando..." : "Eliminar"}
+        </button>
+      </div>
+    </ClientModalShell>
+  );
+}
+
 function TreatmentsCard({ treatments, clientId, onSaved }) {
   const [showForm, setShowForm] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState(null);
+  const [treatmentToDelete, setTreatmentToDelete] = useState(null);
   const [services, setServices] = useState([]);
   const [serviceId, setServiceId] = useState("");
   const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -861,6 +893,7 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const toast = useToast();
+  const deleteTreatmentAnim = useAnimatedMount(Boolean(treatmentToDelete), 220);
 
   useEffect(() => {
     if (!showForm) return;
@@ -912,17 +945,6 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
     }
   }
 
-  async function deleteTreatment(treatment) {
-    if (!window.confirm("Eliminar este tratamiento del historial?")) return;
-    try {
-      await authFetch(`/treatments/${treatment.id}`, { method: "DELETE" });
-      toast.success("Tratamiento eliminado");
-      onSaved?.();
-    } catch (err) {
-      toast.error(err.message || "No se pudo eliminar el tratamiento");
-    }
-  }
-
   const inputSt = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
 
   return (
@@ -934,6 +956,15 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
           <button onClick={() => (showForm ? (setShowForm(false), resetForm()) : openCreate())} style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{showForm ? "Cancelar" : "+ Agregar"}</button>
         </div>
       </div>
+      {deleteTreatmentAnim.shouldRender && treatmentToDelete && (
+        <TreatmentDeleteModal
+          treatment={treatmentToDelete}
+          phase={deleteTreatmentAnim.phase}
+          onClose={() => setTreatmentToDelete(null)}
+          onDeleted={() => { setTreatmentToDelete(null); onSaved?.(); }}
+        />
+      )}
+
       {showForm && (
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, padding: 14, background: "rgba(201,168,118,0.08)", borderRadius: 10 }}>
           <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Servicio</label><select value={serviceId} onChange={(e) => setServiceId(e.target.value)} disabled={Boolean(editingTreatment)} style={{ ...inputSt, appearance: "none", cursor: editingTreatment ? "not-allowed" : "pointer", opacity: editingTreatment ? 0.72 : 1 }}><option value="">Seleccionar...</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
@@ -953,7 +984,7 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
                 <div style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.service?.name || "Tratamiento"}</span><span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)}</span></div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil size={14} /></button>
-                  <button type="button" onClick={() => deleteTreatment(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
+                  <button type="button" onClick={() => setTreatmentToDelete(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
                 </div>
               </div>
               {t.notes && <div style={{ fontSize: 13, color: "#8C6E50", marginBottom: 6 }}>{t.notes}</div>}

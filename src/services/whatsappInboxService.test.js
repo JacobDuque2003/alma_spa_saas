@@ -61,11 +61,14 @@ test('sendReminder: SIEMPRE plantilla (dentro o fuera de la ventana)', async () 
     }),
     update: async () => ({}),
   };
+  let reminderWhere = null;
   prisma.appointment = {
-    findFirst: async () => ({ id: 'a1', tenantId: 't1', clientId: 'cli1', confirmationToken: 'token-x', startsAt: new Date(Date.now() + 3600 * 1000), service: { name: 'Masaje' } }),
+    findFirst: async (args) => {
+      reminderWhere = args.where;
+      return { id: 'a1', tenantId: 't1', clientId: 'cli1', confirmationToken: 'token-x', startsAt: new Date(Date.now() + 3600 * 1000), service: { name: 'Masaje' }, client: { fullName: 'Maria Perez', active: true } };
+    },
   };
   prisma.tenant = { findUnique: async () => ({ config: { whatsapp: { confirmationTemplate: { name: 'confirm_v1', language: 'es' } } } }) };
-  prisma.client = { findUnique: async () => ({ fullName: 'María Pérez' }) };
   let created;
   prisma.whatsAppMessage = {
     create: async ({ data }) => { created = { id: 'm1', ...data }; return created; },
@@ -75,6 +78,7 @@ test('sendReminder: SIEMPRE plantilla (dentro o fuera de la ventana)', async () 
   const msg = await inbox.sendReminder({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1');
   assert.equal(textCalls, 0);
   assert.equal(templateCalls, 1);
+  assert.deepEqual(reminderWhere.client, { is: { active: true } });
   assert.equal(msg.templateName, 'confirm_v1');
   assert.equal(msg.status, 'sent');
 });
@@ -89,6 +93,23 @@ test('sendReminder: sin cita pendiente futura → 400', async () => {
     () => inbox.sendReminder({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1'),
     (err) => err.status === 400
   );
+});
+
+test('sendReminder: clienta deshabilitada no recibe plantilla', async () => {
+  mockTransport();
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999', clientId: 'cli1' }),
+  };
+  let apptWhere = null;
+  prisma.appointment = {
+    findFirst: async (args) => { apptWhere = args.where; return null; },
+  };
+
+  await assert.rejects(
+    () => inbox.sendReminder({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1'),
+    (err) => err.status === 400
+  );
+  assert.deepEqual(apptWhere.client, { is: { active: true } });
 });
 
 test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status pendiente hoy', async () => {
@@ -106,6 +127,7 @@ test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status p
   };
   const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { filter: 'sin_confirmar_hoy' });
   assert.equal(apptQuery.status, 'pendiente', 'debe filtrar por status pendiente en Appointment');
+  assert.deepEqual(apptQuery.client, { is: { active: true } }, 'debe excluir clientas deshabilitadas de recordatorios');
   assert.ok(apptQuery.startsAt.gte instanceof Date && apptQuery.startsAt.lt instanceof Date, 'debe usar rango [gte, lt) sargable');
   assert.deepEqual([...convQuery.clientId.in], ['cli1', 'cli2']);
   assert.equal(items.length, 1);

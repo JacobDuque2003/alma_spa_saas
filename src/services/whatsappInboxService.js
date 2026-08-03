@@ -73,7 +73,7 @@ async function listConversations(actor, query) {
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
     const range = todayRangeForTenant(tenant?.config);
     const pending = await prisma.appointment.findMany({
-      where: { tenantId, status: 'pendiente', startsAt: { gte: range.start, lt: range.end } },
+      where: { tenantId, status: 'pendiente', startsAt: { gte: range.start, lt: range.end }, client: { is: { active: true } } },
       select: { clientId: true },
     });
     const clientIds = [...new Set(pending.map((a) => a.clientId))];
@@ -196,9 +196,10 @@ async function sendReminder(actor, conversationId) {
       clientId: conv.clientId,
       status: 'pendiente',
       startsAt: { gte: new Date() },
+      client: { is: { active: true } },
     },
     orderBy: { startsAt: 'asc' },
-    include: { service: { select: { name: true } } },
+    include: { service: { select: { name: true } }, client: { select: { fullName: true, active: true } } },
   });
   if (!nextPending) {
     throw new BadRequestError('El cliente no tiene una cita pendiente para confirmar');
@@ -217,7 +218,7 @@ async function sendReminder(actor, conversationId) {
   const conn = await transport.loadActiveConnection(conv.tenantId);
   if (!conn) throw new BadRequestError('WhatsApp no está conectado para este tenant');
 
-  const client = await prisma.client.findUnique({ where: { id: conv.clientId }, select: { fullName: true } });
+  const client = nextPending.client;
   const startsAtIso = nextPending.startsAt.toISOString();
 
   // Sanitización: Meta rechaza params con saltos de línea/tabs. Truncar a 60ch.

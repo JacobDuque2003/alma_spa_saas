@@ -143,3 +143,12 @@ Se aument? la visibilidad del confeti del toast de cumplea?os: ahora usa 20 part
 - Se actualizaron los mensajes/placeholder en Personal y Perfil para mostrar minimo 8 caracteres.
 - Se agrego prueba que confirma que una contrasena de exactamente 8 caracteres es aceptada y sigue sin exponer passwordHash.
 - Verificacion: user/auth tests focalizados 26/26, npm test completo 234/234, lint Perfil/Personal limpio, build frontend verde.
+
+## Deshabilitar clientas y confirmaciones Alma (2026-08-03)
+
+- Clientes: el boton dejo de decir Eliminar y ahora dice Deshabilitar; usa PATCH /clients/:id/disable y respuesta JSON para evitar errores por body vacio.
+- Deshabilitar clienta mantiene historial/auditoria, pero la excluye de lista activa, cumpleanos y recordatorios WhatsApp.
+- WhatsApp: sendReminder y filtro sin_confirmar_hoy ahora exigen client.active=true server-side.
+- Tratamientos: el tacho ahora abre modal Alma de confirmacion, no el confirm nativo del navegador.
+- Pagos: la tarjeta ahora dice Pagos y saldo; los movimientos son Pagos y cargos, y pagos sin deuda se leen como Credito disponible.
+- Verificacion: tests focalizados clientes/WhatsApp 12/12, npm test completo 235/235, lint Clientes limpio, build frontend verde.
