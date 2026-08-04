@@ -28,10 +28,11 @@ export default function CRMPage() {
   const [loadError, setLoadError] = useState("");
   const toast = useToast();
   const [quickReplies, setQuickReplies] = useState([
-    "Hola, gracias por escribirnos a Alma Spa. ¿En qué podemos ayudarte?",
-    "Tu cita ha sido confirmada. Te esperamos.",
-    "Nuestro horario es de lunes a viernes de 9:00 a 19:00.",
-    "¿Te gustaría agendar una cita? Puedo ayudarte con eso.",
+    { icon: "\uD83D\uDC4B", title: "Saludo", text: "Hola, gracias por escribir a Alma Spa. \u00bfEn qu\u00e9 podemos ayudarte?" },
+    { icon: "\u2705", title: "Confirmar", text: "Perfecto, tu cita queda confirmada. Te esperamos con mucho gusto." },
+    { icon: "\uD83D\uDD50", title: "Horario", text: "Nuestro horario es de lunes a s\u00e1bado de 9:00 a 19:00." },
+    { icon: "\uD83D\uDC86", title: "Agendar", text: "Claro, podemos ayudarte a agendar una cita. \u00bfQu\u00e9 d\u00eda y horario te queda mejor?" },
+    { icon: "\uD83C\uDF82", title: "Cumple", text: "\u00a1Feliz cumplea\u00f1os! En Alma Spa tenemos un detalle especial para ti." },
   ]);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showEditReplies, setShowEditReplies] = useState(false);
@@ -119,8 +120,8 @@ export default function CRMPage() {
     }
   }
 
-  function useQuickReply(text) {
-    setBody(text);
+  function applyQuickReply(reply) {
+    setBody(reply.text || reply);
     setShowQuickReplies(false);
   }
 
@@ -134,14 +135,14 @@ export default function CRMPage() {
 
   function startEditQuickReply(idx) {
     setEditingReplyIdx(idx);
-    setEditReplyText(quickReplies[idx]);
+    setEditReplyText(quickReplies[idx]?.text || quickReplies[idx] || "");
   }
 
   function saveEditQuickReply() {
     if (editingReplyIdx === null) return;
     const text = editReplyText.trim();
     if (text) {
-      setQuickReplies((prev) => prev.map((r, i) => (i === editingReplyIdx ? text : r)));
+      setQuickReplies((prev) => prev.map((r, i) => (i === editingReplyIdx ? { ...r, text } : r)));
     }
     setEditingReplyIdx(null);
     setEditReplyText("");
@@ -150,7 +151,7 @@ export default function CRMPage() {
   function addQuickReply() {
     const text = newReplyText.trim();
     if (!text) return;
-    setQuickReplies((prev) => [...prev, text]);
+    setQuickReplies((prev) => [...prev, { icon: "\u2728", title: "Nueva", text }]);
     setNewReplyText("");
   }
 
@@ -432,15 +433,17 @@ export default function CRMPage() {
                 <div
                   style={{
                     position: "absolute",
-                    bottom: "100%",
-                    left: 0,
-                    right: 0,
-                    background: "#F7F5F0",
-                    borderTop: "1px solid rgba(168,154,135,0.35)",
-                    maxHeight: 280,
+                    bottom: "calc(100% + 10px)",
+                    left: isMobile ? 12 : 24,
+                    right: isMobile ? 12 : 24,
+                    background: "rgba(253,252,250,0.98)",
+                    border: "1px solid rgba(168,154,135,0.28)",
+                    borderRadius: 18,
+                    maxHeight: isMobile ? 310 : 340,
                     overflowY: "auto",
-                    padding: "12px 24px",
-                    boxShadow: "0 -4px 16px rgba(107,85,64,0.08)",
+                    padding: isMobile ? 12 : 14,
+                    boxShadow: "0 18px 46px rgba(64,51,39,0.16)",
+                    backdropFilter: "blur(10px)",
                   }}
                 >
                   <div
@@ -448,25 +451,32 @@ export default function CRMPage() {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      marginBottom: 8,
+                      gap: 12,
+                      marginBottom: 10,
                     }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#6B5540", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                      Respuestas rapidas
-                    </span>
+                    <div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540", letterSpacing: 0.2 }}>
+                        {"Respuestas r\u00e1pidas"}
+                      </span>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#A89A87" }}>
+                        {"Toca una opci\u00f3n para preparar el mensaje."}
+                      </p>
+                    </div>
                     <button
                       onClick={() => setShowEditReplies((v) => !v)}
                       style={{
-                        width: 26,
-                        height: 26,
+                        width: 30,
+                        height: 30,
                         borderRadius: "50%",
-                        border: "none",
-                        background: showEditReplies ? "#C9A876" : "rgba(201,168,118,0.2)",
+                        border: "1px solid rgba(168,154,135,0.28)",
+                        background: showEditReplies ? "#8C6E50" : "#F7F5F0",
                         color: showEditReplies ? "#F7F5F0" : "#8C6E50",
                         cursor: "pointer",
                         display: "inline-flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        flexShrink: 0,
                       }}
                       title="Editar respuestas"
                     >
@@ -478,22 +488,29 @@ export default function CRMPage() {
                     <p style={{ fontSize: 13, color: "#A89A87", margin: "10px 0" }}>No hay respuestas guardadas.</p>
                   )}
 
-                  {quickReplies.map((reply, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "10px 0",
-                        borderBottom: "1px solid rgba(168,154,135,0.2)",
-                        cursor: showEditReplies ? "default" : "pointer",
-                        fontSize: 13,
-                        color: "#6B5540",
-                      }}
-                    >
-                      {showEditReplies ? (
-                        editingReplyIdx === idx ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {quickReplies.map((reply, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "34px 1fr auto",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "9px 10px",
+                          borderRadius: 14,
+                          border: "1px solid rgba(168,154,135,0.18)",
+                          background: showEditReplies ? "rgba(247,245,240,0.72)" : "#F7F5F0",
+                          cursor: showEditReplies ? "default" : "pointer",
+                          color: "#6B5540",
+                          transition: "transform var(--motion-fast) var(--ease-out-quart), border-color var(--motion-fast) var(--ease-out-quart)",
+                        }}
+                        onClick={() => { if (!showEditReplies) applyQuickReply(reply); }}
+                      >
+                        <span style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(235,205,181,0.46)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                          {reply.icon || "\u2728"}
+                        </span>
+                        {showEditReplies && editingReplyIdx === idx ? (
                           <input
                             autoFocus
                             value={editReplyText}
@@ -507,52 +524,50 @@ export default function CRMPage() {
                               }
                             }}
                             style={{
-                              flex: 1,
-                              marginRight: 10,
-                              padding: "6px 10px",
-                              borderRadius: 6,
-                              border: "1px solid rgba(168,154,135,0.5)",
+                              width: "100%",
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: "1px solid rgba(168,154,135,0.42)",
+                              background: "#FDFCFA",
                               fontSize: 13,
                               color: "#6B5540",
                               outline: "none",
                             }}
                           />
                         ) : (
-                          <span
-                            onClick={() => startEditQuickReply(idx)}
-                            style={{ flex: 1, marginRight: 10, cursor: "pointer" }}
+                          <div onClick={() => { if (showEditReplies) startEditQuickReply(idx); }} style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#6B5540", marginBottom: 2 }}>
+                              {reply.title || "Respuesta"}
+                            </div>
+                            <div style={{ fontSize: 12, color: "#8C6E50", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {reply.text || reply}
+                            </div>
+                          </div>
+                        )}
+                        {showEditReplies && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteQuickReply(idx); }}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: "50%",
+                              border: "1px solid rgba(194,84,80,0.18)",
+                              background: "rgba(194,84,80,0.08)",
+                              color: "#C25450",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            }}
+                            title="Eliminar"
                           >
-                            {reply}
-                          </span>
-                        )
-                      ) : (
-                        <span onClick={() => useQuickReply(reply)} style={{ flex: 1, marginRight: 10 }}>
-                          {reply}
-                        </span>
-                      )}
-                      {showEditReplies && (
-                        <button
-                          onClick={() => deleteQuickReply(idx)}
-                          style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: "50%",
-                            border: "none",
-                            background: "rgba(194,84,80,0.12)",
-                            color: "#C25450",
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                          }}
-                          title="Eliminar"
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
 
                   {showEditReplies && (
                     <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -562,12 +577,13 @@ export default function CRMPage() {
                         onKeyDown={(e) => {
                           if (e.key === "Enter") addQuickReply();
                         }}
-                        placeholder="Nueva respuesta rapida…"
+                        placeholder="Nueva respuesta r\u00e1pida…"
                         style={{
                           flex: 1,
-                          padding: "8px 12px",
-                          borderRadius: 6,
-                          border: "1px solid rgba(168,154,135,0.5)",
+                          padding: "9px 12px",
+                          borderRadius: 999,
+                          border: "1px solid rgba(168,154,135,0.42)",
+                          background: "#FDFCFA",
                           fontSize: 13,
                           color: "#6B5540",
                           outline: "none",
@@ -577,13 +593,13 @@ export default function CRMPage() {
                         onClick={addQuickReply}
                         disabled={!newReplyText.trim()}
                         style={{
-                          padding: "8px 16px",
-                          borderRadius: 6,
+                          padding: "9px 16px",
+                          borderRadius: 999,
                           border: "none",
-                          background: "#C9A876",
+                          background: "#8C6E50",
                           color: "#F7F5F0",
                           fontSize: 13,
-                          fontWeight: 500,
+                          fontWeight: 600,
                           cursor: newReplyText.trim() ? "pointer" : "default",
                           opacity: newReplyText.trim() ? 1 : 0.5,
                         }}
@@ -611,9 +627,9 @@ export default function CRMPage() {
                   fontSize: 16,
                   flexShrink: 0,
                 }}
-                title="Respuestas rápidas"
+                title={"Respuestas r\u00e1pidas"}
               >
-                ⚡
+                {"\u2728"}
               </button>
               <input
                 style={{
@@ -626,7 +642,7 @@ export default function CRMPage() {
                   color: "#6B5540",
                   outline: "none",
                 }}
-                placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Han pasado mas de 24h — envia un recordatorio"}
+                placeholder={selected.withinWindow ? "Escribe tu respuesta\u2026" : "Han pasado m\u00e1s de 24h \u2014 env\u00eda un recordatorio"}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 disabled={!selected.withinWindow || sending}

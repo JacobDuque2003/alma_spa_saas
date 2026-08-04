@@ -310,9 +310,9 @@ export default function PersonalPage() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
-              Personal
+              Equipo
             </h1>
-            <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Cuentas del spa y permisos</p>
+            <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Roles, accesos y permisos del equipo</p>
           </div>
           <button
             onClick={() => setShowNewUser(true)}
@@ -490,7 +490,7 @@ export default function PersonalPage() {
                 }}
               >
                 <ArrowLeft size={18} />
-                Personal
+                Equipo
               </button>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>

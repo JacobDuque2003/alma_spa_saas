@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { LogOut, Loader2, Menu, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { href: "/admin/clientes", label: "Clientes", enabled: true },
   { href: "/admin/crm", label: "CRM", enabled: true },
   { href: "/admin/reportes", label: "Reportes", enabled: true },
-  { href: "/admin/personal", label: "Personal", enabled: true },
+  { href: "/admin/personal", label: "Equipo", enabled: true },
   { href: "/admin/configuracion", label: "Configuración", enabled: true },
   { href: "/admin/logs", label: "Logs", enabled: true, roles: ["superadmin", "dueno"] },
 ];
@@ -112,8 +112,20 @@ function Shell({ children }) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="alma-loading-screen" aria-label="Cargando Alma Spa">
+        <div className="alma-loading-orbit" aria-hidden="true">
+          <span className="alma-loading-spark alma-loading-spark-a">{"\u2726"}</span>
+          <span className="alma-loading-spark alma-loading-spark-b">{"\u2727"}</span>
+          <span className="alma-loading-spark alma-loading-spark-c">{"\u2726"}</span>
+          <div className="alma-loading-mark">
+            <span className="alma-loading-petal">{"\u2736"}</span>
+          </div>
+        </div>
+        <div className="alma-loading-brand">
+          <span className="font-heading">ALMA</span>
+          <span>Spa</span>
+        </div>
+        <p>Preparando tu espacio de bienestar�</p>
       </div>
     );
   }
