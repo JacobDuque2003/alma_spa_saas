@@ -87,10 +87,17 @@ function Shell({ children }) {
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState([]);
+  const [introDone, setIntroDone] = useState(false);
 
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIntroDone(true), isMobile ? 2400 : 1400);
+    return () => window.clearTimeout(timer);
+  }, [isMobile]);
+
 
   useEffect(() => {
     if (!isMobile) setDrawerOpen(false);
@@ -110,7 +117,7 @@ function Shell({ children }) {
   const badgeCount = upcomingBirthdays.length;
   const nearBirthdays = upcomingBirthdays.filter((b) => b.daysUntil <= 1);
 
-  if (loading) {
+  if (loading || !introDone) {
     return (
       <div className="alma-loading-screen" aria-label="Cargando Alma Spa">
         <div className="alma-loading-orbit" aria-hidden="true">
@@ -125,7 +132,7 @@ function Shell({ children }) {
           <span className="font-heading">ALMA</span>
           <span>Spa</span>
         </div>
-        <p>Preparando tu espacio de bienestar�</p>
+        <p>{"Preparando tu espacio de bienestar\u2026"}</p>
       </div>
     );
   }
