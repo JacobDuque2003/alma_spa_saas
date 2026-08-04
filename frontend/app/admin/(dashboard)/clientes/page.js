@@ -700,15 +700,15 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
   const balanceAmount = Number(balance?.balanceUsd || 0);
   const entries = Array.isArray(balance?.entries) ? balance.entries : [];
   const balanceLabel = balanceAmount > 0
-    ? `Saldo pendiente: ${money(balanceAmount)}`
+    ? `Por cobrar: ${money(balanceAmount)}`
     : balanceAmount < 0
-      ? `Crédito disponible: ${money(Math.abs(balanceAmount))}`
-      : "Sin saldo pendiente";
+      ? `Saldo a favor: ${money(Math.abs(balanceAmount))}`
+      : "Cuenta al día";
 
   return (
     <div className="alma-card" style={{ padding: 22, flex: 1 }}>
       <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: "0 0 14px" }}>
-        Pagos y saldo
+        Cuenta de la clienta
       </h3>
       {activePlan ? (
         <div style={{ background: "rgba(235,205,181,0.4)", border: "1px solid rgba(201,168,118,0.5)", borderRadius: 10, padding: 16, marginBottom: 14 }}>
@@ -767,16 +767,16 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
             cursor: "pointer",
           }}
         >
-          Registrar pago
+          Registrar abono
         </button>
       </div>
       <div style={{ marginTop: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>Pagos y cargos</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{"Movimientos de cuenta"}</span>
           <span style={{ fontSize: 11, color: "#A89A87" }}>{entries.length} registros</span>
         </div>
         {entries.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>Todavía no hay pagos ni cargos registrados.</p>
+          <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>Todavía no hay abonos ni cargos registrados.</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 150, overflowY: "auto", paddingRight: 2 }}>
             {entries.slice(0, 8).map((entry) => {
@@ -784,7 +784,7 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
               return (
                 <div key={entry.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 10px", borderRadius: 9, background: "rgba(253,252,250,0.72)", border: "1px solid rgba(168,154,135,0.18)" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{isPayment ? "Pago" : "Cargo"}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{isPayment ? "Abono recibido" : "Cargo generado"}</div>
                     <div style={{ fontSize: 11, color: "#A89A87", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {entry.description || entry.method || shortDate(entry.createdAt)}
                     </div>
@@ -823,12 +823,12 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
     try {
       await authFetch(`/clients/${clientId}/payments`, {
         method: "POST",
-        body: { amountUsd: Number(amountUsd), method, description: "Abono registrado en caja" },
+        body: { amountUsd: Number(amountUsd), method, description: "Abono de caja" },
       });
-      toast.success(`Abono de ${Number(amountUsd).toFixed(2)} registrado`);
+      toast.success(`Abono de ${Number(amountUsd).toFixed(2)} guardado`);
       onSaved();
     } catch (err) {
-      toast.error(err.message || "Error al registrar pago");
+      toast.error(err.message || "Error al guardar el abono");
       setSaving(false);
     }
   }
@@ -839,7 +839,7 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
         </button>
-        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>Registrar pago</h2>
+        <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>{"Registrar abono"}</h2>
         <p style={{ margin: "0 0 20px", fontSize: 13, color: "#A89A87" }}>{clientName}</p>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
@@ -847,7 +847,7 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
             <input type="number" step="0.01" min="0.01" style={modalInputStyle} value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} placeholder="45.00" autoFocus />
           </div>
           <div>
-            <label style={modalLabelStyle}>Método de pago</label>
+            <label style={modalLabelStyle}>Forma de pago</label>
             <select value={method} onChange={(e) => setMethod(e.target.value)} style={{ ...modalInputStyle, appearance: "none", cursor: "pointer" }}>
               <option value="efectivo">Efectivo</option>
               <option value="transferencia">Transferencia</option>
@@ -857,7 +857,7 @@ function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
           {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={{ padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 }}>Cancelar</button>
-            <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Registrando…" : "Registrar pago"}</button>
+            <button type="submit" disabled={saving} style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando\u2026" : "Guardar abono"}</button>
           </div>
         </form>
       </div>
