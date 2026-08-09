@@ -15,7 +15,7 @@ const STATUS_COLORS = {
   pendiente: { bg: "rgba(168,154,135,0.2)", border: "#A89A87", text: "#A89A87" },
   confirmado: { bg: "rgba(201,168,118,0.2)", border: "transparent", text: "#8C6E50" },
   cancelado: { bg: "rgba(194,84,80,0.1)", border: "#C25450", text: "#C25450" },
-  no_show: { bg: "rgba(168,154,135,0.15)", border: "#A89A87", text: "#A89A87" },
+  no_show: { bg: "rgba(194,84,80,0.10)", border: "#C25450", text: "#B85A56" },
 };
 const STATUS_LABELS = {
   pendiente: "Sin confirmar",
@@ -457,6 +457,9 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
               padding: 0,
               textAlign: "left",
               minHeight: 72,
+              textDecoration: appt.status === "no_show" ? "line-through" : "none",
+              textDecorationColor: "rgba(194,84,80,0.55)",
+              textDecorationThickness: 1.5,
             }}
           >
             <div
@@ -709,6 +712,10 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       color: isDomicilio ? "#6B5540" : "#F7F5F0",
                       textAlign: "left",
                       zIndex: 1,
+                      textDecoration: appt.status === "no_show" ? "line-through" : "none",
+                      textDecorationColor: "rgba(194,84,80,0.85)",
+                      textDecorationThickness: 1.5,
+                      opacity: appt.status === "no_show" ? 0.75 : 1,
                     }}
                   >
                     <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
