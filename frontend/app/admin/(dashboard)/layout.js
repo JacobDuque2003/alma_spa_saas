@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { href: "/admin/reportes", label: "Reportes", enabled: true },
   { href: "/admin/personal", label: "Equipo", enabled: true },
   { href: "/admin/configuracion", label: "Configuración", enabled: true },
-  { href: "/admin/logs", label: "Logs", enabled: true, roles: ["superadmin", "dueno"] },
+  { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"] },
 ];
 
 const ROLE_LABELS = {

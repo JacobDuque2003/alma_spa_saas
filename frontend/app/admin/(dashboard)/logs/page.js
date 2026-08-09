@@ -31,6 +31,48 @@ const ACTION_COLORS = {
   permissionsChanged: { bg: "rgba(156,39,176,0.12)", color: "#7B1FA2" },
 };
 
+// Verbos en pasado, coherentes con AuditAction del backend.
+const ACTION_VERBS = {
+  create: "creó",
+  update: "editó",
+  activate: "activó",
+  deactivate: "desactivó",
+  purge: "eliminó",
+  permissionsChanged: "cambió los permisos de",
+};
+
+// Sustantivo entity + artículo con género correcto en español.
+const ENTITY_LABELS = {
+  service: { article: "el", noun: "servicio" },
+  room: { article: "el", noun: "gabinete" },
+  category: { article: "la", noun: "categoría" },
+  user: { article: "la", noun: "cuenta" },
+};
+
+// El actor viene como email (siempre presente en la fila del audit log).
+// Preferimos la parte local capitalizada — "jacob@almaspa.com" → "Jacob".
+function actorName(email) {
+  if (!email) return "Alguien";
+  const local = String(email).split("@")[0] || email;
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
+// Nombre legible de la entidad afectada: `detail.name` para service/room/category,
+// `detail.email` o `detail.name` para user. Fallback: id truncado.
+function entityLabel(row) {
+  const detail = row.detail || {};
+  if (row.entity === "user") return detail.name || detail.email || (row.entityId ? `${row.entityId.slice(0, 8)}…` : "una cuenta");
+  return detail.name || (row.entityId ? `${row.entityId.slice(0, 8)}…` : "un registro");
+}
+
+function formatActivity(row) {
+  const who = actorName(row.actorEmail);
+  const verb = ACTION_VERBS[row.action] || row.action;
+  const entity = ENTITY_LABELS[row.entity] || { article: "el", noun: row.entity };
+  const name = entityLabel(row);
+  return `${who} ${verb} ${entity.article} ${entity.noun} "${name}"`;
+}
+
 const inputStyle = {
   padding: "8px 12px",
   border: "1px solid rgba(168,154,135,0.5)",
@@ -106,8 +148,8 @@ export default function LogsPage() {
   const totalPages = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
-  const mobileHeaders = ["Fecha", "Acción", "Entidad", "Actor"];
-  const desktopHeaders = ["Fecha", "Acción", "Entidad", "ID", "Actor", "Detalle"];
+  const mobileHeaders = ["Fecha", "Acción", "Actividad"];
+  const desktopHeaders = ["Fecha", "Acción", "Actividad"];
   const headers = isMobile ? mobileHeaders : desktopHeaders;
 
   return (
@@ -202,13 +244,11 @@ export default function LogsPage() {
                         {ACTION_LABELS[row.action] || row.action}
                       </span>
                     </td>
-                    <td style={{ padding: "10px 14px", color: "#6B5540", textTransform: "capitalize" }}>{row.entity}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 11, color: "#A89A87", fontFamily: "monospace" }}>
-                      {row.entityId?.slice(0, 10)}…
-                    </td>
-                    <td style={{ padding: "10px 14px", color: "#6B5540" }}>{row.actorEmail}</td>
-                    <td style={{ padding: "10px 14px", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}>
-                      <DetailCell detail={row.detail} />
+                    <td style={{ padding: "10px 14px", color: "#6B5540", lineHeight: 1.4 }}>
+                      <div>{formatActivity(row)}</div>
+                      <div style={{ fontSize: 11, color: "#A89A87", marginTop: 4 }}>
+                        <DetailCell detail={row.detail} />
+                      </div>
                     </td>
                   </tr>
                 );
@@ -269,12 +309,13 @@ function MobileRow({ row, ac, isExpanded, onToggle }) {
             {ACTION_LABELS[row.action] || row.action}
           </span>
         </td>
-        <td style={{ padding: "10px 6px", color: "#6B5540", textTransform: "capitalize", fontSize: 11 }}>{row.entity}</td>
-        <td style={{ padding: "10px 6px", color: "#6B5540", fontSize: 11, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.actorEmail}</td>
+        <td style={{ padding: "10px 6px", color: "#6B5540", fontSize: 11, lineHeight: 1.35 }}>
+          {formatActivity(row)}
+        </td>
       </tr>
       {hasDetail && (
         <tr style={{ borderBottom: "1px solid rgba(168,154,135,0.15)" }}>
-          <td colSpan={5} style={{ padding: 0 }}>
+          <td colSpan={4} style={{ padding: 0 }}>
             <div className={`alma-accordion-body${isExpanded ? " alma-accordion-open" : ""}`}>
               <div style={{ padding: "8px 12px 12px", background: "rgba(168,154,135,0.06)" }}>
                 <div style={{ fontSize: 11, color: "#A89A87", marginBottom: 4 }}>
