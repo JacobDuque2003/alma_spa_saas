@@ -489,9 +489,6 @@ export default function ConfiguracionPage() {
                           onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
                           style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
                         />
-                        <button onClick={() => updateService(s, { offersHomeService: !s.offersHomeService })} style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: s.offersHomeService ? "rgba(201,168,118,0.2)" : "transparent", color: "#8C6E50", fontSize: 12, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-                          {s.offersHomeService ? "Domicilio" : "Spa"}
-                        </button>
                         {isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
                     </div>
