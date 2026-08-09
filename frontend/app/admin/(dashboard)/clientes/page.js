@@ -76,7 +76,7 @@ export default function ClientesPage() {
   const fetchBirthdays = useCallback(async () => {
     setBirthdayLoading(true);
     try {
-      const rows = await authFetch("/clients/birthdays", { query: { days: 15 } });
+      const rows = await authFetch("/clients/birthdays", { query: { days: 8 } });
       setBirthdayList(Array.isArray(rows) ? rows : []);
     } catch {
       setBirthdayList([]);
