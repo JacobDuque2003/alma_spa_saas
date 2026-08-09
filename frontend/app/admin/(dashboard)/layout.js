@@ -11,6 +11,7 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { authFetch } from "@/lib/auth-client";
 import { BirthdayToast } from "@/components/birthday-toast";
 import { ToastProvider } from "@/components/toast-provider";
+import { GlobalSearch } from "@/components/global-search";
 
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true },
@@ -141,6 +142,9 @@ function Shell({ children }) {
 
   const navContent = (
     <>
+      <div style={{ padding: "0 6px 14px" }}>
+        <GlobalSearch />
+      </div>
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {navItems.map((item) => {
           const active = item.enabled && pathname.startsWith(item.href);
@@ -331,7 +335,7 @@ function Shell({ children }) {
           padding: "24px 12px 16px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 4, padding: "0 10px 22px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4, padding: "0 10px 14px" }}>
           <span
             className="font-heading"
             style={{ fontSize: 18, fontWeight: 600, letterSpacing: 2.5, color: "#6B5540" }}

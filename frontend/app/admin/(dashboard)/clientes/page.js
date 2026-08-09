@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, Search, X, ArrowLeft, Pencil, Trash2 } from "lucide-react";
@@ -36,9 +37,12 @@ function birthdayCaptionFromDays(daysUntil) {
 }
 
 export default function ClientesPage() {
+  const searchParams = useSearchParams();
+  // Preselección desde <GlobalSearch>: /admin/clientes?client=<id>
+  const preselectedId = searchParams.get("client");
   const [clients, setClients] = useState([]);
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(preselectedId || null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("todas");
   const [birthdayList, setBirthdayList] = useState([]);
