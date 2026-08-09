@@ -2,13 +2,54 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Download, Edit3, Loader2, Plus, Upload, X } from "lucide-react";
+import { Download, Edit3, Loader2, Plus, Upload, X, Sparkles, Tag, DoorOpen } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
+}
+
+function SectionHeader({ title, subtitle, onAdd, addLabel }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>{title}</h3>
+        {subtitle && <p style={{ margin: 0, fontSize: 13, color: "#A89A87", lineHeight: 1.4 }}>{subtitle}</p>}
+      </div>
+      {onAdd && (
+        <button
+          onClick={onAdd}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+        >
+          <Plus size={14} /> {addLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ icon, title, body, ctaLabel, onCta }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "28px 12px 8px", gap: 12 }}>
+      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(201,168,118,0.14)", color: "#8C6E50", display: "grid", placeItems: "center" }}>
+        {icon}
+      </div>
+      <div>
+        <p style={{ fontSize: 15, color: "#6B5540", margin: "0 0 4px", fontWeight: 500 }}>{title}</p>
+        <p style={{ fontSize: 13, color: "#A89A87", margin: 0, maxWidth: 380, lineHeight: 1.45 }}>{body}</p>
+      </div>
+      {ctaLabel && onCta && (
+        <button
+          onClick={onCta}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: "pointer", marginTop: 4 }}
+        >
+          <Plus size={14} /> {ctaLabel}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Modal({ title, phase, onClose, children }) {
@@ -30,8 +71,8 @@ const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBot
 const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 
-const cardPaddingDesktop = { padding: 24 };
-const cardPaddingMobile = { padding: 16 };
+const cardPaddingDesktop = { padding: 28 };
+const cardPaddingMobile = { padding: 18 };
 
 function friendlyConfigError(message, fallback) {
   const text = String(message || fallback || "");
@@ -169,17 +210,17 @@ function CategoryFormModal({ phase, onClose, onSaved }) {
       const created = await authFetch("/categories", { method: "POST", body: { name: name.trim() } });
       toast.success(`Categoría "${created.name}" creada`);
       onSaved(created);
-    } catch (err) { toast.error(err.message || "Error al crear categoria"); setSaving(false); }
+    } catch (err) { toast.error(err.message || "Error al crear la categoría"); setSaving(false); }
   }
 
   return (
-    <Modal title="Nueva categoria" phase={phase} onClose={onClose}>
+    <Modal title="Nueva categoría" phase={phase} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="masajes, faciales, corporales..." autoFocus /></div>
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
-          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear categoria"}</button>
+          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear categoría"}</button>
         </div>
       </form>
     </Modal>
@@ -404,8 +445,8 @@ export default function ConfiguracionPage() {
     <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto" }}>
       <div style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 20 }}>
         <div>
-          <h1 className="font-heading" style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Configuracion</h1>
-          <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Servicios, categorias, gabinetes y horario de atencion</p>
+          <h1 className="font-heading" style={{ fontSize: isMobile ? 24 : 30, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>Configuración</h1>
+          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, categorías, gabinetes y horario de atención del spa.</p>
         </div>
 
         {loadError && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>}
@@ -418,12 +459,12 @@ export default function ConfiguracionPage() {
           <>
             {/* Servicios y precios */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-                <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Servicios y precios</h3>
-                <button onClick={() => setShowServiceForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                  <Plus size={14} /> Anadir servicio
-                </button>
-              </div>
+              <SectionHeader
+                title="Servicios y precios"
+                subtitle="Cada servicio incluye su duración estándar y el precio que se cobra al cliente."
+                onAdd={() => setShowServiceForm(true)}
+                addLabel="Añadir servicio"
+              />
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {services.map((s, i, arr) => {
                   const active = s.active !== false;
@@ -456,18 +497,26 @@ export default function ConfiguracionPage() {
                     </div>
                   );
                 })}
-                {services.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay servicios todavia.</p>}
+                {services.length === 0 && (
+                  <EmptyState
+                    icon={<Sparkles size={28} strokeWidth={1.5} />}
+                    title="Todavía no hay servicios"
+                    body="Crea el primer servicio para poder reservar citas y ofrecerlo en la agenda pública."
+                    ctaLabel="Añadir servicio"
+                    onCta={() => setShowServiceForm(true)}
+                  />
+                )}
               </div>
             </div>
 
-            {/* Categorias */}
+            {/* Categorías */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-                <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Categorias</h3>
-                <button onClick={() => setShowCatForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                  <Plus size={14} /> Crear categoria
-                </button>
-              </div>
+              <SectionHeader
+                title="Categorías"
+                subtitle="Agrupa servicios y gabinetes por especialidad (masajes, faciales, corporales…)."
+                onAdd={() => setShowCatForm(true)}
+                addLabel="Crear categoría"
+              />
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {categories.map((catName) => {
                   const dbCat = dbCategories.find((c) => c.name === catName);
@@ -505,7 +554,7 @@ export default function ConfiguracionPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!confirm("¿Eliminar esta categoria?")) return;
+                            if (!confirm("¿Eliminar esta categoría?")) return;
                             authFetch(`/categories/${dbCat.id}`, { method: "DELETE" })
                               .then(() => { setDbCategories((prev) => prev.filter((c) => c.id !== dbCat.id)); toast.success(`Categoría "${catName}" eliminada`); })
                               .catch((err) => toast.error(err.message || "No se pudo eliminar"));
@@ -519,18 +568,26 @@ export default function ConfiguracionPage() {
                     </div>
                   );
                 })}
-                {categories.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay categorias. Crea una para empezar.</p>}
+                {categories.length === 0 && (
+                  <EmptyState
+                    icon={<Tag size={26} strokeWidth={1.5} />}
+                    title="Sin categorías todavía"
+                    body="Crea al menos una categoría antes de añadir servicios o gabinetes — se usa para clasificarlos."
+                    ctaLabel="Crear categoría"
+                    onCta={() => setShowCatForm(true)}
+                  />
+                )}
               </div>
             </div>
 
             {/* Gabinetes */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-                <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: 0 }}>Gabinetes</h3>
-                <button onClick={() => setShowRoomForm(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 999, border: "1px solid #8C6E50", background: "transparent", color: "#8C6E50", fontSize: 13, cursor: "pointer" }}>
-                  <Plus size={14} /> Anadir gabinete
-                </button>
-              </div>
+              <SectionHeader
+                title="Gabinetes"
+                subtitle="Cada gabinete atiende una categoría — la agenda auto-asigna el gabinete disponible al reservar."
+                onAdd={() => setShowRoomForm(true)}
+                addLabel="Añadir gabinete"
+              />
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {rooms.map((r, i, arr) => (
                   <RoomRow
@@ -543,19 +600,30 @@ export default function ConfiguracionPage() {
                     isLast={i === arr.length - 1}
                   />
                 ))}
-                {rooms.length === 0 && <p style={{ fontSize: 13, color: "#A89A87", margin: 0 }}>No hay gabinetes todavia.</p>}
+                {rooms.length === 0 && (
+                  <EmptyState
+                    icon={<DoorOpen size={28} strokeWidth={1.5} />}
+                    title="Sin gabinetes todavía"
+                    body="Cada gabinete se asocia a una categoría. La agenda auto-asigna el gabinete disponible al momento de reservar."
+                    ctaLabel="Añadir gabinete"
+                    onCta={() => setShowRoomForm(true)}
+                  />
+                )}
               </div>
             </div>
 
-            {/* Horario de atencion */}
+            {/* Horario de atención */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: "0 0 18px" }}>Horario de atencion</h3>
+              <div style={{ marginBottom: 18 }}>
+                <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Horario de atención</h3>
+                <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Define cuándo el spa acepta reservas — se aplica a la agenda pública y a la disponibilidad interna.</p>
+              </div>
               <BusinessHoursPanel />
             </div>
 
-            {/* Datos en Excel — mencion breve */}
+            {/* Datos en Excel — mención breve */}
             <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
-              <Upload size={13} /> Subir Excel <Download size={13} style={{ marginLeft: 8 }} /> Descargar respaldo — disponible proximamente
+              <Upload size={13} /> Subir Excel <Download size={13} style={{ marginLeft: 8 }} /> Descargar respaldo — disponible próximamente
             </p>
           </>
         )}
