@@ -4,6 +4,7 @@ const requirePermission = require('../middleware/requirePermission');
 const prisma = require('../utils/prisma');
 const { resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
+const { normalize: normalizeBusinessHours, validateShape } = require('../utils/businessHours');
 
 const router = express.Router();
 
@@ -11,21 +12,9 @@ const router = express.Router();
 // Helpers
 // ---------------------------------------------------------------------------
 
-const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
-
 function validateBusinessHours(bh) {
-  if (typeof bh !== 'object' || bh === null || Array.isArray(bh)) {
-    throw new BadRequestError('businessHours debe ser un objeto con start y end');
-  }
-  if (typeof bh.start !== 'string' || !HH_MM.test(bh.start)) {
-    throw new BadRequestError('businessHours.start debe tener formato HH:MM (00:00-23:59)');
-  }
-  if (typeof bh.end !== 'string' || !HH_MM.test(bh.end)) {
-    throw new BadRequestError('businessHours.end debe tener formato HH:MM (00:00-23:59)');
-  }
-  if (bh.start >= bh.end) {
-    throw new BadRequestError('businessHours.start debe ser anterior a businessHours.end');
-  }
+  const err = validateShape(bh);
+  if (err) throw new BadRequestError(err);
 }
 
 function validateWorkDays(wd) {
@@ -52,8 +41,10 @@ router.get('/', authenticate, requirePermission('configuracion'), async (req, re
     if (!tenant) return res.status(404).json({ error: 'Tenant no encontrado' });
 
     const config = tenant.config || {};
+    // Siempre devolvemos el shape nuevo (morning/afternoon); el normalizador
+    // se encarga de convertir el shape antiguo o el vacío al canónico.
     res.json({
-      businessHours: config.businessHours || null,
+      businessHours: config.businessHours ? normalizeBusinessHours(config.businessHours) : null,
       workDays: config.workDays || null,
     });
   } catch (err) {
@@ -83,7 +74,12 @@ router.patch('/', authenticate, requirePermission('configuracion'), async (req, 
     // Merge: spread existing config, then overwrite only the keys sent.
     const existing = tenant.config || {};
     const merged = { ...existing };
-    if (businessHours !== undefined) merged.businessHours = businessHours;
+    if (businessHours !== undefined) {
+      // Normalizamos antes de persistir para que la DB siempre guarde el shape
+      // nuevo (morning/afternoon). Si el cliente todavía envía el shape antiguo
+      // ({start,end}), se convierte a morning único con afternoon=null.
+      merged.businessHours = normalizeBusinessHours(businessHours);
+    }
     if (workDays !== undefined) merged.workDays = sanitizedWorkDays;
 
     await prisma.tenant.update({

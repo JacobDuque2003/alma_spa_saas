@@ -5,22 +5,18 @@ const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
 const { getTenantTimezone, localHourToUTC, localDayBoundsUTC } = require('../utils/timezone');
+const { normalize: normalizeBusinessHours, iterateHours } = require('../utils/businessHours');
 
 const STAFF_ROLES = ['personal', 'dueno'];
 const OPEN_STATUSES = ['pendiente', 'confirmado'];
-const DEFAULT_BUSINESS_HOURS = { start: '09:00', end: '19:00' };
 
 function getBusinessHours(tenantConfig) {
-  const bh = tenantConfig?.businessHours;
-  if (bh && bh.start && bh.end) return bh;
-  return DEFAULT_BUSINESS_HOURS;
+  return normalizeBusinessHours(tenantConfig?.businessHours);
 }
 
 function generateHourlySlots(dateStr, businessHours, timezone) {
-  const startHour = Number(businessHours.start.split(':')[0]);
-  const endHour = Number(businessHours.end.split(':')[0]);
   const slots = [];
-  for (let h = startHour; h < endHour; h += 1) {
+  for (const h of iterateHours(businessHours)) {
     slots.push(localHourToUTC(dateStr, h, timezone));
   }
   return slots;

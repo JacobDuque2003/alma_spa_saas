@@ -232,16 +232,49 @@ const DAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 function BusinessHoursPanel({ onRefresh }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [start, setStart] = useState("09:00");
-  const [end, setEnd] = useState("19:00");
+  // Nueva estructura: dos franjas independientes con toggle "franja abierta/cerrada".
+  // El backend puede devolver el shape viejo {start,end}; el efecto de carga
+  // sintetiza morning={start,end} y afternoon=null en ese caso.
+  const [morningOpen, setMorningOpen] = useState(true);
+  const [morningStart, setMorningStart] = useState("09:00");
+  const [morningEnd, setMorningEnd] = useState("13:00");
+  const [afternoonOpen, setAfternoonOpen] = useState(true);
+  const [afternoonStart, setAfternoonStart] = useState("15:00");
+  const [afternoonEnd, setAfternoonEnd] = useState("19:00");
   const [workDays, setWorkDays] = useState([1, 2, 3, 4, 5, 6]);
+  const [validationMsg, setValidationMsg] = useState(null);
   const [saved, setSaved] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     authFetch("/tenant/config").then((cfg) => {
-      if (cfg.businessHours?.start) setStart(cfg.businessHours.start);
-      if (cfg.businessHours?.end) setEnd(cfg.businessHours.end);
-      if (Array.isArray(cfg.workDays)) setWorkDays(cfg.workDays);
+      const bh = cfg?.businessHours;
+      if (bh) {
+        // Shape nuevo: {morning, afternoon}
+        if ("morning" in bh || "afternoon" in bh) {
+          if (bh.morning) {
+            setMorningOpen(true);
+            setMorningStart(bh.morning.start);
+            setMorningEnd(bh.morning.end);
+          } else {
+            setMorningOpen(false);
+          }
+          if (bh.afternoon) {
+            setAfternoonOpen(true);
+            setAfternoonStart(bh.afternoon.start);
+            setAfternoonEnd(bh.afternoon.end);
+          } else {
+            setAfternoonOpen(false);
+          }
+        } else if (bh.start && bh.end) {
+          // Shape viejo — se muestra como morning único, afternoon cerrada.
+          setMorningOpen(true);
+          setMorningStart(bh.start);
+          setMorningEnd(bh.end);
+          setAfternoonOpen(false);
+        }
+      }
+      if (Array.isArray(cfg?.workDays)) setWorkDays(cfg.workDays);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -251,13 +284,41 @@ function BusinessHoursPanel({ onRefresh }) {
   }
 
   async function save() {
+    // Validación local mínima antes de enviar (evita round-trip).
+    if (!morningOpen && !afternoonOpen) {
+      setValidationMsg("Al menos una franja (mañana o tarde) debe estar abierta.");
+      return;
+    }
+    if (morningOpen && morningStart >= morningEnd) {
+      setValidationMsg("La apertura de la mañana debe ser antes del cierre.");
+      return;
+    }
+    if (afternoonOpen && afternoonStart >= afternoonEnd) {
+      setValidationMsg("La apertura de la tarde debe ser antes del cierre.");
+      return;
+    }
+    if (morningOpen && afternoonOpen && morningEnd > afternoonStart) {
+      setValidationMsg("La mañana debe cerrar antes (o al mismo tiempo) que abra la tarde.");
+      return;
+    }
+    setValidationMsg(null);
     setSaving(true);
     setSaved(false);
     try {
-      await authFetch("/tenant/config", { method: "PATCH", body: { businessHours: { start, end }, workDays } });
+      const body = {
+        businessHours: {
+          morning: morningOpen ? { start: morningStart, end: morningEnd } : null,
+          afternoon: afternoonOpen ? { start: afternoonStart, end: afternoonEnd } : null,
+        },
+        workDays,
+      };
+      await authFetch("/tenant/config", { method: "PATCH", body });
       setSaved(true);
+      toast.success("Horario guardado");
       if (onRefresh) onRefresh();
-    } catch {} finally {
+    } catch (err) {
+      toast.error(err.message || "No se pudo guardar el horario");
+    } finally {
       setSaving(false);
     }
   }
@@ -265,17 +326,25 @@ function BusinessHoursPanel({ onRefresh }) {
   if (loading) return <div style={{ padding: 20, textAlign: "center" }}><Loader2 size={16} className="animate-spin" style={{ color: "#A89A87" }} /></div>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div>
-          <label style={labelStyle}>Apertura</label>
-          <input type="time" value={start} onChange={(e) => { setStart(e.target.value); setSaved(false); }} style={inputStyle} />
-        </div>
-        <div>
-          <label style={labelStyle}>Cierre</label>
-          <input type="time" value={end} onChange={(e) => { setEnd(e.target.value); setSaved(false); }} style={inputStyle} />
-        </div>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <BusinessHoursRow
+        label="Mañana"
+        open={morningOpen}
+        onToggle={() => { setMorningOpen((v) => !v); setSaved(false); setValidationMsg(null); }}
+        start={morningStart}
+        end={morningEnd}
+        onStartChange={(v) => { setMorningStart(v); setSaved(false); setValidationMsg(null); }}
+        onEndChange={(v) => { setMorningEnd(v); setSaved(false); setValidationMsg(null); }}
+      />
+      <BusinessHoursRow
+        label="Tarde"
+        open={afternoonOpen}
+        onToggle={() => { setAfternoonOpen((v) => !v); setSaved(false); setValidationMsg(null); }}
+        start={afternoonStart}
+        end={afternoonEnd}
+        onStartChange={(v) => { setAfternoonStart(v); setSaved(false); setValidationMsg(null); }}
+        onEndChange={(v) => { setAfternoonEnd(v); setSaved(false); setValidationMsg(null); }}
+      />
       <div>
         <label style={labelStyle}>Días laborables</label>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -286,12 +355,42 @@ function BusinessHoursPanel({ onRefresh }) {
           ))}
         </div>
       </div>
+      {validationMsg && <p style={{ fontSize: 13, color: "#C25450", margin: 0 }}>{validationMsg}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={save} disabled={saving} style={{ padding: "8px 22px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
           {saving ? "Guardando…" : "Guardar horario"}
         </button>
         {saved && <span style={{ fontSize: 12, color: "#8C6E50" }}>Guardado</span>}
       </div>
+    </div>
+  );
+}
+
+function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, onEndChange }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: "#6B5540" }}>{label}</span>
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: open ? "rgba(85,107,47,0.12)" : "transparent", color: open ? "#556B2F" : "#A89A87", fontSize: 12, fontWeight: 500, cursor: "pointer" }}
+        >
+          {open ? "Abierta" : "Cerrada — activar"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Apertura</label>
+            <input type="time" value={start} onChange={(e) => onStartChange(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Cierre</label>
+            <input type="time" value={end} onChange={(e) => onEndChange(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

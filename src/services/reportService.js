@@ -10,14 +10,14 @@ const VALID_METRICS = [
 ];
 
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5, 6];
-const DEFAULT_BUSINESS_HOURS = { start: '09:00', end: '19:00' };
 
+const { totalHours } = require('../utils/businessHours');
+
+// Suma total de horas útiles del día respetando morning + afternoon.
+// El normalizador se encarga del shape antiguo — devuelve default coherente
+// si el input está vacío o mal formado.
 function parseHoursRange(bh) {
-  const start = bh?.start || DEFAULT_BUSINESS_HOURS.start;
-  const end = bh?.end || DEFAULT_BUSINESS_HOURS.end;
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  return (eh * 60 + em - sh * 60 - sm) / 60;
+  return totalHours(bh);
 }
 
 function countWorkDaysInRange(from, to, workDays) {
