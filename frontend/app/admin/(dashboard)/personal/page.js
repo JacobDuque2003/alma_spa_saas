@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, ShieldCheck, X, ToggleLeft, ToggleRight, ArrowLeft } from "lucide-react";
+import { Loader2, ShieldCheck, X, ArrowLeft, Pencil } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
@@ -410,43 +410,62 @@ export default function PersonalPage() {
                         : permissionsSummary(user)}
                     </p>
                   </div>
-                  <span
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: 999,
-                      background: "rgba(194,84,80,0.12)",
-                      color: "#C25450",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                      opacity: !user.isProtected && !user.active ? 1 : 0,
-                      transform: !user.isProtected && !user.active ? "scale(1)" : "scale(0.8)",
-                      transition: "opacity var(--motion-fast) var(--ease-out-quart), transform var(--motion-fast) var(--ease-spring)",
-                      pointerEvents: !user.isProtected && !user.active ? "auto" : "none",
-                    }}
-                  >
-                    Inactiva
-                  </span>
                   {!user.isProtected && (
-                    <button
-                      title={user.active ? "Desactivar cuenta" : "Activar cuenta"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleActive(user);
-                      }}
-                      disabled={toggling === user.id}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: toggling === user.id ? "wait" : "pointer",
-                        padding: 4,
-                        flexShrink: 0,
-                        color: user.active ? "#8C6E50" : "#A89A87",
-                        opacity: toggling === user.id ? 0.5 : 1,
-                      }}
-                    >
-                      {user.active ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleActive(user); }}
+                        disabled={toggling === user.id}
+                        title={user.active ? "Desactivar cuenta" : "Activar cuenta"}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 12px",
+                          borderRadius: 999,
+                          border: "1px solid",
+                          borderColor: user.active ? "rgba(85,107,47,0.4)" : "rgba(194,84,80,0.4)",
+                          background: user.active ? "rgba(85,107,47,0.14)" : "rgba(194,84,80,0.10)",
+                          color: user.active ? "#556B2F" : "#B85A56",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: toggling === user.id ? "wait" : "pointer",
+                          opacity: toggling === user.id ? 0.5 : 1,
+                          transition: "background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart), border-color var(--motion-fast) var(--ease-out-quart)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: user.active ? "#556B2F" : "#B85A56",
+                          }}
+                        />
+                        {user.active ? "Activa" : "Inactiva"}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedId(user.id); if (isMobile) setMobileShowDetail(true); }}
+                        title="Editar cuenta"
+                        aria-label="Editar cuenta"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 30,
+                          height: 30,
+                          padding: 0,
+                          borderRadius: "50%",
+                          border: "1px solid rgba(168,154,135,0.5)",
+                          background: "transparent",
+                          color: "#8C6E50",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    </div>
                   )}
                 </div>
               );
