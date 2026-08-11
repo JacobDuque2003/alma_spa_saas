@@ -8,5 +8,6 @@
 - `GET /search` busca clientas con permiso `clientes`, aislamiento por tenant y DTO mínimo `{ type, id, name, phone }`, sin ClientIntake ni campos sensibles.
 - Domicilio queda fuera de UI y rechazado server-side (`domicilio`, `home`, `a_domicilio`).
 - Horario de atención default: mañana 09:00-12:00 y tarde 15:00-20:00; la creación y reprogramación de citas fuera de franjas se rechaza en backend.
+- Producción: `Tenant.config.businessHours` de `alma-spa` fue actualizado a 09:00-12:00 y 15:00-20:00; disponibilidad pública verificada sin slots 12:00/13:00/14:00.
 - Cumpleaños: la subvista de Clientes usa ventana de 8 días; el badge/sidebar mantiene su lógica propia.
 - Verificación local de la ronda: backend 284/284, frontend lint sin errores y build verde.

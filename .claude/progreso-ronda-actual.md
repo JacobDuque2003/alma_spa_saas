@@ -121,3 +121,4 @@ Recordatorio: cuando 9b esté aprobado y aplicado, la ronda completa cierra. Los
 - Horario de atención: default actualizado a 09:00-12:00 y 15:00-20:00; creación de citas fuera de franja se rechaza server-side.
 - Cumpleaños: la subvista de Clientes ya consulta 8 días y el texto vacío ahora dice 8 días.
 - Verificación local: `npm test` backend 284/284, `npm run lint` frontend 0 errores (3 warnings existentes), `npm run build` frontend verde.
+- Verificación Railway adicional: el tenant `alma-spa` tenía `Tenant.config.businessHours` en formato viejo 09:00-19:00; se actualizó operativamente a 09:00-12:00 y 15:00-20:00. Disponibilidad pública verificada con slots locales `09:00,10:00,11:00,15:00,16:00,17:00,18:00,19:00`.
