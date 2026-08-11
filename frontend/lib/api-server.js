@@ -24,6 +24,8 @@ export async function apiFetch(path, { method = "GET", body, token, query } = {}
     const message = data?.error || "Error inesperado";
     const err = new Error(message);
     err.status = res.status;
+    if (data?.reason) err.reason = data.reason;
+    if (data?.nextWindowOpensAt) err.nextWindowOpensAt = data.nextWindowOpensAt;
     throw err;
   }
 

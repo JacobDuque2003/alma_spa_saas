@@ -19,7 +19,11 @@ export async function POST(req) {
     return NextResponse.json({ user: data.user });
   } catch (err) {
     return NextResponse.json(
-      { error: err.message },
+      {
+        error: err.message,
+        ...(err.reason ? { reason: err.reason } : {}),
+        ...(err.nextWindowOpensAt ? { nextWindowOpensAt: err.nextWindowOpensAt } : {}),
+      },
       { status: err.status || 500 }
     );
   }

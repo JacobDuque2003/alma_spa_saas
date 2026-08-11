@@ -37,9 +37,15 @@ async function proxyRequest(req, { params }) {
   }
   const data = await res.text();
 
+  const responseHeaders = { "Content-Type": res.headers.get("Content-Type") || "application/json" };
+  const outOfSchedule = res.headers.get("X-Alma-Out-Of-Schedule");
+  const outOfScheduleNext = res.headers.get("X-Alma-Out-Of-Schedule-Next");
+  if (outOfSchedule) responseHeaders["X-Alma-Out-Of-Schedule"] = outOfSchedule;
+  if (outOfScheduleNext) responseHeaders["X-Alma-Out-Of-Schedule-Next"] = outOfScheduleNext;
+
   return new NextResponse(data, {
     status: res.status,
-    headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
+    headers: responseHeaders,
   });
 }
 

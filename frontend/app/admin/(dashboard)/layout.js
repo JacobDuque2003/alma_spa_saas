@@ -82,6 +82,34 @@ function DrawerOverlay({ drawerOpen, onClose, navContent }) {
   );
 }
 
+function OutOfScheduleBanner({ active }) {
+  if (!active) return null;
+  return (
+    <div
+      role="status"
+      style={{
+        position: "fixed",
+        top: 14,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 65,
+        maxWidth: "calc(100vw - 28px)",
+        borderRadius: 999,
+        border: "1px solid rgba(201,168,118,0.45)",
+        background: "#FFF8E8",
+        color: "#6B5540",
+        boxShadow: "0 14px 32px rgba(107,85,64,0.16)",
+        padding: "10px 16px",
+        fontSize: 13,
+        fontWeight: 600,
+        textAlign: "center",
+      }}
+    >
+      {"Fuera de horario de acceso: modo solo lectura"}
+    </div>
+  );
+}
+
 function Shell({ children }) {
   const pathname = usePathname();
   const { user, loading, logout } = useAuth();
@@ -89,6 +117,7 @@ function Shell({ children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState([]);
   const [introDone, setIntroDone] = useState(false);
+  const [outOfSchedule, setOutOfSchedule] = useState(false);
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -103,6 +132,14 @@ function Shell({ children }) {
   useEffect(() => {
     if (!isMobile) setDrawerOpen(false);
   }, [isMobile]);
+
+  useEffect(() => {
+    function onOutOfSchedule(event) {
+      setOutOfSchedule(!!event.detail?.active);
+    }
+    window.addEventListener("alma:out-of-schedule", onOutOfSchedule);
+    return () => window.removeEventListener("alma:out-of-schedule", onOutOfSchedule);
+  }, []);
 
   // Cumpleaños próximos (7 días): alimenta el badge en Clientes y el toast diario.
   // 403 (personal sin permiso 'clientes') se ignora silenciosamente.
@@ -318,6 +355,7 @@ function Shell({ children }) {
 
         {/* Main content */}
         <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{children}</main>
+        <OutOfScheduleBanner active={outOfSchedule} />
         <BirthdayToast nearBirthdays={nearBirthdays} />
       </div>
     );
@@ -356,6 +394,7 @@ function Shell({ children }) {
       </aside>
 
       <main className="flex-1 overflow-y-auto bg-background">{children}</main>
+      <OutOfScheduleBanner active={outOfSchedule} />
       <BirthdayToast nearBirthdays={nearBirthdays} />
     </div>
   );

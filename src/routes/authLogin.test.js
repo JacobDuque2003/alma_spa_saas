@@ -47,3 +47,35 @@ test('POST /auth/login rate limit is per email+ip (different email not blocked)'
   const res = await agent.post('/auth/login').send({ email: otherEmail, password: 'wrong' });
   assert.equal(res.status, 401, 'different email should not be blocked');
 });
+
+test('POST /auth/login rechaza credenciales válidas fuera de horario sin emitir token', async () => {
+  const email = `schedule-${Date.now()}@alma.test`;
+  prisma.user = {
+    findUnique: async () => ({
+      id: 'u3',
+      name: 'Personal fuera de horario',
+      email,
+      role: 'personal',
+      tenantId: 't1',
+      passwordHash: hash,
+      active: true,
+      accessSchedule: {
+        alwaysAllowed: false,
+        sunday: null,
+        monday: null,
+        tuesday: null,
+        wednesday: null,
+        thursday: null,
+        friday: null,
+        saturday: null,
+      },
+    }),
+  };
+  prisma.tenant = { findUnique: async () => ({ config: { timezone: 'America/Guayaquil' } }) };
+
+  const res = await supertest(app).post('/auth/login').send({ email, password: 'ValidPass123!' });
+
+  assert.equal(res.status, 403);
+  assert.equal(res.body.reason, 'outOfSchedule');
+  assert.equal('token' in res.body, false);
+});

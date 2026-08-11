@@ -81,6 +81,13 @@ async function accessSchedule(req, res, next) {
 
     if (result.allowed) return next();
 
+    const readOnlyMethod = ['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase());
+    if (readOnlyMethod) {
+      res.set('X-Alma-Out-Of-Schedule', '1');
+      res.set('X-Alma-Out-Of-Schedule-Next', result.nextWindowOpensAt ? result.nextWindowOpensAt.toISOString() : '');
+      return next();
+    }
+
     // Auditar con throttling
     await maybeAuditDeny(req.user, req.user.tenantId, tz);
 
