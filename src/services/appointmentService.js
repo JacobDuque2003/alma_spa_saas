@@ -5,7 +5,7 @@ const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
 const { getTenantTimezone, localHourToUTC, localDayBoundsUTC } = require('../utils/timezone');
-const { normalize: normalizeBusinessHours, iterateHours } = require('../utils/businessHours');
+const { normalize: normalizeBusinessHours, iterateHours, isRangeInsideBusinessHours } = require('../utils/businessHours');
 
 const STAFF_ROLES = ['personal', 'dueno'];
 const OPEN_STATUSES = ['pendiente', 'confirmado'];
@@ -22,23 +22,58 @@ function generateHourlySlots(dateStr, businessHours, timezone) {
   return slots;
 }
 
+function isHomeModality(value) {
+  return ['domicilio', 'home', 'a_domicilio'].includes(String(value || '').toLowerCase());
+}
+
+function localHHMM(date, timezone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  const hour = map.hour === '24' ? '00' : map.hour;
+  return `${hour}:${map.minute}`;
+}
+
+function assertInsideBusinessHours(tenantConfig, startsAt, endsAt) {
+  const timezone = getTenantTimezone(tenantConfig);
+  const startLocalDate = toLocalDateInTimezone(startsAt, timezone);
+  const endLocalDate = toLocalDateInTimezone(endsAt, timezone);
+  if (startLocalDate !== endLocalDate) {
+    throw new BadRequestError('La cita está fuera del horario de atención');
+  }
+  if (!isRangeInsideBusinessHours(getBusinessHours(tenantConfig), localHHMM(startsAt, timezone), localHHMM(endsAt, timezone))) {
+    throw new BadRequestError('La cita está fuera del horario de atención');
+  }
+}
+
+function toLocalDateInTimezone(date, timezone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
 async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality }) {
-  const mod = modality === 'domicilio' ? 'domicilio' : 'spa';
+  if (isHomeModality(modality)) {
+    throw new BadRequestError('La modalidad a domicilio no está disponible');
+  }
+  const mod = 'spa';
 
   const service = await prisma.service.findFirst({ where: { id: serviceId, tenantId, active: true } });
   if (!service) {
     throw new BadRequestError('serviceId inválido para este tenant');
   }
-  if (mod === 'domicilio' && !service.offersHomeService) {
-    throw new BadRequestError('Este servicio no ofrece modalidad a domicilio');
-  }
-
-  let roomIds = [];
-  if (mod === 'spa') {
-    const rooms = await prisma.room.findMany({ where: { tenantId, specialty: service.category, active: true } });
-    roomIds = rooms.map((r) => r.id);
-    if (roomIds.length === 0) return [];
-  }
+  const rooms = await prisma.room.findMany({ where: { tenantId, specialty: service.category, active: true } });
+  const roomIds = rooms.map((r) => r.id);
+  if (roomIds.length === 0) return [];
 
   const staff = await prisma.user.findMany({
     where: { tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
@@ -65,7 +100,6 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
     const iso = slot.toISOString();
     const staffFree = staffIds.some((id) => !bookedStaffSlots.has(`${id}|${iso}`));
     if (!staffFree) return false;
-    if (mod === 'domicilio') return true;
     return roomIds.some((id) => !bookedRoomSlots.has(`${id}|${iso}`));
   });
 
@@ -79,31 +113,23 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
  * (P2002 — otra transacción concurrente ganó ese room/staff+horario),
  * reintenta con la siguiente combinación.
  */
-async function resolveAndCreateAppointment(tx, { tenantId, clientId, serviceId, startsAt, modality, homeAddress }) {
-  const mod = modality === 'domicilio' ? 'domicilio' : 'spa';
+async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientId, serviceId, startsAt, modality }) {
+  if (isHomeModality(modality)) {
+    throw new BadRequestError('La modalidad a domicilio no está disponible');
+  }
+  const mod = 'spa';
 
   const service = await tx.service.findFirst({ where: { id: serviceId, tenantId, active: true } });
   if (!service) {
     throw new BadRequestError('serviceId inválido para este tenant');
   }
-  if (mod === 'domicilio') {
-    if (!service.offersHomeService) {
-      throw new BadRequestError('Este servicio no ofrece modalidad a domicilio');
-    }
-    if (!homeAddress) {
-      throw new BadRequestError('homeAddress es requerido para modalidad domicilio');
-    }
-  }
-
   const endsAt = new Date(startsAt.getTime() + service.durationMins * 60_000);
+  assertInsideBusinessHours(tenantConfig, startsAt, endsAt);
 
-  let roomCandidates = [];
-  if (mod === 'spa') {
-    roomCandidates = await tx.room.findMany({
-      where: { tenantId, specialty: service.category, active: true },
-      orderBy: { id: 'asc' },
-    });
-  }
+  const roomCandidates = await tx.room.findMany({
+    where: { tenantId, specialty: service.category, active: true },
+    orderBy: { id: 'asc' },
+  });
   const staffCandidates = await tx.user.findMany({
     where: { tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
     orderBy: { id: 'asc' },
@@ -118,10 +144,10 @@ async function resolveAndCreateAppointment(tx, { tenantId, clientId, serviceId, 
   const bookedRoomIds = new Set(conflicting.filter((a) => a.roomId).map((a) => a.roomId));
   const bookedStaffIds = new Set(conflicting.map((a) => a.staffId));
 
-  const freeRooms = mod === 'spa' ? roomCandidates.filter((r) => !bookedRoomIds.has(r.id)) : [null];
+  const freeRooms = roomCandidates.filter((r) => !bookedRoomIds.has(r.id));
   const freeStaff = staffCandidates.filter((s) => !bookedStaffIds.has(s.id));
 
-  if ((mod === 'spa' && freeRooms.length === 0) || freeStaff.length === 0) {
+  if (freeRooms.length === 0 || freeStaff.length === 0) {
     throw new SlotUnavailableError();
   }
 
@@ -134,8 +160,8 @@ async function resolveAndCreateAppointment(tx, { tenantId, clientId, serviceId, 
             clientId,
             serviceId,
             modality: mod,
-            roomId: room ? room.id : null,
-            homeAddress: mod === 'domicilio' ? homeAddress : null,
+            roomId: room.id,
+            homeAddress: null,
             staffId: staff.id,
             startsAt,
             endsAt,
@@ -167,6 +193,7 @@ async function createPublicBooking(tenantId, payload) {
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
     const client = await clientService.upsertClient(tx, tenantId, { fullName, whatsapp, email });
 
     if (intake) {
@@ -177,11 +204,11 @@ async function createPublicBooking(tenantId, payload) {
     for (const selection of selections) {
       const appointment = await resolveAndCreateAppointment(tx, {
         tenantId,
+        tenantConfig: tenant?.config,
         clientId: client.id,
         serviceId: selection.serviceId,
         startsAt: new Date(selection.startsAt),
         modality: selection.modality,
-        homeAddress: selection.homeAddress,
       });
       appointments.push(appointment);
     }
@@ -292,10 +319,10 @@ async function createManualAppointment(actor, data) {
   if (!service) {
     throw new BadRequestError('serviceId invalido para este tenant');
   }
-  const modality = data.modality === 'domicilio' ? 'domicilio' : 'spa';
-  if (modality === 'domicilio' && !service.offersHomeService) {
-    throw new BadRequestError('Este servicio no ofrece modalidad a domicilio');
+  if (isHomeModality(data.modality) || isHomeModality(data.location)) {
+    throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
+  const modality = 'spa';
 
   const staff = await prisma.user.findFirst({
     where: { id: data.staffId, tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
@@ -306,41 +333,41 @@ async function createManualAppointment(actor, data) {
 
   const startsAt = new Date(data.startsAt);
   const endsAt = new Date(startsAt.getTime() + service.durationMins * 60_000);
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
+  assertInsideBusinessHours(tenant?.config, startsAt, endsAt);
 
   let resolvedRoomId = null;
-  if (modality === 'spa') {
-    if (data.roomId) {
-      const room = await prisma.room.findFirst({
-        where: { id: data.roomId, tenantId, specialty: service.category, active: true },
-      });
-      if (!room) {
-        throw new BadRequestError('El gabinete seleccionado no corresponde a la categoria del servicio');
-      }
-      resolvedRoomId = room.id;
-    } else {
-      const roomCandidates = await prisma.room.findMany({
-        where: { tenantId, specialty: service.category, active: true },
-        orderBy: { id: 'asc' },
-      });
-      if (roomCandidates.length === 0) {
-        throw new SlotUnavailableError();
-      }
-      const conflictingRooms = await prisma.appointment.findMany({
-        where: {
-          tenantId,
-          startsAt,
-          status: { in: OPEN_STATUSES },
-          roomId: { in: roomCandidates.map((r) => r.id) },
-        },
-        select: { roomId: true },
-      });
-      const bookedRoomIds = new Set(conflictingRooms.map((a) => a.roomId).filter(Boolean));
-      const freeRoom = roomCandidates.find((r) => !bookedRoomIds.has(r.id));
-      if (!freeRoom) {
-        throw new SlotUnavailableError();
-      }
-      resolvedRoomId = freeRoom.id;
+  if (data.roomId) {
+    const room = await prisma.room.findFirst({
+      where: { id: data.roomId, tenantId, specialty: service.category, active: true },
+    });
+    if (!room) {
+      throw new BadRequestError('El gabinete seleccionado no corresponde a la categoria del servicio');
     }
+    resolvedRoomId = room.id;
+  } else {
+    const roomCandidates = await prisma.room.findMany({
+      where: { tenantId, specialty: service.category, active: true },
+      orderBy: { id: 'asc' },
+    });
+    if (roomCandidates.length === 0) {
+      throw new SlotUnavailableError();
+    }
+    const conflictingRooms = await prisma.appointment.findMany({
+      where: {
+        tenantId,
+        startsAt,
+        status: { in: OPEN_STATUSES },
+        roomId: { in: roomCandidates.map((r) => r.id) },
+      },
+      select: { roomId: true },
+    });
+    const bookedRoomIds = new Set(conflictingRooms.map((a) => a.roomId).filter(Boolean));
+    const freeRoom = roomCandidates.find((r) => !bookedRoomIds.has(r.id));
+    if (!freeRoom) {
+      throw new SlotUnavailableError();
+    }
+    resolvedRoomId = freeRoom.id;
   }
 
   try {
@@ -350,8 +377,8 @@ async function createManualAppointment(actor, data) {
         clientId: data.clientId,
         serviceId: data.serviceId,
         modality,
-        roomId: modality === 'spa' ? resolvedRoomId : null,
-        homeAddress: modality === 'domicilio' ? data.homeAddress : null,
+        roomId: resolvedRoomId,
+        homeAddress: null,
         staffId: data.staffId,
         startsAt,
         endsAt,
@@ -379,6 +406,8 @@ async function updateAppointment(actor, id, changes) {
   if (data.startsAt) {
     const service = await prisma.service.findUnique({ where: { id: target.serviceId } });
     data.endsAt = new Date(data.startsAt.getTime() + service.durationMins * 60_000);
+    const tenant = await prisma.tenant.findUnique({ where: { id: target.tenantId }, select: { config: true } });
+    assertInsideBusinessHours(tenant?.config, data.startsAt, data.endsAt);
   }
 
   try {

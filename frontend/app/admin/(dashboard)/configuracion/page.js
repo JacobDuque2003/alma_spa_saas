@@ -237,10 +237,10 @@ function BusinessHoursPanel({ onRefresh }) {
   // sintetiza morning={start,end} y afternoon=null en ese caso.
   const [morningOpen, setMorningOpen] = useState(true);
   const [morningStart, setMorningStart] = useState("09:00");
-  const [morningEnd, setMorningEnd] = useState("13:00");
+  const [morningEnd, setMorningEnd] = useState("12:00");
   const [afternoonOpen, setAfternoonOpen] = useState(true);
   const [afternoonStart, setAfternoonStart] = useState("15:00");
-  const [afternoonEnd, setAfternoonEnd] = useState("19:00");
+  const [afternoonEnd, setAfternoonEnd] = useState("20:00");
   const [workDays, setWorkDays] = useState([1, 2, 3, 4, 5, 6]);
   const [validationMsg, setValidationMsg] = useState(null);
   const [saved, setSaved] = useState(false);
@@ -576,7 +576,7 @@ export default function ConfiguracionPage() {
                             <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50" }}>{s.category}</span>
                             {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
                           </div>
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>1 h{s.offersHomeService ? " · domicilio" : ""}</p>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>1 h</p>
                         </div>
                         {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>

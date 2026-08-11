@@ -332,18 +332,6 @@ export default function AgendaPage() {
               {r.name}
             </span>
           ))}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <span
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 3,
-                border: "1.5px dashed #8C6E50",
-                boxSizing: "border-box",
-              }}
-            />
-            A domicilio
-          </span>
         </div>
       )}
 
@@ -437,7 +425,6 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
       {active.map((appt) => {
         const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : "#8C6E50";
-        const isDomicilio = appt.modality === "domicilio";
         const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
         const statusLabel = STATUS_LABELS[appt.status] || appt.status;
         const time = formatTime(appt.startsAt);
@@ -466,7 +453,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
               style={{
                 width: 5,
                 flexShrink: 0,
-                background: isDomicilio ? "repeating-linear-gradient(180deg, #8C6E50 0, #8C6E50 4px, transparent 4px, transparent 8px)" : color,
+                background: color,
               }}
             />
             <div style={{ flex: 1, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -493,7 +480,6 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
               <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#A89A87" }}>
                 <span>{time} · {dur} min</span>
                 {appt.room && <span>{appt.room.name}</span>}
-                {isDomicilio && <span>A domicilio</span>}
               </div>
             </div>
           </button>
@@ -689,7 +675,6 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                 }
 
                 const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
-                const isDomicilio = appt.modality === "domicilio";
                 const lane = laneMap.get(appt.id);
 
                 return (
@@ -707,9 +692,9 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       lineHeight: "1.3",
                       overflow: "hidden",
                       cursor: "pointer",
-                      border: isDomicilio ? "1.5px dashed #8C6E50" : "none",
-                      background: isDomicilio ? "rgba(235,205,181,0.3)" : color || "#8C6E50",
-                      color: isDomicilio ? "#6B5540" : "#F7F5F0",
+                      border: "none",
+                      background: color || "#8C6E50",
+                      color: "#F7F5F0",
                       textAlign: "left",
                       zIndex: 1,
                       textDecoration: appt.status === "no_show" ? "line-through" : "none",
@@ -826,7 +811,6 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
             }
 
             const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
-            const isDomicilio = appt.modality === "domicilio";
             const lane = laneMap.get(appt.id);
 
             return (
@@ -843,9 +827,9 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                   fontSize: 13,
                   overflow: "hidden",
                   cursor: "pointer",
-                  border: isDomicilio ? "1.5px dashed #8C6E50" : "none",
-                  background: isDomicilio ? "rgba(235,205,181,0.3)" : color || "#8C6E50",
-                  color: isDomicilio ? "#6B5540" : "#F7F5F0",
+                  border: "none",
+                  background: color || "#8C6E50",
+                  color: "#F7F5F0",
                   textAlign: "left",
                   zIndex: 1,
                   display: "flex",
@@ -913,7 +897,6 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
         </div>
         <div style={{ padding: "8px 18px 18px", overflowY: "auto", maxHeight: "calc(min(620px, 86vh) - 94px)" }}>
           {list.map((appt) => {
-            const isDomicilio = appt.modality === "domicilio";
             return (
               <button
                 key={appt.id}
@@ -938,8 +921,8 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
                   <span style={{ display: "block", color: "#6B5540", fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.client?.fullName || "Cliente"}</span>
                   <span style={{ display: "block", color: "#A89A87", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.service?.name || "Servicio"}</span>
                 </span>
-                <span style={{ color: isDomicilio ? "#8C6E50" : "#A89A87", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  {isDomicilio ? "A domicilio" : appt.room?.name || "Sin gabinete"}
+                <span style={{ color: "#A89A87", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {appt.room?.name || "Sin gabinete"}
                 </span>
               </button>
             );
@@ -1057,10 +1040,6 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                   <span>{appt.staff.name}</span>
                 </div>
               )}
-              <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-                <span style={{ color: "#A89A87" }}>Modalidad</span>
-                <span>{appt.modality === "domicilio" ? "A domicilio" : "En gabinete"}</span>
-              </div>
               {appt.priceUsd != null && (
                 <div style={{ textAlign: "right", fontWeight: 600, fontSize: 16, color: "#6B5540", marginTop: 4 }}>
                   ${Number(appt.priceUsd).toFixed(2)}

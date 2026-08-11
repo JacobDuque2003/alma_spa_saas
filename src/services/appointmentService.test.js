@@ -7,14 +7,19 @@ process.env.INTAKE_ENCRYPTION_KEY = process.env.INTAKE_ENCRYPTION_KEY || crypto.
 const prisma = require('../utils/prisma');
 const appointmentService = require('./appointmentService');
 
-function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, client = {}, clientIntake = {} } = {}) {
-  const tx = { service, room, user, appointment, client, clientIntake };
+function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, client = {}, clientIntake = {}, tenant = {} } = {}) {
+  const tenantMock = {
+    findUnique: async () => ({ config: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } } } }),
+    ...tenant,
+  };
+  const tx = { service, room, user, appointment, client, clientIntake, tenant: tenantMock };
   prisma.service = service;
   prisma.room = room;
   prisma.user = user;
   prisma.appointment = appointment;
   prisma.client = client;
   prisma.clientIntake = clientIntake;
+  prisma.tenant = tenantMock;
   prisma.$transaction = async (cb) => cb(tx);
 }
 
@@ -93,10 +98,10 @@ test('createPublicBooking reintenta con el siguiente candidato ante P2002 y term
   assert.equal(result.appointments[0].roomId, 'room2');
 });
 
-test('createPublicBooking rechaza modality domicilio si el servicio no la ofrece', async () => {
+test('createPublicBooking rechaza modality domicilio aunque el servicio la tenga marcada', async () => {
   mockPrisma({
     client: { upsert: async () => ({ id: 'client1' }) },
-    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 45, offersHomeService: false }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 45, offersHomeService: true }) },
   });
 
   await assert.rejects(
@@ -105,11 +110,11 @@ test('createPublicBooking rechaza modality domicilio si el servicio no la ofrece
         't1',
         basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X' }] })
       ),
-    (err) => err.status === 400
+    (err) => err.status === 400 && /domicilio/.test(err.message)
   );
 });
 
-test('createPublicBooking crea con roomId=null cuando modality=domicilio y el servicio sí la ofrece', async () => {
+test('createPublicBooking rechaza modality domicilio aunque el servicio sí la ofrece', async () => {
   mockPrisma({
     client: { upsert: async () => ({ id: 'client1' }) },
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 45, offersHomeService: true }) },
@@ -122,12 +127,13 @@ test('createPublicBooking crea con roomId=null cuando modality=domicilio y el se
     appointment: { findMany: async () => [], create: async (args) => ({ id: 'appt1', confirmationToken: 'tok', ...args.data }) },
   });
 
-  const result = await appointmentService.createPublicBooking(
-    't1',
-    basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X 123' }] })
+  await assert.rejects(
+    () => appointmentService.createPublicBooking(
+      't1',
+      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X 123' }] })
+    ),
+    (err) => err.status === 400 && /domicilio/.test(err.message)
   );
-  assert.equal(result.appointments[0].roomId, null);
-  assert.equal(result.appointments[0].homeAddress, 'Av. X 123');
 });
 
 test('cancelBookingByToken rechaza cancelar una cita cuyo startsAt ya pasó', async () => {
@@ -138,6 +144,24 @@ test('cancelBookingByToken rechaza cancelar una cita cuyo startsAt ya pasó', as
   await assert.rejects(
     () => appointmentService.cancelBookingByToken('tok1'),
     (err) => err.status === 400
+  );
+});
+
+test('createPublicBooking rechaza citas fuera del horario dividido', async () => {
+  mockPrisma({
+    client: { upsert: async () => ({ id: 'client1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 45, offersHomeService: false }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    user: { findMany: async () => [{ id: 'staff1' }] },
+    appointment: { findMany: async () => [], create: async (args) => ({ id: 'appt1', confirmationToken: 'tok', ...args.data }) },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createPublicBooking(
+      't1',
+      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T17:00:00.000Z', modality: 'spa' }] })
+    ),
+    (err) => err.status === 400 && /fuera del horario/.test(err.message)
   );
 });
 
@@ -154,7 +178,7 @@ test('cancelBookingByToken cancela una cita futura', async () => {
   assert.equal(result.status, 'cancelado');
 });
 
-test('getAvailability rechaza con 400 si modality=domicilio y el servicio no la ofrece', async () => {
+test('getAvailability rechaza con 400 si modality=domicilio', async () => {
   mockPrisma({
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', offersHomeService: false }) },
   });
@@ -196,7 +220,7 @@ test('createManualAppointment rechaza gabinete incompatible con la categoria del
   await assert.rejects(
     () => appointmentService.createManualAppointment(
       { role: 'dueno', tenantId: 't1' },
-      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', roomId: 'room-corporal', startsAt: '2026-08-01T17:00:00.000Z', modality: 'presencial' }
+      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', roomId: 'room-corporal', startsAt: '2026-08-01T14:00:00.000Z', modality: 'presencial' }
     ),
     (err) => err.status === 400 && /gabinete seleccionado/.test(err.message)
   );
@@ -215,7 +239,7 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
 
   const result = await appointmentService.createManualAppointment(
     { role: 'dueno', tenantId: 't1' },
-    { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2026-08-01T17:00:00.000Z', modality: 'presencial' }
+    { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'presencial' }
   );
 
   assert.equal(result.roomId, 'room2');
@@ -230,4 +254,25 @@ test('getAvailability devuelve lista vacía si no hay ningún staff habilitado',
 
   const slots = await appointmentService.getAvailability({ tenantId: 't1', tenantConfig: {}, serviceId: 'srv1', date: '2026-08-01', modality: 'spa' });
   assert.deepEqual(slots, []);
+});
+
+test('updateAppointment rechaza reprogramar fuera del horario dividido', async () => {
+  mockPrisma({
+    service: { findUnique: async () => ({ id: 'srv1', durationMins: 60 }) },
+    appointment: {
+      findUnique: async () => ({ id: 'appt1', tenantId: 't1', serviceId: 'srv1' }),
+      update: async () => {
+        throw new Error('no debe actualizar si está fuera de horario');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.updateAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      'appt1',
+      { startsAt: '2026-08-01T17:00:00.000Z' }
+    ),
+    (err) => err.status === 400 && /fuera del horario/.test(err.message)
+  );
 });

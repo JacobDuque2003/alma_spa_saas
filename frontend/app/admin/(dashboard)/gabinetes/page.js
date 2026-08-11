@@ -88,12 +88,8 @@ export default function GabinetesPage() {
     () => sortByStart(appointments.filter((a) => a.status === "pendiente" || a.status === "confirmado")),
     [appointments]
   );
-  const domicilioAppts = useMemo(
-    () => activeAppts.filter((a) => a.modality === "domicilio"),
-    [activeAppts]
-  );
   const roomAppts = useMemo(
-    () => activeAppts.filter((a) => a.modality !== "domicilio" && a.roomId),
+    () => activeAppts.filter((a) => a.roomId),
     [activeAppts]
   );
   const occupiedCount = useMemo(
@@ -132,18 +128,17 @@ export default function GabinetesPage() {
         </button>
       </div>
 
-      <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(150px, 1fr))", gap: isMobile ? 10 : 12 }}>
+      <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, minmax(150px, 1fr))", gap: isMobile ? 10 : 12 }}>
         <SummaryTile label="Libres" value={freeCount} tone="soft" />
         <SummaryTile label="Ocupados" value={occupiedCount} tone="dark" />
         <SummaryTile label="Citas hoy" value={roomAppts.length} tone="line" />
-        <SummaryTile label="A domicilio" value={domicilioAppts.length} tone="dash" />
       </section>
 
       {loading && activeRooms.length === 0 ? (
         <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
           <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
         </div>
-      ) : activeRooms.length === 0 && domicilioAppts.length === 0 ? (
+      ) : activeRooms.length === 0 ? (
         <EmptyState />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(230px, 290px))", gap: isMobile ? 12 : 16, alignItems: "start", justifyContent: isMobile ? "stretch" : "start" }}>
@@ -158,9 +153,6 @@ export default function GabinetesPage() {
               onToggle={() => setExpandedRoomId((current) => current === room.id ? null : room.id)}
             />
           ))}
-          {domicilioAppts.length > 0 && (
-            <DomicilioCard appointments={domicilioAppts} isMobile={isMobile} />
-          )}
         </div>
       )}
     </div>
@@ -326,21 +318,6 @@ function AppointmentList({ appointments, nowMs }) {
         );
       })}
     </div>
-  );
-}
-
-function DomicilioCard({ appointments, isMobile = false }) {
-  return (
-    <article className="alma-card" style={{ padding: isMobile ? 16 : 18, minHeight: isMobile ? 176 : 202, border: "1.5px dashed rgba(140,110,80,0.48)", background: "rgba(247,245,240,0.72)", width: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-        <div>
-          <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 22, fontWeight: 600, color: "#6B5540", margin: 0 }}>A domicilio</h2>
-          <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 12 }}>{appointments.length} cita{appointments.length !== 1 ? "s" : ""} hoy</p>
-        </div>
-        <span style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px dashed #8C6E50" }} />
-      </div>
-      <AppointmentList appointments={appointments} nowMs={0} />
-    </article>
   );
 }
 

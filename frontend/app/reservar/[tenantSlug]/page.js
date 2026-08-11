@@ -103,9 +103,6 @@ function ServiceStep({ services, selected, onSelect, loading }) {
                   </div>
                   <div className="text-primary font-semibold">{formatPrice(svc.priceUsd)}</div>
                 </div>
-                {svc.offersHomeService && (
-                  <Badge variant="secondary" className="mt-2 text-xs">A domicilio disponible</Badge>
-                )}
               </button>
             ))}
           </div>
@@ -118,7 +115,6 @@ function ServiceStep({ services, selected, onSelect, loading }) {
 function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [modality, setModality] = useState("spa");
   const days = getNextDays(14);
 
   const fetchSlots = useCallback(async () => {
@@ -127,7 +123,7 @@ function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
     setSlot(null);
     try {
       const data = await publicFetch(`/${tenantSlug}/availability`, {
-        query: { serviceId: service.id, date, modality },
+        query: { serviceId: service.id, date, modality: "spa" },
       });
       setSlots(data.slots || []);
     } catch {
@@ -135,7 +131,7 @@ function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
     } finally {
       setLoadingSlots(false);
     }
-  }, [date, service, modality, tenantSlug, setSlot]);
+  }, [date, service, tenantSlug, setSlot]);
 
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
@@ -145,21 +141,6 @@ function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
         <h2 className="text-xl font-heading font-semibold text-foreground">Elige fecha y hora</h2>
         <p className="text-muted-foreground mt-1">{service.name} — {service.durationMins} min</p>
       </div>
-
-      {service.offersHomeService && (
-        <div className="flex gap-2 justify-center">
-          {["spa", "domicilio"].map((m) => (
-            <Button
-              key={m}
-              variant={modality === m ? "default" : "outline"}
-              size="sm"
-              onClick={() => setModality(m)}
-            >
-              {m === "spa" ? "En el spa" : "A domicilio"}
-            </Button>
-          ))}
-        </div>
-      )}
 
       <div>
         <Label className="text-sm font-medium mb-2 block">Fecha</Label>
@@ -218,7 +199,7 @@ function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
   );
 }
 
-function ClientStep({ form, setForm, modality, service }) {
+function ClientStep({ form, setForm }) {
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
   return (
@@ -240,18 +221,12 @@ function ClientStep({ form, setForm, modality, service }) {
           <Label htmlFor="email">Correo electrónico</Label>
           <Input id="email" type="email" value={form.email} onChange={update("email")} placeholder="maria@email.com" />
         </div>
-        {modality === "domicilio" && service?.offersHomeService && (
-          <div className="space-y-2">
-            <Label htmlFor="homeAddress">Dirección para servicio a domicilio *</Label>
-            <Input id="homeAddress" value={form.homeAddress} onChange={update("homeAddress")} placeholder="Av. Principal y Calle 2, Zamora" />
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-function ConfirmStep({ service, date, slot, form, modality }) {
+function ConfirmStep({ service, date, slot, form }) {
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -272,16 +247,6 @@ function ConfirmStep({ service, date, slot, form, modality }) {
             <span className="text-muted-foreground">Hora</span>
             <span className="font-medium">{formatTime(slot)}</span>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Modalidad</span>
-            <span className="font-medium">{modality === "domicilio" ? "A domicilio" : "En el spa"}</span>
-          </div>
-          {modality === "domicilio" && form.homeAddress && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Dirección</span>
-              <span className="font-medium text-right max-w-[60%]">{form.homeAddress}</span>
-            </div>
-          )}
           <Separator />
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Nombre</span>
@@ -344,8 +309,7 @@ export default function BookingPage() {
   const [selectedService, setSelectedService] = useState(null);
   const [date, setDate] = useState(null);
   const [slot, setSlot] = useState(null);
-  const [modality, setModality] = useState("spa");
-  const [form, setForm] = useState({ fullName: "", whatsapp: "", email: "", homeAddress: "" });
+  const [form, setForm] = useState({ fullName: "", whatsapp: "", email: "" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -362,7 +326,6 @@ export default function BookingPage() {
     if (step === 1) return !!date && !!slot;
     if (step === 2) {
       if (!form.fullName.trim() || !form.whatsapp.trim()) return false;
-      if (modality === "domicilio" && !form.homeAddress.trim()) return false;
       return true;
     }
     return true;
@@ -379,8 +342,7 @@ export default function BookingPage() {
         selections: [{
           serviceId: selectedService.id,
           startsAt: slot,
-          modality,
-          homeAddress: modality === "domicilio" ? form.homeAddress.trim() : undefined,
+          modality: "spa",
         }],
       };
       const data = await publicFetch(`/${tenantSlug}/bookings`, {
@@ -446,8 +408,6 @@ export default function BookingPage() {
           <ClientStep
             form={form}
             setForm={setForm}
-            modality={modality}
-            service={selectedService}
           />
         )}
 
@@ -457,7 +417,6 @@ export default function BookingPage() {
             date={date}
             slot={slot}
             form={form}
-            modality={modality}
           />
         )}
 

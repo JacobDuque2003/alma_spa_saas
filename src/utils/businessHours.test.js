@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalize, totalHours, iterateHours, validateShape } = require('./businessHours');
+const { normalize, totalHours, iterateHours, isRangeInsideBusinessHours, validateShape } = require('./businessHours');
 
 // --- normalize ---
 
@@ -28,12 +28,12 @@ test('normalize: solo afternoon (morning null) — el spa solo abre en la tarde'
 
 test('normalize: input null/vacío → default', () => {
   const n = normalize(null);
-  assert.ok(n.morning && n.afternoon);
+  assert.deepEqual(n, { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } });
 });
 
 test('normalize: shape mal formado (start > end) → default', () => {
   const n = normalize({ start: '19:00', end: '09:00' });
-  assert.ok(n.morning && n.afternoon); // recae al default
+  assert.deepEqual(n, { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } });
 });
 
 // --- totalHours ---
@@ -66,6 +66,13 @@ test('iterateHours: shape nuevo 09-13 + 15-19 → [9,10,11,12,15,16,17,18]', () 
 test('iterateHours: morning.end === afternoon.start (sin gap) → no duplica horas', () => {
   const hs = [...iterateHours({ morning: { start: '09:00', end: '13:00' }, afternoon: { start: '13:00', end: '19:00' } })];
   assert.deepEqual(hs, [9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+});
+
+test('isRangeInsideBusinessHours: respeta pausa de mediodía', () => {
+  const bh = { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } };
+  assert.equal(isRangeInsideBusinessHours(bh, '10:00', '11:00'), true);
+  assert.equal(isRangeInsideBusinessHours(bh, '13:00', '14:00'), false);
+  assert.equal(isRangeInsideBusinessHours(bh, '19:00', '20:00'), true);
 });
 
 // --- validateShape ---

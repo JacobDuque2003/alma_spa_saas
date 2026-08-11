@@ -9,8 +9,8 @@
 // escribe el shape nuevo, así los tenants migran solos con el próximo save.
 
 const DEFAULT_BUSINESS_HOURS_NEW = {
-  morning: { start: '09:00', end: '13:00' },
-  afternoon: { start: '15:00', end: '19:00' },
+  morning: { start: '09:00', end: '12:00' },
+  afternoon: { start: '15:00', end: '20:00' },
 };
 
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -75,6 +75,22 @@ function* iterateHours(bh) {
   }
 }
 
+function minutesFromHHMM(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function isRangeInsideBusinessHours(bh, startHHMM, endHHMM) {
+  if (!HH_MM.test(startHHMM) || !HH_MM.test(endHHMM) || startHHMM >= endHHMM) return false;
+  const start = minutesFromHHMM(startHHMM);
+  const end = minutesFromHHMM(endHHMM);
+  const n = normalize(bh);
+  return [n.morning, n.afternoon].some((win) => {
+    if (!win) return false;
+    return start >= minutesFromHHMM(win.start) && end <= minutesFromHHMM(win.end);
+  });
+}
+
 // Validación estricta del shape nuevo, con mensajes que usa la ruta PATCH.
 // Acepta también el shape antiguo (para el período de transición); si viene
 // como shape antiguo se aplica la validación de start<end y ya.
@@ -119,4 +135,4 @@ function validateShape(bh) {
   return null;
 }
 
-module.exports = { normalize, totalHours, iterateHours, validateShape, DEFAULT_BUSINESS_HOURS_NEW };
+module.exports = { normalize, totalHours, iterateHours, isRangeInsideBusinessHours, validateShape, DEFAULT_BUSINESS_HOURS_NEW };

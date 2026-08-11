@@ -273,7 +273,7 @@ export default function ClientesPage() {
                 <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
               </div>
             ) : birthdayList.length === 0 ? (
-              <p style={{ textAlign: "center", padding: "40px 0", fontSize: 13, color: "#A89A87" }}>{"Sin cumplea\u00f1os en los pr\u00f3ximos 15 d\u00edas"}</p>
+              <p style={{ textAlign: "center", padding: "40px 0", fontSize: 13, color: "#A89A87" }}>{"Sin cumplea\u00f1os en los pr\u00f3ximos 8 d\u00edas"}</p>
             ) : (
               birthdayList.map((b) => {
                 const isSelected = b.id === selectedId;
