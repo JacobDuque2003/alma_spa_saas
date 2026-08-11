@@ -3,6 +3,7 @@ const { hashPassword } = require('./authService');
 const { assertTenantScope, resolveTenantId, ForbiddenTenantError } = require('../utils/tenantScope');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
+const { validateSchedule } = require('../utils/accessSchedule');
 
 class ProtectedAccountError extends AppError {
   constructor() {
@@ -26,6 +27,7 @@ const USER_SAFE_SELECT = {
   isProtected: true,
   active: true,
   canAttendAppointments: true,
+  accessSchedule: true,
   createdAt: true,
   updatedAt: true,
   rolePermission: true,
@@ -52,7 +54,7 @@ const MIN_PASSWORD_LENGTH = 8;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function createUser(actor, data) {
-  const { email, password, name, role, permissions, canAttendAppointments } = data;
+  const { email, password, name, role, permissions, canAttendAppointments, accessSchedule } = data;
 
   if (!email || !EMAIL_REGEX.test(email)) {
     throw new BadRequestError('Email inválido');
@@ -66,6 +68,14 @@ async function createUser(actor, data) {
 
   if (!ALLOWED_ROLES_FOR_CREATION.includes(role)) {
     throw new BadRequestError('Rol no permitido. Solo se pueden crear cuentas: personal, dueno');
+  }
+
+  // Validar accessSchedule si viene. null y ausente → fail-open (24/7 con
+  // badge en /personal). Es el prefill de UI el que lo llena con
+  // businessHours por default, no un fallback silencioso del backend.
+  if (accessSchedule !== undefined) {
+    const err = validateSchedule(accessSchedule);
+    if (err) throw new BadRequestError(err);
   }
 
   const tenantId = resolveTenantId(actor, data.tenantId);
@@ -85,6 +95,7 @@ async function createUser(actor, data) {
         tenantId,
         isProtected: false,
         canAttendAppointments: !!canAttendAppointments,
+        accessSchedule: accessSchedule !== undefined ? accessSchedule : null,
         ...(role === 'personal'
           ? {
               rolePermission: {
@@ -132,6 +143,11 @@ async function updateUser(actor, targetUserId, changes) {
   if (changes.name !== undefined) data.name = changes.name;
   if (changes.active !== undefined) data.active = changes.active;
   if (changes.password) data.passwordHash = await hashPassword(changes.password);
+  if (changes.accessSchedule !== undefined) {
+    const err = validateSchedule(changes.accessSchedule);
+    if (err) throw new BadRequestError(err);
+    data.accessSchedule = changes.accessSchedule;
+  }
 
   const updated = await prisma.$transaction(async (tx) => {
     const user = await tx.user.update({ where: { id: targetUserId }, data });

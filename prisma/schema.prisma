@@ -50,6 +50,7 @@ model User {
   isProtected           Boolean  @default(false)
   active                Boolean  @default(true)
   canAttendAppointments Boolean  @default(false)
+  accessSchedule        Json?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -475,6 +476,7 @@ enum AuditAction {
   deactivate
   purge
   permissionsChanged
+  accessDeniedSchedule
 }
 
 model AdminAuditLog {

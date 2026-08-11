@@ -21,9 +21,24 @@ export async function authFetch(path, { method = "GET", body, query } = {}) {
   }
 
   const data = await res.json().catch(() => null);
+
+  // 403 con reason='outOfSchedule' viene del middleware accessSchedule.
+  // Cierra sesión y redirige a login con marca ?outOfSchedule=1 para que
+  // el formulario muestre el mensaje específico en vez de dejar al usuario
+  // confundido con requests fallidas.
+  if (res.status === 403 && data?.reason === "outOfSchedule") {
+    const next = data.nextWindowOpensAt ? `&nextOpens=${encodeURIComponent(data.nextWindowOpensAt)}` : "";
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    try { sessionStorage.removeItem("alma:birthdayToastShown"); } catch { /* noop */ }
+    window.location.href = `/admin/login?outOfSchedule=1${next}`;
+    throw new Error(data?.error || "Fuera del horario de acceso permitido");
+  }
+
   if (!res.ok) {
     const err = new Error(data?.error || "Error inesperado");
     err.status = res.status;
+    if (data?.reason) err.reason = data.reason;
+    if (data?.nextWindowOpensAt) err.nextWindowOpensAt = data.nextWindowOpensAt;
     throw err;
   }
   return data;
@@ -39,6 +54,10 @@ export async function login(email, password) {
   if (!res.ok) {
     const err = new Error(data?.error || "Credenciales inválidas");
     err.status = res.status;
+    // Propaga reason/nextWindowOpensAt para que el formulario diferencie
+    // "credenciales inválidas" de "fuera de horario".
+    if (data?.reason) err.reason = data.reason;
+    if (data?.nextWindowOpensAt) err.nextWindowOpensAt = data.nextWindowOpensAt;
     throw err;
   }
   return data.user;

@@ -65,9 +65,38 @@ function NewUserModal({ phase, onClose, onSaved }) {
     Object.fromEntries(MODULES.map(([k]) => [k, false]))
   );
   const [canAttendAppointments, setCanAttendAppointments] = useState(false);
+  // Guardrail AppSec: al crear una cuenta personal se prellena el horario con
+  // el del spa. Es una decisión explícita — checkbox ON por default. Si se
+  // desactiva, el schedule queda null y la lista de Personal marca la fila
+  // con el badge "Sin horario · 24/7" hasta que se configure.
+  const [applyBusinessHours, setApplyBusinessHours] = useState(true);
+  const [businessHours, setBusinessHours] = useState(null);
+  const [workDays, setWorkDays] = useState(null);
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState("");
   const toast = useToast();
+
+  useEffect(() => {
+    authFetch("/tenant/config").then((cfg) => {
+      setBusinessHours(cfg?.businessHours || null);
+      setWorkDays(Array.isArray(cfg?.workDays) ? cfg.workDays : null);
+    }).catch(() => {});
+  }, []);
+
+  function buildDefaultSchedule() {
+    if (!applyBusinessHours || role !== "personal" || !businessHours) return undefined;
+    const bh = businessHours;
+    const start = bh.morning?.start || bh.start || "09:00";
+    const end = bh.afternoon?.end || bh.end || "19:00";
+    const isoWorkDays = new Set(Array.isArray(workDays) ? workDays : [1, 2, 3, 4, 5, 6]);
+    const isoToName = { 1: "monday", 2: "tuesday", 3: "wednesday", 4: "thursday", 5: "friday", 6: "saturday", 7: "sunday" };
+    const s = { alwaysAllowed: false };
+    for (let iso = 1; iso <= 7; iso += 1) {
+      const name = isoToName[iso];
+      s[name] = isoWorkDays.has(iso) ? { start, end } : null;
+    }
+    return s;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -82,6 +111,7 @@ function NewUserModal({ phase, onClose, onSaved }) {
     setSaving(true);
     setValidation("");
     try {
+      const accessSchedule = buildDefaultSchedule();
       const created = await authFetch("/users", {
         method: "POST",
         body: {
@@ -91,6 +121,7 @@ function NewUserModal({ phase, onClose, onSaved }) {
           role,
           canAttendAppointments,
           permissions: role === "personal" ? permissions : undefined,
+          ...(accessSchedule !== undefined ? { accessSchedule } : {}),
         },
       });
       toast.success(`${created.name} agregado`);
@@ -163,6 +194,23 @@ function NewUserModal({ phase, onClose, onSaved }) {
               <option value="dueno">Dueña</option>
             </select>
           </div>
+
+          {role === "personal" && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "10px 12px", background: "rgba(201,168,118,0.08)", borderRadius: 10 }}>
+              <input
+                type="checkbox"
+                checked={applyBusinessHours}
+                onChange={(e) => setApplyBusinessHours(e.target.checked)}
+                style={{ width: 18, height: 18, accentColor: "#8C6E50", flexShrink: 0, marginTop: 2 }}
+              />
+              <span style={{ fontSize: 13, color: "#6B5540", lineHeight: 1.4 }}>
+                Aplicar horario del spa como restricción de acceso
+                <span style={{ display: "block", fontSize: 11, color: "#A89A87", marginTop: 2 }}>
+                  Se puede ajustar por día después desde la ficha de la cuenta.
+                </span>
+              </span>
+            </label>
+          )}
 
           <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
             <input
@@ -410,6 +458,24 @@ export default function PersonalPage() {
                         : permissionsSummary(user)}
                     </p>
                   </div>
+                  {!user.isProtected && user.role === "personal" && user.accessSchedule == null && (
+                    <span
+                      title="Sin horario configurado — acceso 24/7"
+                      style={{
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        background: "rgba(201,168,118,0.28)",
+                        color: "#856330",
+                        border: "1px solid rgba(201,168,118,0.55)",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Sin horario · 24/7
+                    </span>
+                  )}
                   {!user.isProtected && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                       <button
@@ -640,6 +706,8 @@ export default function PersonalPage() {
                     {saving ? "Guardando..." : "Guardar cambios"}
                   </button>
                 </div>
+
+                <AccessScheduleEditor user={selected} onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))} />
               </>
             )}
           </>
@@ -661,6 +729,183 @@ export default function PersonalPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// -- Access Schedule Editor ---------------------------------------------------
+
+const SCHEDULE_DAYS = [
+  ["monday", "Lunes"],
+  ["tuesday", "Martes"],
+  ["wednesday", "Miércoles"],
+  ["thursday", "Jueves"],
+  ["friday", "Viernes"],
+  ["saturday", "Sábado"],
+  ["sunday", "Domingo"],
+];
+
+function emptyScheduleShape() {
+  const s = { alwaysAllowed: false };
+  for (const [k] of SCHEDULE_DAYS) s[k] = null;
+  return s;
+}
+
+function initialDraftFromUser(user) {
+  const s = user?.accessSchedule;
+  if (!s) return emptyScheduleShape();
+  const draft = { alwaysAllowed: !!s.alwaysAllowed };
+  for (const [k] of SCHEDULE_DAYS) draft[k] = s[k] || null;
+  return draft;
+}
+
+function AccessScheduleEditor({ user, onSaved }) {
+  const toast = useToast();
+  const [draft, setDraft] = useState(() => initialDraftFromUser(user));
+  const [saving, setSaving] = useState(false);
+  const [businessHours, setBusinessHours] = useState(null);
+  const [workDays, setWorkDays] = useState(null);
+
+  useEffect(() => { setDraft(initialDraftFromUser(user)); }, [user?.id, user?.accessSchedule]);
+
+  useEffect(() => {
+    authFetch("/tenant/config").then((cfg) => {
+      setBusinessHours(cfg?.businessHours || null);
+      setWorkDays(Array.isArray(cfg?.workDays) ? cfg.workDays : null);
+    }).catch(() => {});
+  }, []);
+
+  function toggleDay(day) {
+    setDraft((d) => ({
+      ...d,
+      [day]: d[day] ? null : { start: "09:00", end: "18:00" },
+    }));
+  }
+
+  function updateDay(day, field, value) {
+    setDraft((d) => ({
+      ...d,
+      [day]: d[day] ? { ...d[day], [field]: value } : { start: "09:00", end: "18:00", [field]: value },
+    }));
+  }
+
+  function fillFromBusinessHours() {
+    if (!businessHours) return;
+    const bh = businessHours;
+    const start = bh.morning?.start || bh.start || "09:00";
+    const end = bh.afternoon?.end || bh.end || "19:00";
+    const isoWorkDays = new Set(Array.isArray(workDays) ? workDays : [1, 2, 3, 4, 5, 6]);
+    const isoToName = { 1: "monday", 2: "tuesday", 3: "wednesday", 4: "thursday", 5: "friday", 6: "saturday", 7: "sunday" };
+    const next = { alwaysAllowed: false };
+    for (let iso = 1; iso <= 7; iso += 1) {
+      const name = isoToName[iso];
+      next[name] = isoWorkDays.has(iso) ? { start, end } : null;
+    }
+    setDraft(next);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const payload = draft.alwaysAllowed
+        ? { alwaysAllowed: true }
+        : draft;
+      const updated = await authFetch(`/users/${user.id}`, { method: "PATCH", body: { accessSchedule: payload } });
+      toast.success("Horario de acceso guardado");
+      if (onSaved) onSaved(updated);
+    } catch (err) {
+      toast.error(err?.message || "No se pudo guardar el horario");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clearSchedule() {
+    setSaving(true);
+    try {
+      const updated = await authFetch(`/users/${user.id}`, { method: "PATCH", body: { accessSchedule: null } });
+      toast.info("Horario removido — acceso 24/7 con badge en la lista");
+      if (onSaved) onSaved(updated);
+    } catch (err) {
+      toast.error(err?.message || "No se pudo actualizar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid rgba(168,154,135,0.35)" }}>
+      <div style={{ marginBottom: 12 }}>
+        <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Horario de acceso</h3>
+        <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>
+          Restringe a qué horas puede iniciar sesión esta cuenta. Se aplica en cada request usando la zona horaria del spa.
+        </p>
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={draft.alwaysAllowed}
+          onChange={(e) => setDraft((d) => ({ ...d, alwaysAllowed: e.target.checked }))}
+          style={{ width: 18, height: 18, accentColor: "#8C6E50" }}
+        />
+        <span style={{ fontSize: 13, color: "#6B5540" }}>Acceso 24/7 (sin restricción horaria)</span>
+      </label>
+
+      {!draft.alwaysAllowed && (
+        <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={fillFromBusinessHours}
+              disabled={!businessHours}
+              style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: "transparent", color: "#8C6E50", fontSize: 11, cursor: businessHours ? "pointer" : "not-allowed", opacity: businessHours ? 1 : 0.5 }}
+            >
+              Usar horario del spa
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {SCHEDULE_DAYS.map(([key, label]) => {
+              const win = draft[key];
+              const open = !!win;
+              return (
+                <div key={key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, width: 110, cursor: "pointer" }}>
+                    <input type="checkbox" checked={open} onChange={() => toggleDay(key)} style={{ width: 16, height: 16, accentColor: "#8C6E50" }} />
+                    <span style={{ fontSize: 13, color: open ? "#6B5540" : "#A89A87" }}>{label}</span>
+                  </label>
+                  {open ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                      <input type="time" value={win.start} onChange={(e) => updateDay(key, "start", e.target.value)} style={{ padding: "6px 10px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" }} />
+                      <span style={{ fontSize: 12, color: "#A89A87" }}>a</span>
+                      <input type="time" value={win.end} onChange={(e) => updateDay(key, "end", e.target.value)} style={{ padding: "6px 10px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" }} />
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "#A89A87", fontStyle: "italic" }}>Cerrado</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 20 }}>
+        <button
+          onClick={clearSchedule}
+          disabled={saving}
+          style={{ padding: "9px 18px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: "transparent", color: "#856330", fontSize: 12, cursor: saving ? "wait" : "pointer" }}
+        >
+          Remover horario (acceso 24/7)
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{ padding: "9px 22px", borderRadius: 999, background: "#8C6E50", color: "#F7F5F0", border: "none", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}
+        >
+          {saving ? "Guardando…" : "Guardar horario"}
+        </button>
+      </div>
     </div>
   );
 }
