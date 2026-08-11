@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { Loader2, Lock } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, Tooltip } from "recharts";
@@ -30,7 +30,7 @@ export default function ReportesPage() {
   const [to, setTo] = useState(toLocalDate(now));
   const [reports, setReports] = useState({});
   const [loading, setLoading] = useState(true);
-  const hasAnimated = useRef(false);
+  const [hasAnimated, setHasAnimated] = useState(false);
 
   const range = useMemo(() => ({ from: `${from}T00:00:00`, to: `${to}T23:59:59` }), [from, to]);
 
@@ -54,7 +54,7 @@ export default function ReportesPage() {
   }, [fetchReports]);
 
   useEffect(() => {
-    if (!loading) hasAnimated.current = true;
+    if (!loading) setHasAnimated(true);
   }, [loading]);
 
   const occ = reports["ocupacion-gabinetes"]?.value?.data?.gabinetes || [];
@@ -115,7 +115,7 @@ export default function ReportesPage() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 16 : 20 }}>
           {/* Ocupacion */}
-          <RCard title="Ocupacion por gabinete" compact={isMobile} stagger={!hasAnimated.current} index={0}>
+          <RCard title="Ocupacion por gabinete" compact={isMobile} stagger={!hasAnimated} index={0}>
             <Bars
               items={occ.map((r) => ({ name: r.roomName, value: r.porcentaje, suffix: "%" }))}
               note="Horas reservadas sobre horas disponibles del periodo."
@@ -126,7 +126,7 @@ export default function ReportesPage() {
           <RCard
             title="Ingresos por servicio"
             compact={isMobile}
-            stagger={!hasAnimated.current}
+            stagger={!hasAnimated}
             index={1}
             action={income?.ok && <span style={{ fontSize: 18, fontWeight: 600, color: "#8C6E50" }}>{money(income.value.data.grandTotalUsd)}</span>}
           >
@@ -145,12 +145,12 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Servicios mas vendidos */}
-          <RCard title="Servicios mas vendidos" compact={isMobile} stagger={!hasAnimated.current} index={2}>
+          <RCard title="Servicios mas vendidos" compact={isMobile} stagger={!hasAnimated} index={2}>
             <Rank items={sold.slice(0, 5).map((s) => ({ name: s.serviceName || "Servicio", value: `${s.count} sesiones` }))} />
           </RCard>
 
           {/* Desempeno */}
-          <RCard title="Desempeno por terapeuta" compact={isMobile} stagger={!hasAnimated.current} index={3}>
+          <RCard title="Desempeno por terapeuta" compact={isMobile} stagger={!hasAnimated} index={3}>
             <Bars
               items={staff.map((s) => ({
                 name: s.staffName,
@@ -162,7 +162,7 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Cancelaciones */}
-          <RCard title="Cancelaciones y no-show" compact={isMobile} stagger={!hasAnimated.current} index={4}>
+          <RCard title="Cancelaciones y no-show" compact={isMobile} stagger={!hasAnimated} index={4}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p className="font-heading" style={{ fontSize: 42, fontWeight: 600, color: "#8C6E50", margin: 0 }}>
                 {canc ? `${Number((canc.cancelaciones.rate || 0) + (canc.noShow.rate || 0)).toFixed(1)}%` : "—"}
@@ -178,7 +178,7 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Clientes */}
-          <RCard title="Clientes nuevas vs. recurrentes" compact={isMobile} stagger={!hasAnimated.current} index={5}>
+          <RCard title="Clientes nuevas vs. recurrentes" compact={isMobile} stagger={!hasAnimated} index={5}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
                 <span className="font-heading" style={{ fontSize: 42, fontWeight: 600, color: "#8C6E50" }}>
