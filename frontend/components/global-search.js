@@ -29,7 +29,7 @@ export function GlobalSearch() {
     timerRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const rows = await authFetch("/clients", { query: { q: query, limit: 8 } });
+        const rows = await authFetch("/search", { query: { q: query, limit: 10 } });
         setResults(Array.isArray(rows) ? rows : []);
         setOpen(true);
       } catch {
@@ -37,7 +37,7 @@ export function GlobalSearch() {
       } finally {
         setLoading(false);
       }
-    }, 220);
+    }, 300);
     return () => timerRef.current && clearTimeout(timerRef.current);
   }, [q]);
 
@@ -117,9 +117,9 @@ export function GlobalSearch() {
                 style={{ width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid rgba(168,154,135,0.15)", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, textAlign: "left" }}
               >
                 <span style={{ fontSize: 13, color: "#6B5540", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {c.fullName}
+                  {c.name}
                 </span>
-                <span style={{ fontSize: 11, color: "#A89A87", flexShrink: 0 }}>{c.whatsapp}</span>
+                <span style={{ fontSize: 11, color: "#A89A87", flexShrink: 0 }}>{c.phone}</span>
               </button>
             ))
           )}

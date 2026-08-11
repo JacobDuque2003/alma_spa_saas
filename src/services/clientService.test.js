@@ -60,6 +60,37 @@ test('listClients puede listar deshabilitados sin filtrar ClientIntake', async (
   assert.equal('intake' in argsSeen.select, false);
   assert.equal(result[0].active, false);
 });
+
+test('searchClients devuelve DTO mínimo tenant-scoped y busca por teléfono local', async () => {
+  let argsSeen = null;
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [{ id: 'c1', fullName: 'Jacob Duque', whatsapp: '+593993629256' }];
+    },
+  };
+
+  const result = await clientService.searchClients({ role: 'personal', tenantId: 't1' }, { q: '0993629256', limit: 50 });
+
+  assert.equal(argsSeen.where.tenantId, 't1');
+  assert.equal(argsSeen.where.active, true);
+  assert.equal(argsSeen.take, 10);
+  assert.equal(argsSeen.select.id, true);
+  assert.equal('email' in argsSeen.select, false);
+  assert.equal('intake' in argsSeen.select, false);
+  assert.deepEqual(result, [{ type: 'client', id: 'c1', name: 'Jacob Duque', phone: '+593993629256' }]);
+});
+
+test('searchClients no lista todo si q tiene menos de 2 caracteres', async () => {
+  let called = false;
+  prisma.client = { findMany: async () => { called = true; return []; } };
+
+  const result = await clientService.searchClients({ role: 'personal', tenantId: 't1' }, { q: 'J' });
+
+  assert.deepEqual(result, []);
+  assert.equal(called, false);
+});
+
 test('getClient rechaza cross-tenant con 403 y no incluye ClientIntake en el select', async () => {
   let argsSeen = null;
   prisma.client = {

@@ -53,6 +53,35 @@ test('GET /clients/:id bloquea cross-tenant', async () => {
   assert.equal(res.status, 403);
 });
 
+test('GET /search exige permiso clientes y devuelve resultados mínimos tenant-scoped', async () => {
+  let argsSeen = null;
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [{ id: 'c1', fullName: 'Andrea Duque', whatsapp: '+593993629259' }];
+    },
+  };
+
+  const res = await supertest(app)
+    .get('/search?q=Andrea')
+    .set('Authorization', `Bearer ${token({ role: 'dueno' })}`);
+
+  assert.equal(res.status, 200);
+  assert.equal(argsSeen.where.tenantId, 't1');
+  assert.equal(argsSeen.take, 10);
+  assert.deepEqual(res.body, [{ type: 'client', id: 'c1', name: 'Andrea Duque', phone: '+593993629259' }]);
+});
+
+test('GET /search niega a personal sin permiso clientes', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: false }) };
+
+  const res = await supertest(app)
+    .get('/search?q=Andrea')
+    .set('Authorization', `Bearer ${token({ role: 'personal' })}`);
+
+  assert.equal(res.status, 403);
+});
+
 test('GET /users requiere dueno/superadmin y no devuelve passwordHash', async () => {
   let argsSeen = null;
   prisma.user = {

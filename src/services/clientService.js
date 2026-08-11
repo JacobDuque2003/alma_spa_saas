@@ -117,6 +117,52 @@ async function listClients(actor, query = {}) {
   return clients.map(toClientSafeDto);
 }
 
+async function searchClients(actor, query = {}) {
+  const q = String(query.q || '').trim();
+  if (q.length < 2) return [];
+
+  const where = { active: true };
+  if (actor.role === 'superadmin') {
+    if (query.tenantId) where.tenantId = query.tenantId;
+  } else {
+    where.tenantId = actor.tenantId;
+  }
+
+  const or = [
+    { fullName: { contains: q, mode: 'insensitive' } },
+    { whatsapp: { contains: q } },
+    { email: { contains: q, mode: 'insensitive' } },
+  ];
+
+  // Búsqueda tolerante a números locales de Ecuador: "0993629256" encuentra
+  // "+593993629256". El número de ficha queda para la ronda futura donde exista
+  // el campo en Client; por ahora no inventamos una columna.
+  const digits = q.replace(/[^0-9]/g, '');
+  if (digits.length >= 7) {
+    or.push({ whatsapp: { endsWith: digits.replace(/^0+/, '') } });
+  }
+  where.OR = or;
+
+  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 10);
+  const clients = await prisma.client.findMany({
+    where,
+    select: {
+      id: true,
+      fullName: true,
+      whatsapp: true,
+    },
+    orderBy: [{ fullName: 'asc' }, { createdAt: 'desc' }],
+    take: limit,
+  });
+
+  return clients.map((c) => ({
+    type: 'client',
+    id: c.id,
+    name: c.fullName,
+    phone: c.whatsapp,
+  }));
+}
+
 async function getClient(actor, clientId) {
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -325,4 +371,4 @@ async function listUpcomingBirthdays(actor, days = 7) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, getClient, createClient, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, searchClients, getClient, createClient, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
