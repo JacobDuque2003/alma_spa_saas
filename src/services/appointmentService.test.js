@@ -249,6 +249,7 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
   );
 
   assert.equal(result.roomId, 'room2');
+  assert.equal(result.status, 'confirmado');
 });
 
 test('getAvailability devuelve lista vacía si no hay ningún staff habilitado', async () => {

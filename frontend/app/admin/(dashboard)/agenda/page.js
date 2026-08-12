@@ -31,6 +31,21 @@ function appointmentRoomId(appt) {
   return appt.roomId || appt.room?.id || "__sin-cabina";
 }
 
+function titleCaseText(text = "") {
+  return String(text)
+    .toLocaleLowerCase("es-EC")
+    .split(" ")
+    .map((word) => (word ? word.charAt(0).toLocaleUpperCase("es-EC") + word.slice(1) : word))
+    .join(" ");
+}
+
+function cabinDisplayName(name = "") {
+  const parts = String(name).split(" - ");
+  if (parts.length < 2) return String(name);
+  const [prefix, ...rest] = parts;
+  return `${prefix} - ${titleCaseText(rest.join(" - "))}`;
+}
+
 const ROOM_COLORS = ["#8C6E50", "#C9A876", "#A89A87", "#EBCDB5"];
 const DAY_NAMES = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
 
@@ -315,34 +330,6 @@ export default function AgendaPage() {
         )}
       </div>
 
-      {/* Room legend — hidden on mobile */}
-      {!isMobile && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 22,
-            padding: "14px 32px",
-            fontSize: 12,
-            color: "#6B5540",
-          }}
-        >
-          {rooms.map((r, i) => (
-            <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 3,
-                  background: r.colorHex || ROOM_COLORS[i % ROOM_COLORS.length],
-                }}
-              />
-              {r.name}
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Grid */}
       <div className={gridClass || undefined} onAnimationEnd={onAnimationEnd}>
         {loading ? (
@@ -398,9 +385,14 @@ export default function AgendaPage() {
           rooms={rooms}
           staffList={staffList}
           onClose={() => setSelected(null)}
-          onUpdated={(updated) => {
-            setAppointments((prev) => prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)));
-            setSelected(null);
+          onUpdated={(updated, options = {}) => {
+            const merged = (source) => (source?.id === updated.id ? { ...source, ...updated } : source);
+            setAppointments((prev) => prev.map((a) => merged(a)));
+            if (options.close === false) {
+              setSelected((current) => merged(current));
+            } else {
+              setSelected(null);
+            }
           }}
         />
       )}
@@ -741,14 +733,14 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
     .map((appt) => appt.room);
   const columns = [...configuredRooms, ...fallbackRooms];
   const visibleColumns = columns.length ? columns : [{ id: "__sin-cabina", name: "Sin cabinas", specialty: "configuración" }];
-  const minWidth = Math.max(760, 56 + visibleColumns.length * 178);
+  const minWidth = Math.max(760, 56 + visibleColumns.length * 190);
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(164px, 1fr))`,
+          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(178px, 1fr))`,
           border: "1px solid rgba(168,154,135,0.4)",
           borderRadius: 12,
           background: "#F7F5F0",
@@ -757,28 +749,43 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
         }}
       >
         <div style={{ borderBottom: "1px solid rgba(168,154,135,0.32)", background: date === today ? "rgba(235,205,181,0.18)" : "rgba(247,245,240,0.75)" }} />
-        {visibleColumns.map((room) => (
-          <div
-            key={room.id}
-            style={{
-              minHeight: 68,
-              padding: "12px 14px",
-              borderLeft: "1px solid rgba(168,154,135,0.22)",
-              borderBottom: "1px solid rgba(168,154,135,0.32)",
-              background: date === today ? "rgba(235,205,181,0.14)" : "rgba(247,245,240,0.75)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: roomColorMap[room.id] || "#C9A876", flexShrink: 0 }} />
-              <strong className="font-heading" style={{ color: "#6B5540", fontSize: 16, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {room.name}
+        {visibleColumns.map((room) => {
+          const roomColor = roomColorMap[room.id] || room.colorHex || "#8C6E50";
+          return (
+            <div
+              key={room.id}
+              style={{
+                minHeight: 78,
+                padding: "12px 14px",
+                borderLeft: "1px solid rgba(255,255,255,0.22)",
+                borderBottom: "1px solid rgba(168,154,135,0.32)",
+                background: roomColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+              }}
+            >
+              <strong
+                className="font-heading"
+                style={{
+                  color: "#FDFCFA",
+                  fontSize: 18,
+                  fontWeight: 700,
+                  lineHeight: 1.12,
+                  letterSpacing: "-0.01em",
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  textShadow: "0 1px 8px rgba(64,51,39,0.18)",
+                }}
+              >
+                {cabinDisplayName(room.name)}
               </strong>
             </div>
-            <div style={{ marginTop: 4, color: "#A89A87", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {room.specialty || "Cabina"} {room.opensAt && room.closesAt ? `· ${room.opensAt}-${room.closesAt}` : ""}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div style={{ position: "relative", height: HOURS.length * HOUR_HEIGHT }}>
           {HOURS.map((h, i) => (
@@ -1093,6 +1100,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
   const [editTime, setEditTime] = useState("");
   const [editRoomId, setEditRoomId] = useState("");
   const [editStaffId, setEditStaffId] = useState("");
+  const [editIndications, setEditIndications] = useState("");
 
   useEffect(() => {
     if (!appt) return;
@@ -1100,6 +1108,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
     setEditTime(formatTime(appt.startsAt));
     setEditRoomId(appt.room?.id || "");
     setEditStaffId(appt.staff?.id || "");
+    setEditIndications(appt.indications || "");
   }, [appt]);
 
   if (!appt) return null;
@@ -1109,10 +1118,36 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
     setSaving(true);
     try {
       const updated = await authFetch(`/appointments/${appt.id}/status`, { method: "PATCH", body: { status: newStatus } });
-      onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: appt.room, staff: appt.staff });
+      onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: appt.room, staff: appt.staff, indications: updated.indications ?? appt.indications });
       toast.success(`Cita marcada como ${newStatus}`);
     } catch (err) {
       toast.error(err.message || "Error al cambiar estado");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveIndications(nextValue = editIndications) {
+    setSaving(true);
+    try {
+      const clean = String(nextValue || "").trim();
+      const updated = await authFetch(`/appointments/${appt.id}`, {
+        method: "PATCH",
+        body: { indications: clean || null },
+      });
+      setEditIndications(updated.indications || clean || "");
+      onUpdated({
+        ...appt,
+        ...updated,
+        service: appt.service,
+        client: appt.client,
+        room: appt.room,
+        staff: appt.staff,
+        indications: updated.indications ?? (clean || null),
+      }, { close: false });
+      toast.success(clean ? "Indicaciones guardadas" : "Indicaciones eliminadas");
+    } catch (err) {
+      toast.error(err.message || "No se pudieron guardar las indicaciones");
     } finally {
       setSaving(false);
     }
@@ -1198,12 +1233,39 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                   ${Number(appt.priceUsd).toFixed(2)}
                 </div>
               )}
-              {appt.indications && (
-                <div style={{ border: "1px solid rgba(201,168,118,0.28)", background: "rgba(235,205,181,0.18)", borderRadius: 12, padding: 12, color: "#6B5540", lineHeight: 1.45 }}>
-                  <div style={{ color: "#A89A87", fontSize: 12, marginBottom: 4 }}>Indicaciones</div>
-                  <div style={{ fontSize: 13 }}>{appt.indications}</div>
+              <div style={{ border: "1px solid rgba(201,168,118,0.30)", background: "rgba(235,205,181,0.16)", borderRadius: 12, padding: 12, color: "#6B5540", lineHeight: 1.45 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                  <div style={{ color: "#8C6E50", fontSize: 12, fontWeight: 700 }}>Indicaciones / recomendaciones</div>
+                  {(appt.indications || editIndications) && (
+                    <button
+                      disabled={saving}
+                      onClick={() => saveIndications("")}
+                      style={{ border: "none", background: "transparent", color: "#C25450", fontSize: 12, fontWeight: 600, cursor: saving ? "wait" : "pointer" }}
+                    >
+                      Eliminar
+                    </button>
+                  )}
                 </div>
-              )}
+                <textarea
+                  value={editIndications}
+                  onChange={(e) => setEditIndications(e.target.value)}
+                  placeholder="Escribe aquí las indicaciones para esta cita..."
+                  rows={3}
+                  style={{ ...inputStyle, resize: "vertical", minHeight: 78, lineHeight: 1.45 }}
+                />
+                <button
+                  disabled={saving || editIndications.trim() === String(appt.indications || "").trim()}
+                  onClick={() => saveIndications()}
+                  style={{
+                    ...pillBtn("#FDFCFA", "#8C6E50", "1px solid rgba(140,110,80,0.32)"),
+                    marginTop: 8,
+                    width: "100%",
+                    opacity: saving || editIndications.trim() === String(appt.indications || "").trim() ? 0.5 : 1,
+                  }}
+                >
+                  {saving ? "Guardando..." : "Guardar indicaciones"}
+                </button>
+              </div>
             </div>
 
             {canChange && (

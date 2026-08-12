@@ -468,6 +468,7 @@ async function createManualAppointment(actor, data) {
         staffId: data.staffId,
         startsAt,
         endsAt,
+        status: 'confirmado',
         indications: data.indications ? String(data.indications).trim() : null,
         priceUsd: service.priceUsd,
       },
