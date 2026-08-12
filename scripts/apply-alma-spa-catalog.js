@@ -59,6 +59,7 @@ async function main() {
       update: {
         specialty: cabin.specialty,
         sortOrder: cabin.sortOrder,
+        colorHex: cabin.colorHex || '#8C6E50',
         opensAt: cabin.sortOrder === 7 ? '08:00' : '09:00',
         closesAt: cabin.sortOrder === 7 ? '17:00' : '20:00',
         schedule: cabin.schedule || null,
@@ -69,6 +70,7 @@ async function main() {
         name: cabin.name,
         specialty: cabin.specialty,
         sortOrder: cabin.sortOrder,
+        colorHex: cabin.colorHex || '#8C6E50',
         opensAt: cabin.sortOrder === 7 ? '08:00' : '09:00',
         closesAt: cabin.sortOrder === 7 ? '17:00' : '20:00',
         schedule: cabin.schedule || null,

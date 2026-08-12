@@ -184,7 +184,7 @@ export default function AgendaPage() {
 
   const roomColorMap = {};
   rooms.forEach((r, i) => {
-    roomColorMap[r.id] = ROOM_COLORS[i % ROOM_COLORS.length];
+    roomColorMap[r.id] = r.colorHex || ROOM_COLORS[i % ROOM_COLORS.length];
   });
 
   const navBtnStyle = {
@@ -334,7 +334,7 @@ export default function AgendaPage() {
                   width: 10,
                   height: 10,
                   borderRadius: 3,
-                  background: ROOM_COLORS[i % ROOM_COLORS.length],
+                  background: r.colorHex || ROOM_COLORS[i % ROOM_COLORS.length],
                 }}
               />
               {r.name}

@@ -64,17 +64,32 @@ const ANTECEDENT_OPTIONS = [
 
 function parseChecklistText(value = "") {
   const text = String(value || "");
+  const answerMatch = text.match(/Antecedentes:\s*([^\n]+)/i);
   const markedMatch = text.match(/Antecedentes marcados:\s*([^\n]+)/i);
   const notesMatch = text.match(/Observaciones:\s*([\s\S]+)/i);
+  const answers = {};
+  if (answerMatch) {
+    answerMatch[1].split(";").forEach((part) => {
+      const [rawName, rawValue] = part.split("=");
+      const name = rawName?.trim();
+      const value = rawValue?.trim()?.toUpperCase();
+      if (name && ["SI", "NO"].includes(value)) answers[name] = value;
+    });
+  }
+  const selected = markedMatch
+    ? markedMatch[1].split(";").map((x) => x.trim()).filter(Boolean)
+    : Object.entries(answers).filter(([, v]) => v === "SI").map(([k]) => k);
   return {
-    selected: markedMatch ? markedMatch[1].split(";").map((x) => x.trim()).filter(Boolean) : [],
-    notes: notesMatch ? notesMatch[1].trim() : (!markedMatch ? text.trim() : ""),
+    selected,
+    answers,
+    notes: notesMatch ? notesMatch[1].trim() : (!markedMatch && !answerMatch ? text.trim() : ""),
   };
 }
 
-function buildChecklistText(selected, notes) {
+function buildChecklistText(answers, notes) {
   const parts = [];
-  if (selected.length) parts.push(`Antecedentes marcados: ${selected.join("; ")}`);
+  const answered = Object.entries(answers || {}).filter(([, value]) => ["SI", "NO"].includes(value));
+  if (answered.length) parts.push(`Antecedentes: ${answered.map(([key, value]) => `${key}=${value}`).join("; ")}`);
   if (notes.trim()) parts.push(`Observaciones: ${notes.trim()}`);
   return parts.join("\n");
 }
@@ -711,9 +726,8 @@ export default function ClientesPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 18, minHeight: 0 }}>
                 <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />
                 <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />
-                <ClientTimelineCard appointments={clientAppointments} />
               </div>
-              <TreatmentsCard treatments={treatments} clientId={selectedId} onSaved={fetchDetail} />
+              <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} onSaved={fetchDetail} />
             </div>
           </>
         ) : (
@@ -729,8 +743,11 @@ export default function ClientesPage() {
 
 function IntakeCard({ intake, onEdit }) {
   const parsedConditions = parseChecklistText(intake?.conditions || "");
+  const answeredAntecedents = ANTECEDENT_OPTIONS
+    .map((item) => ({ item, value: parsedConditions.answers[item] || (parsedConditions.selected.includes(item) ? "SI" : null) }))
+    .filter((row) => row.value);
   return (
-    <div className="alma-card" style={{ padding: 22 }}>
+    <div className="alma-card" style={{ padding: 22, border: "1px solid rgba(142,36,170,0.12)", background: "linear-gradient(135deg, #fffdf8, rgba(142,36,170,0.035))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           Ficha de anamnesis
@@ -743,18 +760,21 @@ function IntakeCard({ intake, onEdit }) {
           <div style={{ fontSize: 14, color: "#6B5540" }}>{intake?.allergies || "Sin alergias registradas"}</div>
         </div>
         <div>
-          <div style={{ fontSize: 12, color: "#A89A87", marginBottom: 3 }}>Condiciones relevantes para su tratamiento</div>
-          {parsedConditions.selected.length > 0 ? (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {parsedConditions.selected.map((item) => (
-                <span key={item} style={{ padding: "4px 9px", borderRadius: 999, background: "rgba(201,168,118,0.16)", color: "#6B5540", fontSize: 12 }}>
-                  {item}
-                </span>
+          <div style={{ fontSize: 12, color: "#A89A87", marginBottom: 8 }}>Antecedentes clínicos</div>
+          {answeredAntecedents.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+              {answeredAntecedents.slice(0, 8).map(({ item, value }) => (
+                <div key={item} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, border: "1px solid rgba(168,154,135,0.2)", background: value === "SI" ? "rgba(142,36,170,0.08)" : "rgba(168,154,135,0.08)", borderRadius: 10, padding: "7px 9px" }}>
+                  <span style={{ fontSize: 12, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "3px 7px", background: value === "SI" ? "#8E24AA" : "rgba(168,154,135,0.24)", color: value === "SI" ? "#FFFFFF" : "#8C6E50" }}>
+                    {value}
+                  </span>
+                </div>
               ))}
             </div>
           ) : null}
-          <div style={{ fontSize: 14, color: "#6B5540", marginTop: parsedConditions.selected.length ? 8 : 0 }}>
-            {parsedConditions.notes || (!parsedConditions.selected.length ? "Sin condiciones registradas" : "")}
+          <div style={{ fontSize: 14, color: "#6B5540", marginTop: answeredAntecedents.length ? 8 : 0 }}>
+            {parsedConditions.notes || (!answeredAntecedents.length ? "Sin antecedentes registrados" : "")}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4 }}>
@@ -878,58 +898,6 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function ClientTimelineCard({ appointments }) {
-  const rows = Array.isArray(appointments)
-    ? [...appointments].sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()).slice(0, 8)
-    : [];
-  const statusInfo = {
-    pendiente: { label: "Reservó, falta confirmar", color: "#A89A87", bg: "rgba(168,154,135,0.14)" },
-    confirmado: { label: "Asistió / confirmada", color: "#6F7F45", bg: "rgba(111,127,69,0.12)" },
-    cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
-    no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },
-  };
-
-  return (
-    <div className="alma-card" style={{ padding: 22 }}>
-      <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: "0 0 14px" }}>
-        Historial de reservas
-      </h3>
-      {rows.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Todavía no hay reservas registradas.</p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {rows.map((appt) => {
-            const info = statusInfo[appt.status] || statusInfo.pendiente;
-            return (
-              <div key={appt.id} style={{ display: "grid", gridTemplateColumns: "16px 1fr", gap: 10 }}>
-                <span style={{ width: 10, height: 10, borderRadius: "50%", marginTop: 5, background: info.color, boxShadow: "0 0 0 4px " + info.bg }} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                    <strong style={{ fontSize: 13, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {appt.service?.name || "Servicio"}
-                    </strong>
-                    <span style={{ fontSize: 11, color: info.color, background: info.bg, borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                      {info.label}
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 3, fontSize: 12, color: "#A89A87" }}>
-                    {shortDate(appt.startsAt)} · {appt.room?.name || "Sin cabina"}
-                  </div>
-                  {appt.indications && (
-                    <div style={{ marginTop: 3, fontSize: 12, color: "#8C6E50", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {appt.indications}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -1061,7 +1029,11 @@ function DeleteClientModal({ client, phase, onClose, onDeleted }) {
 function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
   const parsed = parseChecklistText(intake?.conditions || "");
   const [allergies, setAllergies] = useState(intake?.allergies || "");
-  const [selectedAntecedents, setSelectedAntecedents] = useState(parsed.selected);
+  const [antecedentAnswers, setAntecedentAnswers] = useState(() => {
+    const initial = { ...parsed.answers };
+    parsed.selected.forEach((item) => { if (!initial[item]) initial[item] = "SI"; });
+    return initial;
+  });
   const [conditionNotes, setConditionNotes] = useState(parsed.notes);
   const [consentSigned, setConsentSigned] = useState(intake?.consentSigned || false);
   const [saving, setSaving] = useState(false);
@@ -1073,15 +1045,15 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
     try {
       await authFetch(`/clients/${clientId}/intake`, {
         method: "PUT",
-        body: { allergies, conditions: buildChecklistText(selectedAntecedents, conditionNotes), consentSigned },
+        body: { allergies, conditions: buildChecklistText(antecedentAnswers, conditionNotes), consentSigned },
       });
       toast.success("Ficha guardada");
       onSaved();
     } catch (err) { toast.error(err.message || "Error al guardar"); setSaving(false); }
   }
 
-  function toggleAntecedent(item) {
-    setSelectedAntecedents((current) => current.includes(item) ? current.filter((x) => x !== item) : [...current, item]);
+  function setAntecedent(item, value) {
+    setAntecedentAnswers((current) => ({ ...current, [item]: value }));
   }
 
   return (
@@ -1092,34 +1064,48 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div><label style={modalLabelStyle}>Alergias</label><textarea style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Ninguna conocida" /></div>
           <div>
-            <label style={modalLabelStyle}>Antecedentes clínicos</label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, maxHeight: 220, overflowY: "auto", padding: "2px 2px 4px" }}>
+            <label style={modalLabelStyle}>Antecedentes clínicos — marcar SI/NO</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 7, maxHeight: 260, overflowY: "auto", padding: "2px 2px 4px" }}>
               {ANTECEDENT_OPTIONS.map((item) => {
-                const checked = selectedAntecedents.includes(item);
+                const answer = antecedentAnswers[item] || "";
                 return (
-                  <button
+                  <div
                     key={item}
-                    type="button"
-                    onClick={() => toggleAntecedent(item)}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 7,
-                      border: "1px solid " + (checked ? "rgba(201,168,118,0.62)" : "rgba(168,154,135,0.32)"),
-                      background: checked ? "rgba(201,168,118,0.16)" : "#FDFCFA",
-                      color: checked ? "#6B5540" : "#8C6E50",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      border: "1px solid rgba(168,154,135,0.24)",
+                      background: answer === "SI" ? "rgba(142,36,170,0.07)" : "#FDFCFA",
                       borderRadius: 10,
-                      padding: "7px 8px",
+                      padding: "7px 8px 7px 10px",
                       fontSize: 12,
-                      textAlign: "left",
-                      cursor: "pointer",
                     }}
                   >
-                    <span style={{ width: 14, height: 14, borderRadius: 4, border: "1px solid rgba(140,110,80,0.45)", background: checked ? "#C9A876" : "transparent", color: "#F7F5F0", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0 }}>
-                      {checked ? "✓" : ""}
+                    <span style={{ color: "#6B5540", fontWeight: 500 }}>{item}</span>
+                    <span style={{ display: "inline-flex", gap: 4, flexShrink: 0 }}>
+                      {["SI", "NO"].map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setAntecedent(item, value)}
+                          style={{
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "5px 10px",
+                            background: answer === value ? (value === "SI" ? "#8E24AA" : "#A89A87") : "rgba(168,154,135,0.14)",
+                            color: answer === value ? "#FFFFFF" : "#8C6E50",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {value}
+                        </button>
+                      ))}
                     </span>
-                    <span>{item}</span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1170,7 +1156,7 @@ function TreatmentDeleteModal({ treatment, phase, onClose, onDeleted }) {
   );
 }
 
-function TreatmentsCard({ treatments, clientId, onSaved }) {
+function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
   const [showForm, setShowForm] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
@@ -1234,13 +1220,23 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
   }
 
   const inputSt = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
+  const statusInfo = {
+    pendiente: { label: "Reservó, falta confirmar", color: "#A89A87", bg: "rgba(168,154,135,0.14)" },
+    confirmado: { label: "Asistió / confirmada", color: "#6F7F45", bg: "rgba(111,127,69,0.12)" },
+    cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
+    no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },
+  };
+  const historyRows = [
+    ...(treatments || []).map((t) => ({ type: "treatment", date: t.sessionDate, treatment: t })),
+    ...(appointments || []).map((a) => ({ type: "appointment", date: a.startsAt, appointment: a })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 14);
 
   return (
-    <div className="alma-card" style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="alma-card" style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid rgba(121,134,203,0.16)", background: "linear-gradient(135deg, #fffdf8, rgba(121,134,203,0.035))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>Historial de tratamientos</h3>
+        <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>Historial de la clienta</h3>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 13, color: "#A89A87" }}>{treatments.length} sesiones</span>
+          <span style={{ fontSize: 13, color: "#A89A87" }}>{(treatments || []).length} tratamientos · {(appointments || []).length} reservas</span>
           <button onClick={() => (showForm ? (setShowForm(false), resetForm()) : openCreate())} style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{showForm ? "Cancelar" : "+ Agregar"}</button>
         </div>
       </div>
@@ -1263,26 +1259,49 @@ function TreatmentsCard({ treatments, clientId, onSaved }) {
         </form>
       )}
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto" }}>
-        {treatments.length === 0 ? (
-          <p style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#A89A87" }}>Sin tratamientos registrados todavia.</p>
+        {historyRows.length === 0 ? (
+          <p style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#A89A87" }}>Sin historial registrado todavía.</p>
         ) : (
-          treatments.slice(0, 10).map((t) => (
-            <div key={t.id} style={{ padding: "14px 0", borderBottom: "1px solid rgba(168,154,135,0.25)" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
-                <div style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.service?.name || "Tratamiento"}</span><span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)}</span></div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil size={14} /></button>
-                  <button type="button" onClick={() => setTreatmentToDelete(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
+          historyRows.map((row, index) => {
+            if (row.type === "appointment") {
+              const a = row.appointment;
+              const info = statusInfo[a.status] || statusInfo.pendiente;
+              const color = a.service?.colorHex || info.color;
+              return (
+                <div key={`appt-${a.id}`} style={{ display: "grid", gridTemplateColumns: "16px 1fr", gap: 10, padding: "14px 0", borderBottom: index < historyRows.length - 1 ? "1px solid rgba(168,154,135,0.22)" : "none" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", marginTop: 5, background: color, boxShadow: `0 0 0 4px ${info.bg}` }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                      <strong style={{ fontSize: 14, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.service?.name || "Reserva"}</strong>
+                      <span style={{ fontSize: 11, color: info.color, background: info.bg, borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>{info.label}</span>
+                    </div>
+                    <div style={{ marginTop: 3, fontSize: 12, color: "#A89A87" }}>{shortDate(a.startsAt)} · {a.room?.name || "Sin cabina"}</div>
+                    {a.indications && <div style={{ marginTop: 3, fontSize: 12, color: "#8C6E50" }}>{a.indications}</div>}
+                  </div>
+                </div>
+              );
+            }
+            const t = row.treatment;
+            const color = t.service?.colorHex || "#7986CB";
+            return (
+              <div key={`treatment-${t.id}`} style={{ display: "grid", gridTemplateColumns: "16px 1fr", gap: 10, padding: "14px 0", borderBottom: index < historyRows.length - 1 ? "1px solid rgba(168,154,135,0.22)" : "none" }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", marginTop: 5, background: color, boxShadow: "0 0 0 4px rgba(121,134,203,0.14)" }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.service?.name || "Tratamiento"}</span>
+                      <span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)} · Tratamiento registrado</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil size={14} /></button>
+                      <button type="button" onClick={() => setTreatmentToDelete(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                  {t.notes && <div style={{ fontSize: 13, color: "#8C6E50", marginBottom: 6 }}>{t.notes}</div>}
                 </div>
               </div>
-              {t.notes && <div style={{ fontSize: 13, color: "#8C6E50", marginBottom: 6 }}>{t.notes}</div>}
-              {Array.isArray(t.productsUsed) && t.productsUsed.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  {t.productsUsed.map((p) => <span key={p} style={{ padding: "3px 10px", borderRadius: 999, background: "rgba(168,154,135,0.2)", color: "#6B5540", fontSize: 11 }}>{p}</span>)}
-                </div>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

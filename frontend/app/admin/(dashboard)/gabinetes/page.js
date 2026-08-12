@@ -46,6 +46,17 @@ function statusLabel(status) {
   return status === "confirmado" ? "Confirm\u00f3" : "Sin confirmar";
 }
 
+function hexToRgba(hex, alpha) {
+  const clean = String(hex || "#8C6E50").replace("#", "");
+  const value = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+  const n = Number.parseInt(value, 16);
+  if (Number.isNaN(n)) return `rgba(140,110,80,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export default function GabinetesPage() {
   const isMobile = useIsMobile();
   const [rooms, setRooms] = useState([]);
@@ -182,6 +193,7 @@ function RoomCard({ room, appointments, isMobile = false, nowMs = 0, expanded = 
   const current = appointments.find((a) => isNowBetween(a.startsAt, a.endsAt, nowMs));
   const next = appointments.find((a) => new Date(a.startsAt).getTime() > nowMs) || appointments[0];
   const isOccupied = !!current;
+  const roomColor = room.colorHex || "#8C6E50";
   const progress = current
     ? Math.min(100, Math.max(0, ((nowMs - new Date(current.startsAt).getTime()) / (new Date(current.endsAt).getTime() - new Date(current.startsAt).getTime())) * 100))
     : 0;
@@ -193,11 +205,11 @@ function RoomCard({ room, appointments, isMobile = false, nowMs = 0, expanded = 
         padding: 0,
         overflow: "hidden",
         minHeight: isMobile ? 186 : 202,
-        border: isOccupied ? "1px solid rgba(107,85,64,0.48)" : "1px solid rgba(168,154,135,0.28)",
-        boxShadow: isOccupied ? "0 16px 34px rgba(80,62,42,0.12)" : "0 10px 26px rgba(80,62,42,0.07)",
+        border: isOccupied ? `1px solid ${roomColor}` : "1px solid rgba(168,154,135,0.28)",
+        boxShadow: isOccupied ? `0 16px 34px ${hexToRgba(roomColor, 0.18)}` : "0 10px 26px rgba(80,62,42,0.07)",
       }}
     >
-      <div style={{ padding: isMobile ? 16 : 18, background: isOccupied ? "linear-gradient(135deg, rgba(107,85,64,0.96), rgba(140,110,80,0.88))" : "linear-gradient(135deg, #fffdf8, #f3eee5)", color: isOccupied ? "#F7F5F0" : "#6B5540" }}>
+      <div style={{ padding: isMobile ? 16 : 18, background: isOccupied ? `linear-gradient(135deg, ${roomColor}, ${hexToRgba(roomColor, 0.78)})` : `linear-gradient(135deg, #fffdf8, ${hexToRgba(roomColor, 0.08)})`, color: isOccupied ? "#F7F5F0" : "#6B5540" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <h2 className="font-heading" style={{ fontSize: isMobile ? 20 : 22, fontWeight: 600, margin: "0 0 5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>

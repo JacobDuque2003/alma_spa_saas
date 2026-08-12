@@ -5,6 +5,16 @@ const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit'
 const { validateShape } = require('../utils/businessHours');
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+function normalizeColor(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return '#8C6E50';
+  if (!HEX_COLOR_RE.test(value)) {
+    throw new BadRequestError('colorHex debe tener formato hexadecimal, por ejemplo #8E24AA');
+  }
+  return value.toUpperCase();
+}
 
 async function assertSpecialtyMatchesActiveCategory(tenantId, specialty) {
   const match = await prisma.service.findFirst({
@@ -74,6 +84,7 @@ async function createRoom(actor, data) {
         name: data.name,
         specialty: data.specialty,
         sortOrder: Number.isInteger(Number(data.sortOrder)) ? Number(data.sortOrder) : 0,
+        colorHex: normalizeColor(data.colorHex) || '#8C6E50',
         opensAt: data.opensAt || '09:00',
         closesAt: data.closesAt || '20:00',
         schedule: data.schedule || null,
@@ -109,6 +120,7 @@ async function updateRoom(actor, id, changes) {
     await assertSpecialtyMatchesActiveCategory(target.tenantId, changes.specialty);
     data.specialty = changes.specialty;
   }
+  if (changes.colorHex !== undefined) data.colorHex = normalizeColor(changes.colorHex);
   if (changes.schedule !== undefined) {
     const scheduleError = validateRoomSchedule(changes.schedule);
     if (scheduleError) throw new BadRequestError(scheduleError);

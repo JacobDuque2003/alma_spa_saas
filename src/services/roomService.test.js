@@ -35,6 +35,38 @@ test('createRoom crea el gabinete cuando specialty sí coincide con una categor�
   assert.equal(result.status, 'libre');
 });
 
+test('createRoom acepta colorHex válido para la cabina', async () => {
+  let createArgs;
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', active: true }) },
+    room: {
+      create: async (args) => {
+        createArgs = args;
+        return { id: 'room1', ...args.data };
+      },
+    },
+  });
+
+  const result = await roomService.createRoom(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Cabina color', specialty: 'masajes', colorHex: '#8e24aa' }
+  );
+
+  assert.equal(result.colorHex, '#8E24AA');
+  assert.equal(createArgs.data.colorHex, '#8E24AA');
+});
+
+test('updateRoom rechaza colorHex inválido', async () => {
+  mockPrisma({
+    room: { findUnique: async () => ({ id: 'room1', tenantId: 't1', specialty: 'masajes' }) },
+  });
+
+  await assert.rejects(
+    () => roomService.updateRoom({ role: 'dueno', tenantId: 't1' }, 'room1', { colorHex: 'morado' }),
+    (err) => err.status === 400
+  );
+});
+
 test('createRoom ignora un tenantId forjado y usa el del JWT del actor', async () => {
   mockPrisma({
     service: { findFirst: async () => ({ id: 'srv1' }) },

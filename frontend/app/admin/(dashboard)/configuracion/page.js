@@ -11,6 +11,17 @@ function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
 }
 
+function hexToRgba(hex, alpha) {
+  const clean = String(hex || "#8C6E50").replace("#", "");
+  const value = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+  const n = Number.parseInt(value, 16);
+  if (Number.isNaN(n)) return `rgba(140,110,80,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function SectionHeader({ title, subtitle, onAdd, addLabel }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
@@ -174,6 +185,7 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
 function RoomFormModal({ categories, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [specialty, setSpecialty] = useState(categories[0] || "");
+  const [colorHex, setColorHex] = useState("#8C6E50");
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
@@ -187,7 +199,7 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
     setValidation(null);
     setSaving(true);
     try {
-      const created = await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty } });
+      const created = await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty, colorHex } });
       toast.success(`Cabina "${created.name}" creada`);
       onSaved(created);
     } catch (err) {
@@ -206,6 +218,7 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+        <div><label style={labelStyle}>Color de cabina</label><input type="color" style={{ ...inputStyle, padding: 5, height: 40 }} value={colorHex} onChange={(e) => setColorHex(e.target.value)} /></div>
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
@@ -419,6 +432,7 @@ function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, on
 function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) {
   const [name, setName] = useState(r.name);
   const [specialty, setSpecialty] = useState(r.specialty);
+  const [colorHex, setColorHex] = useState(r.colorHex || "#8C6E50");
   const [opensAt, setOpensAt] = useState(r.opensAt || "09:00");
   const [closesAt, setClosesAt] = useState(r.closesAt || "20:00");
   const [saving, setSaving] = useState(false);
@@ -426,18 +440,19 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
   useEffect(() => {
     setName(r.name);
     setSpecialty(r.specialty);
+    setColorHex(r.colorHex || "#8C6E50");
     setOpensAt(r.opensAt || "09:00");
     setClosesAt(r.closesAt || "20:00");
   }, [r]);
 
-  const dirty = name !== r.name || specialty !== r.specialty || opensAt !== (r.opensAt || "09:00") || closesAt !== (r.closesAt || "20:00");
+  const dirty = name !== r.name || specialty !== r.specialty || colorHex !== (r.colorHex || "#8C6E50") || opensAt !== (r.opensAt || "09:00") || closesAt !== (r.closesAt || "20:00");
   const active = r.active !== false;
 
   async function handleSave() {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await onUpdate(r, { name: name.trim(), specialty, opensAt, closesAt });
+      await onUpdate(r, { name: name.trim(), specialty, colorHex, opensAt, closesAt });
     } finally {
       setSaving(false);
     }
@@ -450,7 +465,7 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", cursor: "pointer", gap: 10 }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C9A876", flexShrink: 0 }} />
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: r.colorHex || "#C9A876", boxShadow: `0 0 0 4px ${hexToRgba(r.colorHex || "#C9A876", 0.14)}`, flexShrink: 0 }} />
           <span style={{ fontSize: 14, fontWeight: 500, color: "#6B5540", whiteSpace: "nowrap" }}>{r.name}</span>
           <span style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.specialty} · {r.opensAt || "09:00"}-{r.closesAt || "20:00"}</span>
           {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450", flexShrink: 0 }}>Inactivo</span>}
@@ -469,6 +484,16 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
               <select value={specialty} onChange={(e) => setSpecialty(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 {categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 84px", gap: 10, alignItems: "end" }}>
+            <div>
+              <label style={labelStyle}>Color de cabina</label>
+              <div style={{ height: 40, borderRadius: 10, background: colorHex, border: "1px solid rgba(168,154,135,0.32)", boxShadow: `inset 0 0 0 999px ${hexToRgba("#FFFFFF", 0.1)}` }} />
+            </div>
+            <div>
+              <label style={labelStyle}>Editar</label>
+              <input type="color" value={colorHex} onChange={(e) => setColorHex(e.target.value)} style={{ ...inputStyle, padding: 5, height: 40 }} />
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -610,6 +635,13 @@ export default function ConfiguracionPage() {
                         {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="color"
+                          defaultValue={s.colorHex || "#8C6E50"}
+                          title="Color del servicio"
+                          onBlur={(e) => { if (e.target.value.toUpperCase() !== String(s.colorHex || "#8C6E50").toUpperCase()) updateService(s, { colorHex: e.target.value }); }}
+                          style={{ width: 40, height: 34, padding: 4, borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", cursor: "pointer", flexShrink: 0 }}
+                        />
                         <input
                           type="number"
                           step="0.01"
