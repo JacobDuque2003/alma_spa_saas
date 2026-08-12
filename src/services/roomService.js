@@ -2,6 +2,9 @@ const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
 const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
+const { validateShape } = require('../utils/businessHours');
+
+const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 async function assertSpecialtyMatchesActiveCategory(tenantId, specialty) {
   const match = await prisma.service.findFirst({
@@ -21,14 +24,34 @@ async function listRooms(actor, query) {
   } else {
     where.tenantId = actor.tenantId;
   }
-  return prisma.room.findMany({ where, orderBy: { createdAt: 'asc' } });
+  return prisma.room.findMany({
+    where,
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    include: { services: { select: { id: true, name: true, category: true, colorHex: true, durationMins: true }, orderBy: { name: 'asc' } } },
+  });
 }
 
 async function getRoom(actor, id) {
-  const room = await prisma.room.findUnique({ where: { id } });
+  const room = await prisma.room.findUnique({
+    where: { id },
+    include: { services: { select: { id: true, name: true, category: true, colorHex: true, durationMins: true }, orderBy: { name: 'asc' } } },
+  });
   if (!room) return null;
   assertTenantScope(actor, room.tenantId);
   return room;
+}
+
+function validateRoomSchedule(schedule) {
+  if (schedule === undefined || schedule === null) return null;
+  if (typeof schedule !== 'object' || Array.isArray(schedule)) {
+    return 'schedule debe ser un objeto por día o null';
+  }
+  for (const [day, hours] of Object.entries(schedule)) {
+    if (!DAY_KEYS.includes(day)) return `schedule.${day} no es un día válido`;
+    const err = validateShape(hours);
+    if (err) return `schedule.${day}: ${err}`;
+  }
+  return null;
 }
 
 async function createRoom(actor, data) {
@@ -41,6 +64,8 @@ async function createRoom(actor, data) {
   }
 
   await assertSpecialtyMatchesActiveCategory(tenantId, data.specialty);
+  const scheduleError = validateRoomSchedule(data.schedule);
+  if (scheduleError) throw new BadRequestError(scheduleError);
 
   return prisma.$transaction(async (tx) => {
     const room = await tx.room.create({
@@ -48,11 +73,14 @@ async function createRoom(actor, data) {
         tenantId,
         name: data.name,
         specialty: data.specialty,
+        sortOrder: Number.isInteger(Number(data.sortOrder)) ? Number(data.sortOrder) : 0,
         opensAt: data.opensAt || '09:00',
-        closesAt: data.closesAt || '19:00',
+        closesAt: data.closesAt || '20:00',
+        schedule: data.schedule || null,
         status: 'libre',
         active: true,
       },
+      include: { services: { select: { id: true, name: true, category: true, colorHex: true, durationMins: true }, orderBy: { name: 'asc' } } },
     });
     await writeAuditLog(tx, {
       actor,
@@ -72,9 +100,19 @@ async function updateRoom(actor, id, changes) {
 
   const data = {};
   if (changes.name !== undefined) data.name = changes.name;
+  if (changes.sortOrder !== undefined) {
+    const n = Number(changes.sortOrder);
+    if (!Number.isInteger(n) || n < 0 || n > 999) throw new BadRequestError('sortOrder debe ser un entero entre 0 y 999');
+    data.sortOrder = n;
+  }
   if (changes.specialty !== undefined) {
     await assertSpecialtyMatchesActiveCategory(target.tenantId, changes.specialty);
     data.specialty = changes.specialty;
+  }
+  if (changes.schedule !== undefined) {
+    const scheduleError = validateRoomSchedule(changes.schedule);
+    if (scheduleError) throw new BadRequestError(scheduleError);
+    data.schedule = changes.schedule;
   }
   if (changes.active !== undefined) data.active = !!changes.active;
   if (changes.status !== undefined) data.status = changes.status;
@@ -90,7 +128,11 @@ async function updateRoom(actor, id, changes) {
   if (Object.keys(data).length === 0) return target;
 
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.room.update({ where: { id }, data });
+    const updated = await tx.room.update({
+      where: { id },
+      data,
+      include: { services: { select: { id: true, name: true, category: true, colorHex: true, durationMins: true }, orderBy: { name: 'asc' } } },
+    });
     const action = resolveAction('room', data, target);
     await writeAuditLog(tx, {
       actor,

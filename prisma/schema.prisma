@@ -85,6 +85,8 @@ model Service {
   name              String
   category          String
   durationMins      Int      @default(60)
+  bufferMins        Int      @default(15)
+  colorHex          String   @default("#8C6E50")
   priceUsd          Decimal  @db.Decimal(10, 2)
   offersHomeService Boolean  @default(false)
   active            Boolean  @default(true)
@@ -93,6 +95,7 @@ model Service {
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   plans        Plan[]        @relation("PlanServices")
+  rooms        Room[]        @relation("RoomServices")
   appointments Appointment[]
   treatmentHistories TreatmentHistory[]
 
@@ -124,17 +127,21 @@ model Room {
   tenantId  String
   name      String
   specialty String
+  sortOrder Int        @default(0)
   opensAt   String     @default("09:00")
-  closesAt  String     @default("19:00")
+  closesAt  String     @default("20:00")
+  schedule  Json?
   status    RoomStatus @default(libre)
   active    Boolean    @default(true)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  services     Service[]     @relation("RoomServices")
   appointments Appointment[]
 
   @@index([tenantId, specialty, active])
+  @@index([tenantId, sortOrder])
 }
 
 model Plan {
@@ -160,9 +167,11 @@ model Plan {
 model Client {
   id        String    @id @default(cuid())
   tenantId  String
+  recordNumber String?
   fullName  String
   whatsapp  String
   email     String?
+  address   String?
   birthday  DateTime? @db.Date
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
@@ -177,6 +186,7 @@ model Client {
   whatsappConversations WhatsAppConversation[]
 
   @@unique([tenantId, whatsapp])
+  @@unique([tenantId, recordNumber])
   @@index([tenantId])
   @@index([tenantId, createdAt])
 }
@@ -226,6 +236,7 @@ model Appointment {
   startsAt          DateTime
   endsAt            DateTime
   status            AppointmentStatus   @default(pendiente)
+  indications       String?
   confirmationToken String              @unique @default(cuid())
   priceUsd          Decimal             @db.Decimal(10, 2)
   createdAt         DateTime            @default(now())

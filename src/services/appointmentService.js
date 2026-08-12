@@ -4,8 +4,8 @@ const { BadRequestError, SlotUnavailableError } = require('../utils/errors');
 const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
-const { getTenantTimezone, localHourToUTC, localDayBoundsUTC } = require('../utils/timezone');
-const { normalize: normalizeBusinessHours, iterateHours, isRangeInsideBusinessHours } = require('../utils/businessHours');
+const { getTenantTimezone, localDayBoundsUTC, localTimeToUTC } = require('../utils/timezone');
+const { normalize: normalizeBusinessHours, isRangeInsideBusinessHours } = require('../utils/businessHours');
 
 const STAFF_ROLES = ['personal', 'dueno'];
 const OPEN_STATUSES = ['pendiente', 'confirmado'];
@@ -14,10 +14,48 @@ function getBusinessHours(tenantConfig) {
   return normalizeBusinessHours(tenantConfig?.businessHours);
 }
 
-function generateHourlySlots(dateStr, businessHours, timezone) {
+const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const SLOT_STEP_MINS = 15;
+
+function minutesFromHHMM(hhmm) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  return h * 60 + m;
+}
+
+function hhmmFromMinutes(total) {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function addMinutes(date, mins) {
+  return new Date(date.getTime() + mins * 60_000);
+}
+
+function totalBlockMins(service) {
+  return Number(service.durationMins || 60) + Number(service.bufferMins ?? 15);
+}
+
+function dayKeyFromDateStr(dateStr) {
+  return DAY_KEYS[new Date(`${dateStr}T12:00:00`).getDay()];
+}
+
+function roomBusinessHours(room, tenantConfig, dateStr) {
+  const special = room?.schedule?.[dayKeyFromDateStr(dateStr)];
+  return normalizeBusinessHours(special || tenantConfig?.businessHours);
+}
+
+function generateSlotsForService(dateStr, businessHours, timezone, service) {
   const slots = [];
-  for (const h of iterateHours(businessHours)) {
-    slots.push(localHourToUTC(dateStr, h, timezone));
+  const normalized = normalizeBusinessHours(businessHours);
+  const blockMins = totalBlockMins(service);
+  for (const win of [normalized.morning, normalized.afternoon]) {
+    if (!win) continue;
+    const start = minutesFromHHMM(win.start);
+    const latest = minutesFromHHMM(win.end) - blockMins;
+    for (let m = start; m <= latest; m += SLOT_STEP_MINS) {
+      slots.push(localTimeToUTC(dateStr, hhmmFromMinutes(m), timezone));
+    }
   }
   return slots;
 }
@@ -38,14 +76,37 @@ function localHHMM(date, timezone) {
   return `${hour}:${map.minute}`;
 }
 
-function assertInsideBusinessHours(tenantConfig, startsAt, endsAt) {
+function overlaps(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+function isResourceFree(appointments, resourceKey, resourceId, start, end) {
+  return !appointments.some((a) => a[resourceKey] === resourceId && overlaps(a.startsAt, a.endsAt, start, end));
+}
+
+async function getCompatibleRooms(db, tenantId, service) {
+  const linkedRooms = await db.room.findMany({
+    where: { tenantId, active: true, services: { some: { id: service.id } } },
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+  });
+  if (linkedRooms.length > 0) return linkedRooms;
+
+  // Fallback temporal para servicios anteriores a la migración:
+  // categoría del servicio = specialty de cabina.
+  return db.room.findMany({
+    where: { tenantId, specialty: service.category, active: true },
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+  });
+}
+
+function assertInsideBusinessHours(tenantConfig, startsAt, endsAt, businessHoursOverride) {
   const timezone = getTenantTimezone(tenantConfig);
   const startLocalDate = toLocalDateInTimezone(startsAt, timezone);
   const endLocalDate = toLocalDateInTimezone(endsAt, timezone);
   if (startLocalDate !== endLocalDate) {
     throw new BadRequestError('La cita está fuera del horario de atención');
   }
-  if (!isRangeInsideBusinessHours(getBusinessHours(tenantConfig), localHHMM(startsAt, timezone), localHHMM(endsAt, timezone))) {
+  if (!isRangeInsideBusinessHours(businessHoursOverride || getBusinessHours(tenantConfig), localHHMM(startsAt, timezone), localHHMM(endsAt, timezone))) {
     throw new BadRequestError('La cita está fuera del horario de atención');
   }
 }
@@ -65,13 +126,11 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
-  const mod = 'spa';
-
   const service = await prisma.service.findFirst({ where: { id: serviceId, tenantId, active: true } });
   if (!service) {
     throw new BadRequestError('serviceId inválido para este tenant');
   }
-  const rooms = await prisma.room.findMany({ where: { tenantId, specialty: service.category, active: true } });
+  const rooms = await getCompatibleRooms(prisma, tenantId, service);
   const roomIds = rooms.map((r) => r.id);
   if (roomIds.length === 0) return [];
 
@@ -87,23 +146,27 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
   if (roomIds.length) orConditions.push({ roomId: { in: roomIds } });
 
   const appointments = await prisma.appointment.findMany({
-    where: { tenantId, startsAt: { gte: dayStart, lte: dayEnd }, status: { in: OPEN_STATUSES }, OR: orConditions },
+    where: {
+      tenantId,
+      startsAt: { lt: dayEnd },
+      endsAt: { gt: dayStart },
+      status: { in: OPEN_STATUSES },
+      OR: orConditions,
+    },
   });
 
-  const bookedRoomSlots = new Set(
-    appointments.filter((a) => a.roomId).map((a) => `${a.roomId}|${a.startsAt.toISOString()}`)
-  );
-  const bookedStaffSlots = new Set(appointments.map((a) => `${a.staffId}|${a.startsAt.toISOString()}`));
+  const slotMap = new Map();
+  for (const room of rooms) {
+    const businessHours = roomBusinessHours(room, tenantConfig, date);
+    for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
+      const blockedEnd = addMinutes(slot, totalBlockMins(service));
+      const roomFree = isResourceFree(appointments, 'roomId', room.id, slot, blockedEnd);
+      const staffFree = staffIds.some((id) => isResourceFree(appointments, 'staffId', id, slot, blockedEnd));
+      if (roomFree && staffFree) slotMap.set(slot.toISOString(), slot);
+    }
+  }
 
-  const businessHours = getBusinessHours(tenantConfig);
-  const slots = generateHourlySlots(date, businessHours, tz).filter((slot) => {
-    const iso = slot.toISOString();
-    const staffFree = staffIds.some((id) => !bookedStaffSlots.has(`${id}|${iso}`));
-    if (!staffFree) return false;
-    return roomIds.some((id) => !bookedRoomSlots.has(`${id}|${iso}`));
-  });
-
-  return slots.map((s) => s.toISOString());
+  return [...slotMap.values()].sort((a, b) => a - b).map((s) => s.toISOString());
 }
 
 /**
@@ -123,13 +186,12 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
   if (!service) {
     throw new BadRequestError('serviceId inválido para este tenant');
   }
-  const endsAt = new Date(startsAt.getTime() + service.durationMins * 60_000);
-  assertInsideBusinessHours(tenantConfig, startsAt, endsAt);
+  const endsAt = addMinutes(startsAt, totalBlockMins(service));
 
-  const roomCandidates = await tx.room.findMany({
-    where: { tenantId, specialty: service.category, active: true },
-    orderBy: { id: 'asc' },
-  });
+  const roomCandidates = await getCompatibleRooms(tx, tenantId, service);
+  if (roomCandidates.length === 0) {
+    throw new SlotUnavailableError();
+  }
   const staffCandidates = await tx.user.findMany({
     where: { tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
     orderBy: { id: 'asc' },
@@ -139,13 +201,24 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
   if (roomCandidates.length) orConditions.push({ roomId: { in: roomCandidates.map((r) => r.id) } });
 
   const conflicting = await tx.appointment.findMany({
-    where: { tenantId, startsAt, status: { in: OPEN_STATUSES }, OR: orConditions },
+    where: {
+      tenantId,
+      startsAt: { lt: endsAt },
+      endsAt: { gt: startsAt },
+      status: { in: OPEN_STATUSES },
+      OR: orConditions,
+    },
   });
-  const bookedRoomIds = new Set(conflicting.filter((a) => a.roomId).map((a) => a.roomId));
-  const bookedStaffIds = new Set(conflicting.map((a) => a.staffId));
-
-  const freeRooms = roomCandidates.filter((r) => !bookedRoomIds.has(r.id));
-  const freeStaff = staffCandidates.filter((s) => !bookedStaffIds.has(s.id));
+  const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenantConfig));
+  const roomsInsideWindow = roomCandidates.filter((r) => {
+    const hours = roomBusinessHours(r, tenantConfig, dateStr);
+    return isRangeInsideBusinessHours(hours, localHHMM(startsAt, getTenantTimezone(tenantConfig)), localHHMM(endsAt, getTenantTimezone(tenantConfig)));
+  });
+  if (roomsInsideWindow.length === 0) {
+    throw new BadRequestError('La cita estÃ¡ fuera del horario de atenciÃ³n');
+  }
+  const freeRooms = roomsInsideWindow.filter((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
+  const freeStaff = staffCandidates.filter((s) => isResourceFree(conflicting, 'staffId', s.id, startsAt, endsAt));
 
   if (freeRooms.length === 0 || freeStaff.length === 0) {
     throw new SlotUnavailableError();
@@ -184,7 +257,7 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
  * y N Appointment — todo en una sola transacción (todo o nada).
  */
 async function createPublicBooking(tenantId, payload) {
-  const { fullName, whatsapp, email, intake, selections } = payload;
+  const { fullName, whatsapp, email, address, intake, selections } = payload;
   if (!fullName || !whatsapp) {
     throw new BadRequestError('fullName y whatsapp son requeridos');
   }
@@ -194,7 +267,7 @@ async function createPublicBooking(tenantId, payload) {
 
   const result = await prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
-    const client = await clientService.upsertClient(tx, tenantId, { fullName, whatsapp, email });
+    const client = await clientService.upsertClient(tx, tenantId, { fullName, whatsapp, email, address });
 
     if (intake) {
       await clientIntakeService.upsertIntake(tx, tenantId, client.id, intake);
@@ -280,6 +353,7 @@ async function listAppointments(actor, query) {
     where.tenantId = actor.tenantId;
   }
   if (query.status) where.status = query.status;
+  if (query.clientId) where.clientId = query.clientId;
   if (query.staffId) where.staffId = query.staffId;
   if (query.roomId) where.roomId = query.roomId;
   if (query.from || query.to) {
@@ -291,9 +365,9 @@ async function listAppointments(actor, query) {
     where,
     orderBy: { startsAt: 'asc' },
     include: {
-      service: { select: { name: true, category: true, durationMins: true } },
-      client:  { select: { id: true, fullName: true, whatsapp: true } },
-      room:    { select: { id: true, name: true } },
+      service: { select: { name: true, category: true, durationMins: true, bufferMins: true, colorHex: true } },
+      client:  { select: { id: true, fullName: true, whatsapp: true, recordNumber: true } },
+      room:    { select: { id: true, name: true, sortOrder: true } },
       staff:   { select: { id: true, name: true } },
     },
   });
@@ -332,38 +406,50 @@ async function createManualAppointment(actor, data) {
   }
 
   const startsAt = new Date(data.startsAt);
-  const endsAt = new Date(startsAt.getTime() + service.durationMins * 60_000);
+  const endsAt = addMinutes(startsAt, totalBlockMins(service));
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
-  assertInsideBusinessHours(tenant?.config, startsAt, endsAt);
+  const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
+  const roomCandidates = await getCompatibleRooms(prisma, tenantId, service);
+  if (roomCandidates.length === 0) {
+    throw new SlotUnavailableError();
+  }
+
+  const conflicting = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      startsAt: { lt: endsAt },
+      endsAt: { gt: startsAt },
+      status: { in: OPEN_STATUSES },
+      OR: [
+        { staffId: staff.id },
+        { roomId: { in: roomCandidates.map((r) => r.id) } },
+      ],
+    },
+  });
+  if (!isResourceFree(conflicting, 'staffId', staff.id, startsAt, endsAt)) {
+    throw new SlotUnavailableError();
+  }
 
   let resolvedRoomId = null;
   if (data.roomId) {
-    const room = await prisma.room.findFirst({
-      where: { id: data.roomId, tenantId, specialty: service.category, active: true },
-    });
+    const room = roomCandidates.find((r) => r.id === data.roomId);
     if (!room) {
-      throw new BadRequestError('El gabinete seleccionado no corresponde a la categoria del servicio');
+      throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
+    }
+    assertInsideBusinessHours(tenant?.config, startsAt, endsAt, roomBusinessHours(room, tenant?.config, dateStr));
+    if (!isResourceFree(conflicting, 'roomId', room.id, startsAt, endsAt)) {
+      throw new SlotUnavailableError();
     }
     resolvedRoomId = room.id;
   } else {
-    const roomCandidates = await prisma.room.findMany({
-      where: { tenantId, specialty: service.category, active: true },
-      orderBy: { id: 'asc' },
+    const roomsInsideWindow = roomCandidates.filter((r) => {
+      const hours = roomBusinessHours(r, tenant?.config, dateStr);
+      return isRangeInsideBusinessHours(hours, localHHMM(startsAt, getTenantTimezone(tenant?.config)), localHHMM(endsAt, getTenantTimezone(tenant?.config)));
     });
-    if (roomCandidates.length === 0) {
-      throw new SlotUnavailableError();
+    if (roomsInsideWindow.length === 0) {
+      throw new BadRequestError('La cita estÃ¡ fuera del horario de atenciÃ³n');
     }
-    const conflictingRooms = await prisma.appointment.findMany({
-      where: {
-        tenantId,
-        startsAt,
-        status: { in: OPEN_STATUSES },
-        roomId: { in: roomCandidates.map((r) => r.id) },
-      },
-      select: { roomId: true },
-    });
-    const bookedRoomIds = new Set(conflictingRooms.map((a) => a.roomId).filter(Boolean));
-    const freeRoom = roomCandidates.find((r) => !bookedRoomIds.has(r.id));
+    const freeRoom = roomsInsideWindow.find((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
     if (!freeRoom) {
       throw new SlotUnavailableError();
     }
@@ -382,6 +468,7 @@ async function createManualAppointment(actor, data) {
         staffId: data.staffId,
         startsAt,
         endsAt,
+        indications: data.indications ? String(data.indications).trim() : null,
         priceUsd: service.priceUsd,
       },
     });
@@ -402,12 +489,36 @@ async function updateAppointment(actor, id, changes) {
   if (changes.startsAt !== undefined) data.startsAt = new Date(changes.startsAt);
   if (changes.roomId !== undefined) data.roomId = changes.roomId;
   if (changes.staffId !== undefined) data.staffId = changes.staffId;
+  if (changes.indications !== undefined) data.indications = changes.indications ? String(changes.indications).trim() : null;
 
-  if (data.startsAt) {
+  if (data.startsAt || data.roomId !== undefined || data.staffId !== undefined) {
     const service = await prisma.service.findUnique({ where: { id: target.serviceId } });
-    data.endsAt = new Date(data.startsAt.getTime() + service.durationMins * 60_000);
+    const startsAt = data.startsAt || target.startsAt;
+    const endsAt = addMinutes(startsAt, totalBlockMins(service));
+    data.endsAt = endsAt;
     const tenant = await prisma.tenant.findUnique({ where: { id: target.tenantId }, select: { config: true } });
-    assertInsideBusinessHours(tenant?.config, data.startsAt, data.endsAt);
+    const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
+    const roomId = data.roomId !== undefined ? data.roomId : target.roomId;
+    const staffId = data.staffId !== undefined ? data.staffId : target.staffId;
+    const roomCandidates = await getCompatibleRooms(prisma, target.tenantId, service);
+    const room = roomCandidates.find((r) => r.id === roomId);
+    if (!room) throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
+    assertInsideBusinessHours(tenant?.config, startsAt, endsAt, roomBusinessHours(room, tenant?.config, dateStr));
+
+    const conflicting = await prisma.appointment.findMany({
+      where: {
+        tenantId: target.tenantId,
+        id: { not: id },
+        startsAt: { lt: endsAt },
+        endsAt: { gt: startsAt },
+        status: { in: OPEN_STATUSES },
+        OR: [{ roomId }, { staffId }],
+      },
+    });
+    if (!isResourceFree(conflicting, 'roomId', roomId, startsAt, endsAt)
+      || !isResourceFree(conflicting, 'staffId', staffId, startsAt, endsAt)) {
+      throw new SlotUnavailableError();
+    }
   }
 
   try {

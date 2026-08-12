@@ -30,9 +30,11 @@ async function loadClientForActor(actor, clientId) {
 const CLIENT_SAFE_SELECT = {
   id: true,
   tenantId: true,
+  recordNumber: true,
   fullName: true,
   whatsapp: true,
   email: true,
+  address: true,
   birthday: true,
   active: true,
   createdAt: true,
@@ -45,10 +47,13 @@ function toClientSafeDto(client) {
   return {
     id: client.id,
     tenantId: client.tenantId,
+    recordNumber: client.recordNumber,
     fullName: client.fullName,
     whatsapp: client.whatsapp,
     email: client.email,
+    address: client.address,
     birthday: client.birthday ? toISODate(client.birthday) : null,
+    age: client.birthday ? computeAge(new Date(client.birthday), new Date()) : null,
     active: client.active,
     createdAt: client.createdAt,
     updatedAt: client.updatedAt,
@@ -60,6 +65,13 @@ function toClientSafeDto(client) {
 function toISODate(d) {
   const dt = new Date(d);
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+function computeAge(birthday, today) {
+  let age = today.getUTCFullYear() - birthday.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - birthday.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < birthday.getUTCDate())) age -= 1;
+  return Math.max(age, 0);
 }
 
 // Parse "YYYY-MM-DD" into a Date at UTC midnight, so Prisma writes @db.Date
@@ -93,6 +105,7 @@ async function listClients(actor, query = {}) {
     if (q) {
       const or = [
         { fullName: { contains: q, mode: 'insensitive' } },
+        { recordNumber: { contains: q, mode: 'insensitive' } },
         { whatsapp: { contains: q } },
         { email: { contains: q, mode: 'insensitive' } },
       ];
@@ -130,6 +143,7 @@ async function searchClients(actor, query = {}) {
 
   const or = [
     { fullName: { contains: q, mode: 'insensitive' } },
+    { recordNumber: { contains: q, mode: 'insensitive' } },
     { whatsapp: { contains: q } },
     { email: { contains: q, mode: 'insensitive' } },
   ];
@@ -148,6 +162,7 @@ async function searchClients(actor, query = {}) {
     where,
     select: {
       id: true,
+      recordNumber: true,
       fullName: true,
       whatsapp: true,
     },
@@ -159,6 +174,7 @@ async function searchClients(actor, query = {}) {
     type: 'client',
     id: c.id,
     name: c.fullName,
+    recordNumber: c.recordNumber,
     phone: c.whatsapp,
   }));
 }
@@ -192,12 +208,12 @@ async function lookupClient(tenantId, whatsapp) {
  * se crea o actualiza como parte de la misma operación atómica que crea
  * su ClientIntake y sus Appointment.
  */
-async function upsertClient(tx, tenantId, { fullName, whatsapp, email }) {
+async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address }) {
   const normalized = normalizePhone(whatsapp);
   return tx.client.upsert({
     where: { tenantId_whatsapp: { tenantId, whatsapp: normalized } },
-    update: { fullName, email },
-    create: { tenantId, fullName, whatsapp: normalized, email },
+    update: { fullName, email, ...(address !== undefined ? { address } : {}) },
+    create: { tenantId, fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}) },
   });
 }
 
@@ -220,9 +236,11 @@ async function createClient(actor, data) {
     client = await prisma.client.create({
       data: {
         tenantId,
+        recordNumber: data.recordNumber ? String(data.recordNumber).trim() : null,
         fullName: String(data.fullName).trim(),
         whatsapp,
         email: data.email ? String(data.email).trim().toLowerCase() : null,
+        address: data.address ? String(data.address).trim() : null,
         birthday,
       },
       select: CLIENT_SAFE_SELECT,
@@ -264,6 +282,12 @@ async function updateClient(actor, clientId, changes) {
     } else {
       data.email = null;
     }
+  }
+  if (changes.recordNumber !== undefined) {
+    data.recordNumber = changes.recordNumber ? String(changes.recordNumber).trim() : null;
+  }
+  if (changes.address !== undefined) {
+    data.address = changes.address ? String(changes.address).trim() : null;
   }
   if (changes.whatsapp !== undefined) {
     const normalized = normalizePhone(changes.whatsapp);

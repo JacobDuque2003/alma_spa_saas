@@ -36,6 +36,49 @@ function birthdayCaptionFromDays(daysUntil) {
   return `En ${daysUntil} días`;
 }
 
+const ANTECEDENT_OPTIONS = [
+  "Epilepsia",
+  "Diabetes",
+  "Artritis",
+  "Hirsutismo",
+  "Melanomas",
+  "Dermatitis",
+  "Lupus",
+  "Alergias",
+  "Insuficiencia renal",
+  "Problemas respiratorios",
+  "Problemas hepáticos",
+  "Dispositivo anticonceptivo",
+  "Problemas de tiroides",
+  "Hipertensión",
+  "Problemas gástricos",
+  "Lactancia",
+  "Embarazo",
+  "Vitíligo",
+  "Vértigo",
+  "Cáncer",
+  "Asma",
+  "Várices",
+  "Ovario poliquístico",
+];
+
+function parseChecklistText(value = "") {
+  const text = String(value || "");
+  const markedMatch = text.match(/Antecedentes marcados:\s*([^\n]+)/i);
+  const notesMatch = text.match(/Observaciones:\s*([\s\S]+)/i);
+  return {
+    selected: markedMatch ? markedMatch[1].split(";").map((x) => x.trim()).filter(Boolean) : [],
+    notes: notesMatch ? notesMatch[1].trim() : (!markedMatch ? text.trim() : ""),
+  };
+}
+
+function buildChecklistText(selected, notes) {
+  const parts = [];
+  if (selected.length) parts.push(`Antecedentes marcados: ${selected.join("; ")}`);
+  if (notes.trim()) parts.push(`Observaciones: ${notes.trim()}`);
+  return parts.join("\n");
+}
+
 export default function ClientesPage() {
   const searchParams = useSearchParams();
   // Preselección desde <GlobalSearch>: /admin/clientes?client=<id>
@@ -52,6 +95,7 @@ export default function ClientesPage() {
   const [detail, setDetail] = useState(null);
   const [intake, setIntake] = useState(null);
   const [treatments, setTreatments] = useState([]);
+  const [clientAppointments, setClientAppointments] = useState([]);
   const [plans, setPlans] = useState([]);
   const [balance, setBalance] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -115,16 +159,18 @@ export default function ClientesPage() {
     if (!selectedId) return;
     setDetailLoading(true);
     try {
-      const [clientData, intakeData, treatmentsData, plansData, balanceData] = await Promise.all([
+      const [clientData, intakeData, treatmentsData, appointmentData, plansData, balanceData] = await Promise.all([
         authFetch(`/clients/${selectedId}`),
         authFetch(`/clients/${selectedId}/intake`).catch((err) => (err.status === 404 ? null : Promise.reject(err))),
         authFetch(`/clients/${selectedId}/treatments`).catch(() => []),
+        authFetch("/appointments", { query: { clientId: selectedId } }).catch(() => []),
         authFetch(`/clients/${selectedId}/plans`).catch(() => []),
         authFetch(`/clients/${selectedId}/balance`).catch(() => null),
       ]);
       setDetail(clientData);
       setIntake(intakeData);
       setTreatments(Array.isArray(treatmentsData) ? treatmentsData : []);
+      setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
       setPlans(Array.isArray(plansData) ? plansData : []);
       setBalance(balanceData);
     } catch {
@@ -544,13 +590,30 @@ export default function ClientesPage() {
                     <span>{detail.whatsapp}</span>
                     <span>·</span>
                     <span>Clienta desde {shortDate(detail.createdAt)}</span>
+                    {detail.recordNumber && (
+                      <>
+                        <span>·</span>
+                        <span>Ficha {detail.recordNumber}</span>
+                      </>
+                    )}
+                    {detail.age != null && (
+                      <>
+                        <span>·</span>
+                        <span>{detail.age} años</span>
+                      </>
+                    )}
                     {detail.birthday && (
                       <>
-                        <span>??</span>
+                        <span>🎂</span>
                         <span>Cumple: {birthdayDateLabel(detail.birthday)}{selectedBirthdayInfo ? ` (${birthdayCaptionFromDays(selectedBirthdayInfo.daysUntil)})` : ""}</span>
                       </>
                     )}
                   </div>
+                  {detail.address && (
+                    <div style={{ marginTop: 4, fontSize: 12, color: "#8C6E50" }}>
+                      Dirección: {detail.address}
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -648,6 +711,7 @@ export default function ClientesPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 18, minHeight: 0 }}>
                 <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />
                 <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />
+                <ClientTimelineCard appointments={clientAppointments} />
               </div>
               <TreatmentsCard treatments={treatments} clientId={selectedId} onSaved={fetchDetail} />
             </div>
@@ -664,6 +728,7 @@ export default function ClientesPage() {
 }
 
 function IntakeCard({ intake, onEdit }) {
+  const parsedConditions = parseChecklistText(intake?.conditions || "");
   return (
     <div className="alma-card" style={{ padding: 22 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -679,7 +744,18 @@ function IntakeCard({ intake, onEdit }) {
         </div>
         <div>
           <div style={{ fontSize: 12, color: "#A89A87", marginBottom: 3 }}>Condiciones relevantes para su tratamiento</div>
-          <div style={{ fontSize: 14, color: "#6B5540" }}>{intake?.conditions || "Sin condiciones registradas"}</div>
+          {parsedConditions.selected.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {parsedConditions.selected.map((item) => (
+                <span key={item} style={{ padding: "4px 9px", borderRadius: 999, background: "rgba(201,168,118,0.16)", color: "#6B5540", fontSize: 12 }}>
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div style={{ fontSize: 14, color: "#6B5540", marginTop: parsedConditions.selected.length ? 8 : 0 }}>
+            {parsedConditions.notes || (!parsedConditions.selected.length ? "Sin condiciones registradas" : "")}
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4 }}>
           {intake?.consentSigned ? (
@@ -806,6 +882,58 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
   );
 }
 
+function ClientTimelineCard({ appointments }) {
+  const rows = Array.isArray(appointments)
+    ? [...appointments].sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()).slice(0, 8)
+    : [];
+  const statusInfo = {
+    pendiente: { label: "Reservó, falta confirmar", color: "#A89A87", bg: "rgba(168,154,135,0.14)" },
+    confirmado: { label: "Asistió / confirmada", color: "#6F7F45", bg: "rgba(111,127,69,0.12)" },
+    cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
+    no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },
+  };
+
+  return (
+    <div className="alma-card" style={{ padding: 22 }}>
+      <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: "0 0 14px" }}>
+        Historial de reservas
+      </h3>
+      {rows.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Todavía no hay reservas registradas.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows.map((appt) => {
+            const info = statusInfo[appt.status] || statusInfo.pendiente;
+            return (
+              <div key={appt.id} style={{ display: "grid", gridTemplateColumns: "16px 1fr", gap: 10 }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", marginTop: 5, background: info.color, boxShadow: "0 0 0 4px " + info.bg }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <strong style={{ fontSize: 13, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {appt.service?.name || "Servicio"}
+                    </strong>
+                    <span style={{ fontSize: 11, color: info.color, background: info.bg, borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                      {info.label}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 3, fontSize: 12, color: "#A89A87" }}>
+                    {shortDate(appt.startsAt)} · {appt.room?.name || "Sin cabina"}
+                  </div>
+                  {appt.indications && (
+                    <div style={{ marginTop: 3, fontSize: 12, color: "#8C6E50", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {appt.indications}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const modalInputStyle = { width: "100%", padding: "10px 14px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 14, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
 const modalLabelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
 
@@ -886,7 +1014,7 @@ function EditClientModal({ client, phase, onClose, onSaved }) {
   return (
     <ClientModalShell title="Editar clienta" phase={phase} onClose={onClose}>
       <ClientForm
-        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, birthday: client.birthday }}
+        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, recordNumber: client.recordNumber, address: client.address, birthday: client.birthday }}
         onCancel={onClose}
         submitLabel="Guardar"
         onSubmit={async (payload) => {
@@ -931,8 +1059,10 @@ function DeleteClientModal({ client, phase, onClose, onDeleted }) {
 }
 
 function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
+  const parsed = parseChecklistText(intake?.conditions || "");
   const [allergies, setAllergies] = useState(intake?.allergies || "");
-  const [conditions, setConditions] = useState(intake?.conditions || "");
+  const [selectedAntecedents, setSelectedAntecedents] = useState(parsed.selected);
+  const [conditionNotes, setConditionNotes] = useState(parsed.notes);
   const [consentSigned, setConsentSigned] = useState(intake?.consentSigned || false);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
@@ -941,10 +1071,17 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await authFetch(`/clients/${clientId}/intake`, { method: "PUT", body: { allergies, conditions, consentSigned } });
+      await authFetch(`/clients/${clientId}/intake`, {
+        method: "PUT",
+        body: { allergies, conditions: buildChecklistText(selectedAntecedents, conditionNotes), consentSigned },
+      });
       toast.success("Ficha guardada");
       onSaved();
     } catch (err) { toast.error(err.message || "Error al guardar"); setSaving(false); }
+  }
+
+  function toggleAntecedent(item) {
+    setSelectedAntecedents((current) => current.includes(item) ? current.filter((x) => x !== item) : [...current, item]);
   }
 
   return (
@@ -954,7 +1091,40 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
         <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}>Ficha de anamnesis</h2>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div><label style={modalLabelStyle}>Alergias</label><textarea style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Ninguna conocida" /></div>
-          <div><label style={modalLabelStyle}>Condiciones relevantes</label><textarea style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} value={conditions} onChange={(e) => setConditions(e.target.value)} placeholder="Ninguna" /></div>
+          <div>
+            <label style={modalLabelStyle}>Antecedentes clínicos</label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, maxHeight: 220, overflowY: "auto", padding: "2px 2px 4px" }}>
+              {ANTECEDENT_OPTIONS.map((item) => {
+                const checked = selectedAntecedents.includes(item);
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => toggleAntecedent(item)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      border: "1px solid " + (checked ? "rgba(201,168,118,0.62)" : "rgba(168,154,135,0.32)"),
+                      background: checked ? "rgba(201,168,118,0.16)" : "#FDFCFA",
+                      color: checked ? "#6B5540" : "#8C6E50",
+                      borderRadius: 10,
+                      padding: "7px 8px",
+                      fontSize: 12,
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ width: 14, height: 14, borderRadius: 4, border: "1px solid rgba(140,110,80,0.45)", background: checked ? "#C9A876" : "transparent", color: "#F7F5F0", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0 }}>
+                      {checked ? "✓" : ""}
+                    </span>
+                    <span>{item}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div><label style={modalLabelStyle}>Observaciones relevantes</label><textarea style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} value={conditionNotes} onChange={(e) => setConditionNotes(e.target.value)} placeholder="Notas adicionales o condiciones no listadas" /></div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
             <input type="checkbox" checked={consentSigned} onChange={(e) => setConsentSigned(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#8C6E50" }} />
             <span style={{ fontSize: 13, color: "#6B5540" }}>Consentimiento firmado</span>

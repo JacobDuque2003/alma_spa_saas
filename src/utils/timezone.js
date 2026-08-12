@@ -13,6 +13,14 @@ function localHourToUTC(dateStr, hour, timezone) {
   ).toUTC().toJSDate();
 }
 
+function localTimeToUTC(dateStr, hhmm, timezone) {
+  const [hour, minute] = String(hhmm).split(':').map(Number);
+  return DateTime.fromObject(
+    { year: +dateStr.slice(0, 4), month: +dateStr.slice(5, 7), day: +dateStr.slice(8, 10), hour, minute, second: 0 },
+    { zone: timezone }
+  ).toUTC().toJSDate();
+}
+
 function localDayBoundsUTC(dateStr, timezone) {
   const start = DateTime.fromObject(
     { year: +dateStr.slice(0, 4), month: +dateStr.slice(5, 7), day: +dateStr.slice(8, 10), hour: 0, minute: 0, second: 0 },
@@ -26,4 +34,4 @@ function utcToLocalTimeString(utcDate, timezone) {
   return DateTime.fromJSDate(utcDate).setZone(timezone).toFormat('HH:mm');
 }
 
-module.exports = { DEFAULT_TIMEZONE, getTenantTimezone, localHourToUTC, localDayBoundsUTC, utcToLocalTimeString };
+module.exports = { DEFAULT_TIMEZONE, getTenantTimezone, localHourToUTC, localTimeToUTC, localDayBoundsUTC, utcToLocalTimeString };

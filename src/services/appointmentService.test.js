@@ -214,7 +214,8 @@ test('createManualAppointment rechaza gabinete incompatible con la categoria del
   mockPrisma({
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
     user: { findFirst: async () => ({ id: 'staff1' }) },
-    room: { findFirst: async () => null },
+    room: { findMany: async () => [{ id: 'room-masajes' }] },
+    appointment: { findMany: async () => [] },
   });
 
   await assert.rejects(
@@ -222,7 +223,7 @@ test('createManualAppointment rechaza gabinete incompatible con la categoria del
       { role: 'dueno', tenantId: 't1' },
       { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', roomId: 'room-corporal', startsAt: '2026-08-01T14:00:00.000Z', modality: 'presencial' }
     ),
-    (err) => err.status === 400 && /gabinete seleccionado/.test(err.message)
+    (err) => err.status === 400 && /cabina seleccionada/.test(err.message)
   );
 });
 
@@ -232,7 +233,12 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
     user: { findFirst: async () => ({ id: 'staff1' }) },
     room: { findMany: async () => [{ id: 'room1' }, { id: 'room2' }] },
     appointment: {
-      findMany: async () => [{ roomId: 'room1' }],
+      findMany: async () => [{
+        roomId: 'room1',
+        staffId: 'staff2',
+        startsAt: new Date('2026-08-01T14:00:00.000Z'),
+        endsAt: new Date('2026-08-01T15:15:00.000Z'),
+      }],
       create: async (args) => ({ id: 'appt1', ...args.data }),
     },
   });
@@ -256,11 +262,41 @@ test('getAvailability devuelve lista vacía si no hay ningún staff habilitado',
   assert.deepEqual(slots, []);
 });
 
+test('listAppointments permite filtrar historial por clienta sin salir del tenant', async () => {
+  let seenArgs;
+  mockPrisma({
+    appointment: {
+      findMany: async (args) => {
+        seenArgs = args;
+        return [];
+      },
+    },
+  });
+
+  const result = await appointmentService.listAppointments(
+    { role: 'dueno', tenantId: 't1' },
+    { clientId: 'client-123' }
+  );
+
+  assert.deepEqual(result, []);
+  assert.equal(seenArgs.where.tenantId, 't1');
+  assert.equal(seenArgs.where.clientId, 'client-123');
+});
+
 test('updateAppointment rechaza reprogramar fuera del horario dividido', async () => {
   mockPrisma({
-    service: { findUnique: async () => ({ id: 'srv1', durationMins: 60 }) },
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'masajes' }] },
     appointment: {
-      findUnique: async () => ({ id: 'appt1', tenantId: 't1', serviceId: 'srv1' }),
+      findUnique: async () => ({
+        id: 'appt1',
+        tenantId: 't1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        startsAt: new Date('2026-08-01T14:00:00.000Z'),
+      }),
+      findMany: async () => [],
       update: async () => {
         throw new Error('no debe actualizar si está fuera de horario');
       },

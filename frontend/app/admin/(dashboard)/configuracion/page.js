@@ -78,7 +78,7 @@ function friendlyConfigError(message, fallback) {
   const text = String(message || fallback || "");
   const dependentRoom = text.match(/No se puede desactivar: el gabinete "([^"]+)" depende de la categoría "([^"]+)"/);
   if (dependentRoom) {
-    return `No se pudo desactivar. El gabinete "${dependentRoom[1]}" usa la categoría "${dependentRoom[2]}" y necesita al menos un servicio activo.`;
+    return `No se pudo desactivar. La cabina "${dependentRoom[1]}" usa la categoría "${dependentRoom[2]}" y necesita al menos un servicio activo.`;
   }
   return text || fallback;
 }
@@ -108,20 +108,34 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
+  const [durationMins, setDurationMins] = useState("60");
+  const [bufferMins, setBufferMins] = useState("15");
+  const [colorHex, setColorHex] = useState("#8C6E50");
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim() || !category.trim() || !Number(priceUsd)) {
+    if (!name.trim() || !category.trim() || !Number(priceUsd) || !Number(durationMins)) {
       setValidation("Nombre, categoría y precio son requeridos");
       return;
     }
     setValidation(null);
     setSaving(true);
     try {
-      const created = await authFetch("/services", { method: "POST", body: { name: name.trim(), category: category.trim(), priceUsd: Number(priceUsd), offersHomeService: false } });
+      const created = await authFetch("/services", {
+        method: "POST",
+        body: {
+          name: name.trim(),
+          category: category.trim(),
+          priceUsd: Number(priceUsd),
+          durationMins: Number(durationMins),
+          bufferMins: Number(bufferMins || 15),
+          colorHex,
+          offersHomeService: false,
+        },
+      });
       toast.success(`Servicio "${created.name}" creado`);
       onSaved(created);
     } catch (err) {
@@ -139,7 +153,14 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
           <input style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="masajes" list="cat-suggestions" />
           {categories.length > 0 && <datalist id="cat-suggestions">{categories.map((c) => <option key={c} value={c} />)}</datalist>}
         </div>
-        <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div><label style={labelStyle}>Duración</label><input type="number" min="15" step="15" style={inputStyle} value={durationMins} onChange={(e) => setDurationMins(e.target.value)} placeholder="60" /></div>
+          <div><label style={labelStyle}>Pausa</label><input type="number" min="0" step="5" style={inputStyle} value={bufferMins} onChange={(e) => setBufferMins(e.target.value)} placeholder="15" /></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 84px", gap: 10, alignItems: "end" }}>
+          <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
+          <div><label style={labelStyle}>Color</label><input type="color" style={{ ...inputStyle, padding: 5, height: 40 }} value={colorHex} onChange={(e) => setColorHex(e.target.value)} /></div>
+        </div>
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
@@ -167,18 +188,18 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
     setSaving(true);
     try {
       const created = await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty } });
-      toast.success(`Gabinete "${created.name}" creado`);
+      toast.success(`Cabina "${created.name}" creada`);
       onSaved(created);
     } catch (err) {
-      toast.error(err.message || "Error al crear gabinete");
+      toast.error(err.message || "Error al crear cabina");
       setSaving(false);
     }
   }
 
   return (
-    <Modal title="Nuevo gabinete" phase={phase} onClose={onClose}>
+    <Modal title="Nueva cabina" phase={phase} onClose={onClose}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Gabinete de masajes" /></div>
+        <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Cabina 4 - CORPORAL" /></div>
         <div>
           <label style={labelStyle}>Especialidad</label>
           <select value={specialty} onChange={(e) => setSpecialty(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
@@ -188,7 +209,7 @@ function RoomFormModal({ categories, phase, onClose, onSaved }) {
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
-          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear gabinete"}</button>
+          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear cabina"}</button>
         </div>
       </form>
     </Modal>
@@ -399,17 +420,17 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
   const [name, setName] = useState(r.name);
   const [specialty, setSpecialty] = useState(r.specialty);
   const [opensAt, setOpensAt] = useState(r.opensAt || "09:00");
-  const [closesAt, setClosesAt] = useState(r.closesAt || "19:00");
+  const [closesAt, setClosesAt] = useState(r.closesAt || "20:00");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setName(r.name);
     setSpecialty(r.specialty);
     setOpensAt(r.opensAt || "09:00");
-    setClosesAt(r.closesAt || "19:00");
+    setClosesAt(r.closesAt || "20:00");
   }, [r]);
 
-  const dirty = name !== r.name || specialty !== r.specialty || opensAt !== (r.opensAt || "09:00") || closesAt !== (r.closesAt || "19:00");
+  const dirty = name !== r.name || specialty !== r.specialty || opensAt !== (r.opensAt || "09:00") || closesAt !== (r.closesAt || "20:00");
   const active = r.active !== false;
 
   async function handleSave() {
@@ -431,7 +452,7 @@ function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) 
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C9A876", flexShrink: 0 }} />
           <span style={{ fontSize: 14, fontWeight: 500, color: "#6B5540", whiteSpace: "nowrap" }}>{r.name}</span>
-          <span style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.specialty} · {r.opensAt || "09:00"}-{r.closesAt || "19:00"}</span>
+          <span style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.specialty} · {r.opensAt || "09:00"}-{r.closesAt || "20:00"}</span>
           {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450", flexShrink: 0 }}>Inactivo</span>}
         </div>
         <Toggle checked={active} onChange={(val) => onUpdate(r, { active: val })} />
@@ -532,11 +553,11 @@ export default function ConfiguracionPage() {
     try {
       const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
       setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, ...updated } : r)));
-      if (changes.active === true) toast.success("Gabinete habilitado");
-      else if (changes.active === false) toast.warning("Gabinete deshabilitado");
-      else toast.info("Gabinete actualizado");
+      if (changes.active === true) toast.success("Cabina habilitada");
+      else if (changes.active === false) toast.warning("Cabina deshabilitada");
+      else toast.info("Cabina actualizada");
     } catch (err) {
-      toast.error(friendlyConfigError(err.message, "Error al actualizar gabinete"));
+      toast.error(friendlyConfigError(err.message, "Error al actualizar cabina"));
     }
   }
 
@@ -545,7 +566,7 @@ export default function ConfiguracionPage() {
       <div style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 20 }}>
         <div>
           <h1 className="font-heading" style={{ fontSize: isMobile ? 24 : 30, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>Configuración</h1>
-          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, categorías, gabinetes y horario de atención del spa.</p>
+          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, categorías, cabinas y horario de atención del spa.</p>
         </div>
 
         {loadError && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>}
@@ -572,11 +593,19 @@ export default function ConfiguracionPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, width: "100%" }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ width: 9, height: 9, borderRadius: "50%", background: s.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)" }} />
                             <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
                             <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50" }}>{s.category}</span>
                             {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
                           </div>
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>1 h</p>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>
+                            {s.durationMins || 60} min de sesión · {s.bufferMins ?? 15} min de pausa · bloque total {(s.durationMins || 60) + (s.bufferMins ?? 15)} min
+                          </p>
+                          {Array.isArray(s.rooms) && s.rooms.length > 0 && (
+                            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#8C6E50" }}>
+                              Cabinas: {s.rooms.map((room) => room.name).join(", ")}
+                            </p>
+                          )}
                         </div>
                         {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
@@ -609,7 +638,7 @@ export default function ConfiguracionPage() {
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <SectionHeader
                 title="Categorías"
-                subtitle="Agrupa servicios y gabinetes por especialidad (masajes, faciales, corporales…)."
+                subtitle="Agrupa servicios y cabinas por especialidad (facial, láser, corporal, terapias…)."
                 onAdd={() => setShowCatForm(true)}
                 addLabel="Crear categoría"
               />
@@ -668,7 +697,7 @@ export default function ConfiguracionPage() {
                   <EmptyState
                     icon={<Tag size={26} strokeWidth={1.5} />}
                     title="Sin categorías todavía"
-                    body="Crea al menos una categoría antes de añadir servicios o gabinetes — se usa para clasificarlos."
+                    body="Crea al menos una categoría antes de añadir servicios o cabinas — se usa para clasificarlos."
                     ctaLabel="Crear categoría"
                     onCta={() => setShowCatForm(true)}
                   />
@@ -676,13 +705,13 @@ export default function ConfiguracionPage() {
               </div>
             </div>
 
-            {/* Gabinetes */}
+            {/* Cabinas */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <SectionHeader
-                title="Gabinetes"
-                subtitle="Cada gabinete atiende una categoría — la agenda auto-asigna el gabinete disponible al reservar."
+                title="Cabinas"
+                subtitle="Cada servicio puede atenderse en una o varias cabinas. La agenda asigna la cabina libre al reservar."
                 onAdd={() => setShowRoomForm(true)}
-                addLabel="Añadir gabinete"
+                addLabel="Añadir cabina"
               />
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {rooms.map((r, i, arr) => (
@@ -699,9 +728,9 @@ export default function ConfiguracionPage() {
                 {rooms.length === 0 && (
                   <EmptyState
                     icon={<DoorOpen size={28} strokeWidth={1.5} />}
-                    title="Sin gabinetes todavía"
-                    body="Cada gabinete se asocia a una categoría. La agenda auto-asigna el gabinete disponible al momento de reservar."
-                    ctaLabel="Añadir gabinete"
+                    title="Sin cabinas todavía"
+                    body="Cada cabina se vincula con los servicios que puede atender. La agenda elige la cabina disponible al reservar."
+                    ctaLabel="Añadir cabina"
                     onCta={() => setShowRoomForm(true)}
                   />
                 )}

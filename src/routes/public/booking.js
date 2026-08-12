@@ -13,7 +13,8 @@ router.get('/services', ipRateLimit, async (req, res, next) => {
   try {
     const services = await prisma.service.findMany({
       where: { tenantId: req.publicTenant.id, active: true },
-      select: { id: true, name: true, category: true, durationMins: true, priceUsd: true },
+      select: { id: true, name: true, category: true, durationMins: true, bufferMins: true, colorHex: true, priceUsd: true },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
     res.json(services);
   } catch (err) {

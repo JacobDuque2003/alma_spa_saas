@@ -76,9 +76,10 @@ test('searchClients devuelve DTO mínimo tenant-scoped y busca por teléfono loc
   assert.equal(argsSeen.where.active, true);
   assert.equal(argsSeen.take, 10);
   assert.equal(argsSeen.select.id, true);
+  assert.equal(argsSeen.select.recordNumber, true);
   assert.equal('email' in argsSeen.select, false);
   assert.equal('intake' in argsSeen.select, false);
-  assert.deepEqual(result, [{ type: 'client', id: 'c1', name: 'Jacob Duque', phone: '+593993629256' }]);
+  assert.deepEqual(result, [{ type: 'client', id: 'c1', name: 'Jacob Duque', phone: '+593993629256', recordNumber: undefined }]);
 });
 
 test('searchClients no lista todo si q tiene menos de 2 caracteres', async () => {

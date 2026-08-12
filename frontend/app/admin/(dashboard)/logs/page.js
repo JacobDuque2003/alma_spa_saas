@@ -9,7 +9,7 @@ const ENTITY_OPTIONS = [
   { value: "", label: "Todas" },
   { value: "user", label: "Usuarios" },
   { value: "service", label: "Servicios" },
-  { value: "room", label: "Gabinetes" },
+  { value: "room", label: "Cabinas" },
   { value: "category", label: "Categorías" },
 ];
 
@@ -23,12 +23,12 @@ const ACTION_LABELS = {
 };
 
 const ACTION_COLORS = {
-  create: { bg: "rgba(76,175,80,0.12)", color: "#2E7D32" },
-  update: { bg: "rgba(33,150,243,0.12)", color: "#1565C0" },
-  activate: { bg: "rgba(76,175,80,0.12)", color: "#2E7D32" },
-  deactivate: { bg: "rgba(255,152,0,0.12)", color: "#E65100" },
-  purge: { bg: "rgba(244,67,54,0.12)", color: "#C62828" },
-  permissionsChanged: { bg: "rgba(156,39,176,0.12)", color: "#7B1FA2" },
+  create: { bg: "rgba(111,127,69,0.12)", color: "#6F7F45" },
+  update: { bg: "rgba(201,168,118,0.16)", color: "#8C6E50" },
+  activate: { bg: "rgba(111,127,69,0.12)", color: "#6F7F45" },
+  deactivate: { bg: "rgba(154,78,72,0.10)", color: "#9A4E48" },
+  purge: { bg: "rgba(154,78,72,0.12)", color: "#9A4E48" },
+  permissionsChanged: { bg: "rgba(168,154,135,0.18)", color: "#6B5540" },
 };
 
 // Verbos en pasado, coherentes con AuditAction del backend.
@@ -44,7 +44,7 @@ const ACTION_VERBS = {
 // Sustantivo entity + artículo con género correcto en español.
 const ENTITY_LABELS = {
   service: { article: "el", noun: "servicio" },
-  room: { article: "el", noun: "gabinete" },
+  room: { article: "la", noun: "cabina" },
   category: { article: "la", noun: "categoría" },
   user: { article: "la", noun: "cuenta" },
 };
@@ -89,6 +89,33 @@ function formatDate(iso) {
     " " + d.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
 }
 
+const DETAIL_LABELS = {
+  name: "nombre",
+  email: "correo",
+  role: "rol",
+  active: "estado",
+  canAttendAppointments: "atiende citas",
+  isProtected: "protegida",
+  category: "categoría",
+  priceUsd: "precio",
+  durationMins: "duración",
+  bufferMins: "pausa",
+  colorHex: "color",
+  offersHomeService: "domicilio",
+  specialty: "especialidad",
+  sortOrder: "orden",
+  opensAt: "abre",
+  closesAt: "cierra",
+  status: "estado",
+};
+
+function formatDetailValue(key, value) {
+  if (typeof value === "boolean") return value ? "sí" : "no";
+  if (key === "priceUsd") return `$${Number(value || 0).toFixed(2)}`;
+  if (key === "durationMins" || key === "bufferMins") return `${value} min`;
+  return String(value);
+}
+
 function DetailCell({ detail }) {
   if (!detail || typeof detail !== "object") return <span style={{ color: "#A89A87" }}>—</span>;
   return (
@@ -96,7 +123,7 @@ function DetailCell({ detail }) {
       {Object.entries(detail).map(([k, v], i) => (
         <span key={k}>
           {i > 0 && ", "}
-          <b>{k}</b>: {String(v)}
+          <b>{DETAIL_LABELS[k] || k}</b>: {formatDetailValue(k, v)}
         </span>
       ))}
     </span>

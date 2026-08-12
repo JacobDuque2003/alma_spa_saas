@@ -31,7 +31,9 @@ export function ClientForm({
   const [fullName, setFullName] = useState(initial.fullName || "");
   const [whatsapp, setWhatsapp] = useState(initial.whatsapp || "");
   const [email, setEmail] = useState(initial.email || "");
-  const [birthday, setBirthday] = useState(initial.birthday || "");
+  const [recordNumber, setRecordNumber] = useState(initial.recordNumber || "");
+  const [address, setAddress] = useState(initial.address || "");
+  const [birthday, setBirthday] = useState(initial.birthday ? String(initial.birthday).slice(0, 10) : "");
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
@@ -49,6 +51,8 @@ export function ClientForm({
         fullName: fullName.trim(),
         whatsapp: whatsapp.trim(),
         email: email.trim() || null,
+        recordNumber: recordNumber.trim() || null,
+        address: address.trim() || null,
         birthday: birthday || null,
       });
     } catch (err) {
@@ -70,6 +74,16 @@ export function ClientForm({
       <div>
         <label style={labelStyle}>Correo (opcional)</label>
         <input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ejemplo@correo.com" />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr 1.4fr", gap: compact ? 10 : 12 }}>
+        <div>
+          <label style={labelStyle}>N° de ficha</label>
+          <input style={inputStyle} value={recordNumber} onChange={(e) => setRecordNumber(e.target.value)} placeholder="Ej: 00125" />
+        </div>
+        <div>
+          <label style={labelStyle}>Dirección</label>
+          <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Barrio, calle o referencia" />
+        </div>
       </div>
       <div>
         <label style={labelStyle}>Cumpleaños (opcional)</label>

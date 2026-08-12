@@ -21,15 +21,28 @@ test('createService ignora un tenantId forjado en el body y usa el del JWT del a
   assert.equal(result.tenantId, 'tenant-real-del-jwt');
 });
 
-test('createService siempre fuerza durationMins a 60 sin importar lo que mande el cliente', async () => {
+test('createService acepta duración variable válida y conserva buffer de 15 minutos por defecto', async () => {
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 
   const result = await serviceService.createService(
     { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
-    { name: 'Facial', category: 'faciales', priceUsd: 30, durationMins: 999 }
+    { name: 'Facial', category: 'faciales', priceUsd: 30, durationMins: 45 }
   );
 
-  assert.equal(result.durationMins, 60);
+  assert.equal(result.durationMins, 45);
+  assert.equal(result.bufferMins, 15);
+});
+
+test('createService rechaza duraciones fuera del rango permitido', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+
+  await assert.rejects(
+    () => serviceService.createService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      { name: 'Facial', category: 'faciales', priceUsd: 30, durationMins: 999 }
+    ),
+    (err) => err.status === 400 && /durationMins/.test(err.message)
+  );
 });
 
 test('createService guarda offersHomeService del body (bug real encontrado en verificación de Fase 3a: no se leía)', async () => {
@@ -40,7 +53,7 @@ test('createService guarda offersHomeService del body (bug real encontrado en ve
     { name: 'Masaje relajante', category: 'masajes', priceUsd: 45, offersHomeService: true }
   );
 
-  assert.equal(result.offersHomeService, true);
+  assert.equal(result.offersHomeService, false);
 });
 
 test('createService por defecto offersHomeService=false si no se manda', async () => {

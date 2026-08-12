@@ -10,7 +10,7 @@ import { useGridTransition } from "@/lib/use-grid-transition";
 import { NewClientModal } from "@/components/new-client-modal";
 import { useToast } from "@/components/toast-provider";
 
-const HOURS = Array.from({ length: 11 }, (_, i) => i + 9);
+const HOURS = [8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19];
 const STATUS_COLORS = {
   pendiente: { bg: "rgba(168,154,135,0.2)", border: "#A89A87", text: "#A89A87" },
   confirmado: { bg: "rgba(201,168,118,0.2)", border: "transparent", text: "#8C6E50" },
@@ -23,6 +23,14 @@ const STATUS_LABELS = {
   cancelado: "Cancelado",
   no_show: "No asistió",
 };
+function appointmentColor(appt, roomColorMap) {
+  return appt.service?.colorHex || (appt.room ? roomColorMap[appt.room.id] : null) || "#8C6E50";
+}
+
+function appointmentRoomId(appt) {
+  return appt.roomId || appt.room?.id || "__sin-cabina";
+}
+
 const ROOM_COLORS = ["#8C6E50", "#C9A876", "#A89A87", "#EBCDB5"];
 const DAY_NAMES = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
 
@@ -105,7 +113,7 @@ export default function AgendaPage() {
   const preClientId = searchParams.get("clientId");
   const preClientName = searchParams.get("clientName");
   const isMobile = useIsMobile();
-  const [view, setView] = useState("week");
+  const [view, setView] = useState("day");
   const [selectedDate, setSelectedDate] = useState(today);
   const [appointments, setAppointments] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -360,8 +368,9 @@ export default function AgendaPage() {
             onSelectGroup={setSlotGroup}
           />
         ) : (
-          <DayGrid
+          <CabinDayGrid
             appointments={appointments}
+            rooms={rooms}
             date={selectedDate}
             today={today}
             roomColorMap={roomColorMap}
@@ -424,7 +433,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
       {active.map((appt) => {
-        const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : "#8C6E50";
+        const color = appointmentColor(appt, roomColorMap);
         const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
         const statusLabel = STATUS_LABELS[appt.status] || appt.status;
         const time = formatTime(appt.startsAt);
@@ -674,7 +683,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                   );
                 }
 
-                const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
+                const color = appointmentColor(appt, roomColorMap);
                 const lane = laneMap.get(appt.id);
 
                 return (
@@ -709,6 +718,150 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                     <div style={{ opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {appt.service?.name}
                     </div>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect }) {
+  const HOUR_HEIGHT = 66;
+  const active = (appointments || [])
+    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
+    .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  const configuredRooms = (rooms || []).filter((room) => room.active !== false);
+  const configuredIds = new Set(configuredRooms.map((room) => room.id));
+  const fallbackRooms = active
+    .filter((appt) => appt.room && !configuredIds.has(appt.room.id))
+    .map((appt) => appt.room);
+  const columns = [...configuredRooms, ...fallbackRooms];
+  const visibleColumns = columns.length ? columns : [{ id: "__sin-cabina", name: "Sin cabinas", specialty: "configuración" }];
+  const minWidth = Math.max(760, 56 + visibleColumns.length * 178);
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(164px, 1fr))`,
+          border: "1px solid rgba(168,154,135,0.4)",
+          borderRadius: 12,
+          background: "#F7F5F0",
+          overflow: "hidden",
+          minWidth,
+        }}
+      >
+        <div style={{ borderBottom: "1px solid rgba(168,154,135,0.32)", background: date === today ? "rgba(235,205,181,0.18)" : "rgba(247,245,240,0.75)" }} />
+        {visibleColumns.map((room) => (
+          <div
+            key={room.id}
+            style={{
+              minHeight: 68,
+              padding: "12px 14px",
+              borderLeft: "1px solid rgba(168,154,135,0.22)",
+              borderBottom: "1px solid rgba(168,154,135,0.32)",
+              background: date === today ? "rgba(235,205,181,0.14)" : "rgba(247,245,240,0.75)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: roomColorMap[room.id] || "#C9A876", flexShrink: 0 }} />
+              <strong className="font-heading" style={{ color: "#6B5540", fontSize: 16, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {room.name}
+              </strong>
+            </div>
+            <div style={{ marginTop: 4, color: "#A89A87", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {room.specialty || "Cabina"} {room.opensAt && room.closesAt ? `· ${room.opensAt}-${room.closesAt}` : ""}
+            </div>
+          </div>
+        ))}
+
+        <div style={{ position: "relative", height: HOURS.length * HOUR_HEIGHT }}>
+          {HOURS.map((h, i) => (
+            <div key={h} style={{ position: "absolute", top: i * HOUR_HEIGHT, right: 8, fontSize: 11, color: "#A89A87" }}>
+              {h}:00
+            </div>
+          ))}
+        </div>
+
+        {visibleColumns.map((room) => {
+          const roomAppointments = active.filter((appt) => appointmentRoomId(appt) === room.id);
+          return (
+            <div
+              key={room.id}
+              style={{
+                position: "relative",
+                borderLeft: "1px solid rgba(168,154,135,0.22)",
+                height: HOURS.length * HOUR_HEIGHT,
+                background: date === today ? "rgba(235,205,181,0.07)" : "transparent",
+              }}
+            >
+              {HOURS.map((h, i) => (
+                <div
+                  key={h}
+                  style={{
+                    position: "absolute",
+                    top: i * HOUR_HEIGHT,
+                    left: 0,
+                    right: 0,
+                    height: HOUR_HEIGHT,
+                    borderTop: i > 0 ? "1px solid rgba(168,154,135,0.14)" : "none",
+                  }}
+                />
+              ))}
+              {roomAppointments.map((appt) => {
+                const h = getEcuadorHour(appt.startsAt);
+                const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
+                const hourIndex = HOURS.indexOf(h);
+                if (hourIndex === -1) return null;
+                const topOffset = hourIndex * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+                const duration = appt.service?.durationMins || 60;
+                const height = (duration / 60) * HOUR_HEIGHT;
+                const color = appointmentColor(appt, roomColorMap);
+                const noShow = appt.status === "no_show";
+
+                return (
+                  <button
+                    key={appt.id}
+                    onClick={() => onSelect(appt)}
+                    style={{
+                      position: "absolute",
+                      top: topOffset + 4,
+                      left: 8,
+                      right: 8,
+                      height: Math.max(height - 8, 42),
+                      borderRadius: 10,
+                      padding: "8px 10px",
+                      fontSize: 12,
+                      overflow: "hidden",
+                      cursor: "pointer",
+                      border: noShow ? "1px solid rgba(194,84,80,0.55)" : "1px solid rgba(255,255,255,0.22)",
+                      background: noShow ? "rgba(194,84,80,0.12)" : color,
+                      color: noShow ? "#B85A56" : "#F7F5F0",
+                      textAlign: "left",
+                      zIndex: 1,
+                      boxShadow: "0 8px 18px rgba(64,51,39,0.10)",
+                      textDecoration: noShow ? "line-through" : "none",
+                      textDecorationColor: "rgba(194,84,80,0.75)",
+                      textDecorationThickness: 1.5,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.client?.fullName || "Cliente"}</strong>
+                      <span style={{ opacity: noShow ? 0.9 : 0.72, flexShrink: 0 }}>{formatTime(appt.startsAt)}</span>
+                    </div>
+                    <div style={{ marginTop: 3, opacity: noShow ? 0.85 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {appt.service?.name}
+                    </div>
+                    {appt.indications && (
+                      <div style={{ marginTop: 3, opacity: noShow ? 0.75 : 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
+                        {appt.indications}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -810,7 +963,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
               );
             }
 
-            const color = appt.room ? roomColorMap[appt.room.id] || "#8C6E50" : undefined;
+            const color = appointmentColor(appt, roomColorMap);
             const lane = laneMap.get(appt.id);
 
             return (
@@ -1030,7 +1183,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
               )}
               {appt.room && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-                  <span style={{ color: "#A89A87" }}>Gabinete</span>
+                  <span style={{ color: "#A89A87" }}>Cabina</span>
                   <span>{appt.room.name}</span>
                 </div>
               )}
@@ -1043,6 +1196,12 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
               {appt.priceUsd != null && (
                 <div style={{ textAlign: "right", fontWeight: 600, fontSize: 16, color: "#6B5540", marginTop: 4 }}>
                   ${Number(appt.priceUsd).toFixed(2)}
+                </div>
+              )}
+              {appt.indications && (
+                <div style={{ border: "1px solid rgba(201,168,118,0.28)", background: "rgba(235,205,181,0.18)", borderRadius: 12, padding: 12, color: "#6B5540", lineHeight: 1.45 }}>
+                  <div style={{ color: "#A89A87", fontSize: 12, marginBottom: 4 }}>Indicaciones</div>
+                  <div style={{ fontSize: 13 }}>{appt.indications}</div>
                 </div>
               )}
             </div>
@@ -1076,7 +1235,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
               </div>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Gabinete</label>
+              <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Cabina</label>
               <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 <option value="">Sin cambio</option>
                 {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -1117,6 +1276,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [staffId, setStaffId] = useState("");
+  const [indications, setIndications] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
@@ -1126,7 +1286,12 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     [services, serviceId]
   );
   const compatibleRooms = useMemo(
-    () => selectedService ? rooms.filter((room) => room.specialty === selectedService.category) : [],
+    () => {
+      if (!selectedService) return [];
+      const linkedIds = new Set((selectedService.rooms || []).map((room) => room.id));
+      if (linkedIds.size) return rooms.filter((room) => linkedIds.has(room.id));
+      return rooms.filter((room) => room.specialty === selectedService.category);
+    },
     [rooms, selectedService]
   );
 
@@ -1147,7 +1312,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       setRoomId("");
       return;
     }
-    setRoomId((prev) => compatibleRooms.some((room) => room.id === prev) ? prev : compatibleRooms[0]?.id || "");
+    setRoomId((prev) => compatibleRooms.some((room) => room.id === prev) ? prev : "");
   }, [selectedService, compatibleRooms]);
 
   useEffect(() => {
@@ -1205,11 +1370,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
       if (!staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
-      if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene gabinete compatible activo"); setSubmitting(false); return; }
+      if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene cabina compatible activa"); setSubmitting(false); return; }
 
       await authFetch("/appointments", {
         method: "POST",
-        body: { clientId, serviceId, staffId, roomId: roomId || undefined, startsAt: time, modality: "presencial" },
+        body: { clientId, serviceId, staffId, roomId: roomId || undefined, startsAt: time, modality: "presencial", indications: indications.trim() || undefined },
       });
 
       toast.success("Reserva creada");
@@ -1343,25 +1508,25 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
           {/* Room + Staff */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
-              <label style={labelStyle} htmlFor="room">Gabinete</label>
+              <label style={labelStyle} htmlFor="room">Cabina</label>
               <select
                 id="room"
-                style={{ ...selectStyle, background: compatibleRooms.length <= 1 ? "rgba(247,245,240,0.72)" : selectStyle.background }}
+                style={selectStyle}
                 value={roomId}
-                disabled={!selectedService || compatibleRooms.length <= 1}
+                disabled={!selectedService || compatibleRooms.length === 0}
                 onChange={(e) => setRoomId(e.target.value)}
               >
-                <option value="">{!selectedService ? "Elige servicio" : compatibleRooms.length === 0 ? "Sin gabinete compatible" : "Seleccionar"}</option>
+                <option value="">{!selectedService ? "Elige servicio" : compatibleRooms.length === 0 ? "Sin cabina compatible" : "Asignar automáticamente"}</option>
                 {compatibleRooms.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
               </select>
               {selectedService && compatibleRooms.length === 1 && (
                 <p style={{ margin: "6px 0 0", fontSize: 12, color: "#8C6E50" }}>
-                  {"Se asigna autom\u00e1ticamente: "}{compatibleRooms[0].name}
+                  {"Disponible para este servicio: "}{compatibleRooms[0].name}
                 </p>
               )}
               {selectedService && compatibleRooms.length > 1 && (
                 <p style={{ margin: "6px 0 0", fontSize: 12, color: "#A89A87" }}>
-                  {"Solo gabinetes de categor\u00eda "}{selectedService.category}
+                  {"El sistema elige la cabina libre si lo dejas automático."}
                 </p>
               )}
             </div>
@@ -1372,6 +1537,17 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                 {staff.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label style={labelStyle} htmlFor="indications">Indicaciones para la agenda</label>
+            <textarea
+              id="indications"
+              style={{ ...inputStyle, minHeight: 74, resize: "vertical", lineHeight: 1.4 }}
+              value={indications}
+              onChange={(e) => setIndications(e.target.value)}
+              placeholder="Ej. traer ficha, preparar equipo, preferencia de cabina..."
+            />
           </div>
 
           {validation && <p style={{ fontSize: 13, color: "#C25450", textAlign: "center", margin: 0 }}>{validation}</p>}

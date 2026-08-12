@@ -103,7 +103,7 @@ export default function GabinetesPage() {
       <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "flex-end", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 18 }}>
         <div>
           <h1 className="font-heading" style={{ fontSize: isMobile ? 24 : 28, fontWeight: 600, color: "#6B5540", margin: "0 0 5px" }}>
-            Gabinetes
+            Cabinas
           </h1>
           <p style={{ margin: 0, fontSize: isMobile ? 12 : 14, color: "#A89A87" }}>
             Estado en tiempo real &middot; {timestamp || "actualizando..."}
@@ -324,8 +324,8 @@ function AppointmentList({ appointments, nowMs }) {
 function EmptyState() {
   return (
     <div className="alma-card" style={{ padding: "34px 28px", maxWidth: 520, textAlign: "center", alignSelf: "center", marginTop: 40 }}>
-      <h2 className="font-heading" style={{ margin: "0 0 8px", color: "#6B5540", fontSize: 24 }}>Sin gabinetes activos</h2>
-      <p style={{ margin: 0, color: "#A89A87", fontSize: 14 }}>{"Cuando agregues gabinetes activos, aparecer\u00e1n aqu\u00ed como cuadros peque\u00f1os."}</p>
+      <h2 className="font-heading" style={{ margin: "0 0 8px", color: "#6B5540", fontSize: 24 }}>Sin cabinas activas</h2>
+      <p style={{ margin: 0, color: "#A89A87", fontSize: 14 }}>{"Cuando agregues cabinas activas, aparecerán aquí como cuadros pequeños."}</p>
     </div>
   );
 }

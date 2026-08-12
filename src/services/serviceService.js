@@ -3,7 +3,47 @@ const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
 const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
 
-const FIXED_DURATION_MINS = 60;
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+function normalizeDuration(value, field = 'durationMins') {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 15 || n > 480) {
+    throw new BadRequestError(`${field} debe ser un entero entre 15 y 480 minutos`);
+  }
+  return n;
+}
+
+function normalizeBuffer(value) {
+  if (value === undefined) return 15;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 90) {
+    throw new BadRequestError('bufferMins debe ser un entero entre 0 y 90 minutos');
+  }
+  return n;
+}
+
+function normalizeColor(value) {
+  if (value === undefined || value === null || value === '') return '#8C6E50';
+  if (typeof value !== 'string' || !HEX_COLOR_RE.test(value)) {
+    throw new BadRequestError('colorHex debe tener formato hexadecimal, por ejemplo #8C6E50');
+  }
+  return value.toUpperCase();
+}
+
+async function resolveRoomConnections(tx, tenantId, roomIds) {
+  if (roomIds === undefined) return undefined;
+  if (!Array.isArray(roomIds)) throw new BadRequestError('roomIds debe ser una lista de cabinas');
+  const uniqueIds = [...new Set(roomIds.map(String).filter(Boolean))];
+  if (uniqueIds.length === 0) return { set: [] };
+  const rooms = await tx.room.findMany({
+    where: { tenantId, id: { in: uniqueIds }, active: true },
+    select: { id: true },
+  });
+  if (rooms.length !== uniqueIds.length) {
+    throw new BadRequestError('Una o más cabinas no pertenecen al tenant o están inactivas');
+  }
+  return { set: rooms.map((r) => ({ id: r.id })) };
+}
 
 async function listServices(actor, query) {
   const where = {};
@@ -12,11 +52,18 @@ async function listServices(actor, query) {
   } else {
     where.tenantId = actor.tenantId;
   }
-  return prisma.service.findMany({ where, orderBy: { createdAt: 'asc' } });
+  return prisma.service.findMany({
+    where,
+    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+  });
 }
 
 async function getService(actor, id) {
-  const service = await prisma.service.findUnique({ where: { id } });
+  const service = await prisma.service.findUnique({
+    where: { id },
+    include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+  });
   if (!service) return null;
   assertTenantScope(actor, service.tenantId);
   return service;
@@ -32,16 +79,21 @@ async function createService(actor, data) {
   }
 
   return prisma.$transaction(async (tx) => {
+    const rooms = await resolveRoomConnections(tx, tenantId, data.roomIds);
     const service = await tx.service.create({
       data: {
         tenantId,
-        name: data.name,
-        category: data.category,
-        durationMins: FIXED_DURATION_MINS,
+        name: String(data.name).trim(),
+        category: String(data.category).trim(),
+        durationMins: data.durationMins === undefined ? 60 : normalizeDuration(data.durationMins),
+        bufferMins: normalizeBuffer(data.bufferMins),
+        colorHex: normalizeColor(data.colorHex),
         priceUsd: data.priceUsd,
-        offersHomeService: !!data.offersHomeService,
+        offersHomeService: false,
         active: true,
+        ...(rooms !== undefined ? { rooms } : {}),
       },
+      include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
     });
     await writeAuditLog(tx, {
       actor,
@@ -63,10 +115,14 @@ async function updateService(actor, id, changes) {
   if (changes.name !== undefined) data.name = changes.name;
   if (changes.category !== undefined) data.category = changes.category;
   if (changes.priceUsd !== undefined) data.priceUsd = changes.priceUsd;
-  if (changes.offersHomeService !== undefined) data.offersHomeService = !!changes.offersHomeService;
+  if (changes.durationMins !== undefined) data.durationMins = normalizeDuration(changes.durationMins);
+  if (changes.bufferMins !== undefined) data.bufferMins = normalizeBuffer(changes.bufferMins);
+  if (changes.colorHex !== undefined) data.colorHex = normalizeColor(changes.colorHex);
+  if (changes.offersHomeService !== undefined) data.offersHomeService = false;
   if (changes.active !== undefined) data.active = !!changes.active;
 
-  if (Object.keys(data).length === 0) return target;
+  const hasRoomChanges = changes.roomIds !== undefined;
+  if (Object.keys(data).length === 0 && !hasRoomChanges) return target;
 
   if (data.active === false && target.active) {
     const otherActiveSameCategory = await prisma.service.count({
@@ -85,7 +141,15 @@ async function updateService(actor, id, changes) {
   }
 
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.service.update({ where: { id }, data });
+    const rooms = await resolveRoomConnections(tx, target.tenantId, changes.roomIds);
+    const updated = await tx.service.update({
+      where: { id },
+      data: {
+        ...data,
+        ...(rooms !== undefined ? { rooms } : {}),
+      },
+      include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+    });
     const action = resolveAction('service', data, target);
     await writeAuditLog(tx, {
       actor,
