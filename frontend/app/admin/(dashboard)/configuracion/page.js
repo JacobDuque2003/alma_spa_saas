@@ -63,6 +63,23 @@ function EmptyState({ icon, title, body, ctaLabel, onCta }) {
   );
 }
 
+function SummaryCard({ label, value, detail }) {
+  return (
+    <div
+      className="alma-card"
+      style={{
+        padding: "18px 20px",
+        background: "linear-gradient(135deg, rgba(253,252,250,0.98), rgba(235,205,181,0.20))",
+        border: "1px solid rgba(201,168,118,0.32)",
+      }}
+    >
+      <p style={{ margin: "0 0 8px", fontSize: 12, color: "#A89A87", fontWeight: 700 }}>{label}</p>
+      <div className="font-heading" style={{ fontSize: 28, color: "#6B5540", lineHeight: 1 }}>{value}</div>
+      <p style={{ margin: "8px 0 0", fontSize: 12, color: "#8C6E50" }}>{detail}</p>
+    </div>
+  );
+}
+
 function Modal({ title, phase, onClose, children }) {
   return (
     <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
@@ -160,8 +177,8 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Masaje relajante" /></div>
         <div>
-          <label style={labelStyle}>Categoría / especialidad</label>
-          <input style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="masajes" list="cat-suggestions" />
+          <label style={labelStyle}>Área del servicio</label>
+          <input style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="facial, corporal, láser..." list="cat-suggestions" />
           {categories.length > 0 && <datalist id="cat-suggestions">{categories.map((c) => <option key={c} value={c} />)}</datalist>}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -541,6 +558,13 @@ export default function ConfiguracionPage() {
     const merged = [...dbNames, ...derivedCategories.filter((d) => !dbNames.includes(d))];
     return merged;
   }, [dbCategories, derivedCategories]);
+  const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
+  const averagePrice = activeServices.length
+    ? activeServices.reduce((sum, s) => sum + Number(s.priceUsd || 0), 0) / activeServices.length
+    : 0;
+  const averageBlockMins = activeServices.length
+    ? Math.round(activeServices.reduce((sum, s) => sum + Number(s.durationMins || 60) + Number(s.bufferMins ?? 15), 0) / activeServices.length)
+    : 0;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -587,11 +611,11 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto" }}>
-      <div style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 20 }}>
+    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "30px 34px", overflowY: "auto" }}>
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: isMobile ? 14 : 20 }}>
         <div>
           <h1 className="font-heading" style={{ fontSize: isMobile ? 24 : 30, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>Configuración</h1>
-          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, categorías, cabinas y horario de atención del spa.</p>
+          <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, precios y horario de atención del spa.</p>
         </div>
 
         {loadError && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>}
@@ -602,6 +626,13 @@ export default function ConfiguracionPage() {
           </div>
         ) : (
           <>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(180px, 1fr))", gap: 14 }}>
+              <SummaryCard label="Servicios activos" value={`${activeServices.length}`} detail={`${services.length} servicios registrados`} />
+              <SummaryCard label="Bloque promedio" value={averageBlockMins ? `${averageBlockMins} min` : "—"} detail="Incluye la pausa entre sesiones" />
+              <SummaryCard label="Precio promedio" value={activeServices.length ? money(averagePrice) : "—"} detail="Solo servicios habilitados" />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.55fr) minmax(320px, 0.85fr)", gap: isMobile ? 14 : 18, alignItems: "start" }}>
             {/* Servicios y precios */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <SectionHeader
@@ -620,17 +651,11 @@ export default function ConfiguracionPage() {
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                             <span style={{ width: 9, height: 9, borderRadius: "50%", background: s.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)" }} />
                             <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
-                            <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50" }}>{s.category}</span>
                             {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
                           </div>
                           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>
                             {s.durationMins || 60} min de sesión · {s.bufferMins ?? 15} min de pausa · bloque total {(s.durationMins || 60) + (s.bufferMins ?? 15)} min
                           </p>
-                          {Array.isArray(s.rooms) && s.rooms.length > 0 && (
-                            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#8C6E50" }}>
-                              Cabinas: {s.rooms.map((room) => room.name).join(", ")}
-                            </p>
-                          )}
                         </div>
                         {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
@@ -666,122 +691,38 @@ export default function ConfiguracionPage() {
               </div>
             </div>
 
-            {/* Categorías */}
-            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <SectionHeader
-                title="Categorías"
-                subtitle="Agrupa servicios y cabinas por especialidad (facial, láser, corporal, terapias…)."
-                onAdd={() => setShowCatForm(true)}
-                addLabel="Crear categoría"
-              />
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {categories.map((catName) => {
-                  const dbCat = dbCategories.find((c) => c.name === catName);
-                  const isEditing = editCatId === (dbCat?.id || catName);
+            <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 14 : 18 }}>
+              {/* Horario de atención */}
+              <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
+                <div style={{ marginBottom: 18 }}>
+                  <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Horario de atención</h3>
+                  <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Define cuándo el spa acepta reservas en la agenda y en el link público.</p>
+                </div>
+                <BusinessHoursPanel />
+              </div>
 
-                  if (isEditing) {
-                    return (
-                      <input
-                        key={dbCat?.id || catName}
-                        autoFocus
-                        value={editCatName}
-                        onChange={(e) => setEditCatName(e.target.value)}
-                        onBlur={async () => {
-                          const v = editCatName.trim();
-                          if (dbCat && v && v !== catName) {
-                            const updated = await authFetch(`/categories/${dbCat.id}`, { method: "PATCH", body: { name: v } }).catch(() => null);
-                            if (updated) setDbCategories((prev) => prev.map((c) => (c.id === dbCat.id ? { ...c, ...updated } : c)));
-                          }
-                          setEditCatId(null);
-                        }}
-                        onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                        style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(201,168,118,0.6)", background: "#FDFCFA", fontSize: 13, color: "#6B5540", outline: "none", width: 150 }}
-                      />
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={dbCat?.id || catName}
-                      onClick={() => { if (dbCat) { setEditCatId(dbCat.id); setEditCatName(catName); } }}
-                      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 14px", borderRadius: 999, background: "rgba(201,168,118,0.15)", border: "1px solid rgba(201,168,118,0.4)", cursor: dbCat ? "pointer" : "default" }}
-                    >
-                      <span style={{ fontSize: 13, color: "#6B5540" }}>{catName}</span>
-                      {dbCat && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!confirm("¿Eliminar esta categoría?")) return;
-                            authFetch(`/categories/${dbCat.id}`, { method: "DELETE" })
-                              .then(() => { setDbCategories((prev) => prev.filter((c) => c.id !== dbCat.id)); toast.success(`Categoría "${catName}" eliminada`); })
-                              .catch((err) => toast.error(err.message || "No se pudo eliminar"));
-                          }}
-                          style={{ background: "rgba(168,154,135,0.2)", border: "none", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#8C6E50", padding: 0 }}
-                          title="Eliminar"
-                        >
-                          <X size={11} />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-                {categories.length === 0 && (
-                  <EmptyState
-                    icon={<Tag size={26} strokeWidth={1.5} />}
-                    title="Sin categorías todavía"
-                    body="Crea al menos una categoría antes de añadir servicios o cabinas — se usa para clasificarlos."
-                    ctaLabel="Crear categoría"
-                    onCta={() => setShowCatForm(true)}
-                  />
-                )}
+              <div
+                className="alma-card"
+                style={{
+                  ...(isMobile ? cardPaddingMobile : cardPaddingDesktop),
+                  background: "linear-gradient(145deg, rgba(253,252,250,0.98), rgba(201,168,118,0.14))",
+                }}
+              >
+                <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Datos y respaldo</h3>
+                <p style={{ margin: "0 0 18px", fontSize: 13, color: "#A89A87", lineHeight: 1.45 }}>
+                  Próximo paso: respaldos en nube e importación/exportación de información.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                  <button disabled style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 14px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.25)", background: "rgba(253,252,250,0.65)", color: "#A89A87", fontSize: 13 }}>
+                    <Upload size={14} /> Subir Excel
+                  </button>
+                  <button disabled style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 14px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.25)", background: "rgba(253,252,250,0.65)", color: "#A89A87", fontSize: 13 }}>
+                    <Download size={14} /> Descargar
+                  </button>
+                </div>
               </div>
             </div>
-
-            {/* Cabinas */}
-            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <SectionHeader
-                title="Cabinas"
-                subtitle="Cada servicio puede atenderse en una o varias cabinas. La agenda asigna la cabina libre al reservar."
-                onAdd={() => setShowRoomForm(true)}
-                addLabel="Añadir cabina"
-              />
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                {rooms.map((r, i, arr) => (
-                  <RoomRow
-                    key={r.id}
-                    r={r}
-                    categories={derivedCategories}
-                    expanded={expandedRoomId === r.id}
-                    onToggleExpand={() => setExpandedRoomId(expandedRoomId === r.id ? null : r.id)}
-                    onUpdate={updateRoom}
-                    isLast={i === arr.length - 1}
-                  />
-                ))}
-                {rooms.length === 0 && (
-                  <EmptyState
-                    icon={<DoorOpen size={28} strokeWidth={1.5} />}
-                    title="Sin cabinas todavía"
-                    body="Cada cabina se vincula con los servicios que puede atender. La agenda elige la cabina disponible al reservar."
-                    ctaLabel="Añadir cabina"
-                    onCta={() => setShowRoomForm(true)}
-                  />
-                )}
-              </div>
             </div>
-
-            {/* Horario de atención */}
-            <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
-              <div style={{ marginBottom: 18 }}>
-                <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Horario de atención</h3>
-                <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Define cuándo el spa acepta reservas — se aplica a la agenda pública y a la disponibilidad interna.</p>
-              </div>
-              <BusinessHoursPanel />
-            </div>
-
-            {/* Datos en Excel — mención breve */}
-            <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
-              <Upload size={13} /> Subir Excel <Download size={13} style={{ marginLeft: 8 }} /> Descargar respaldo — disponible próximamente
-            </p>
           </>
         )}
       </div>

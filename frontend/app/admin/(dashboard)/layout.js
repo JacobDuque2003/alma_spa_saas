@@ -15,7 +15,6 @@ import { GlobalSearch } from "@/components/global-search";
 
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true },
-  { href: "/admin/gabinetes", label: "Cabinas", enabled: true },
   { href: "/admin/clientes", label: "Clientes", enabled: true },
   { href: "/admin/crm", label: "CRM", enabled: true },
   { href: "/admin/reportes", label: "Reportes", enabled: true },
