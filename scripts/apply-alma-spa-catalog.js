@@ -8,6 +8,12 @@ async function main() {
   const slug = process.env.ALMA_TENANT_SLUG || 'alma-spa';
   const tenant = await prisma.tenant.findUnique({ where: { slug } });
   if (!tenant) throw new Error(`Tenant no encontrado: ${slug}`);
+  const cabinNames = CABINS.map((cabin) => cabin.name);
+  const serviceNames = SERVICES.map((service) => service.name);
+  const categoryNames = Array.from(new Set([
+    ...CABINS.map((cabin) => cabin.specialty),
+    ...SERVICES.map((service) => service.category),
+  ]));
 
   const existingConfig = tenant.config || {};
   await prisma.tenant.update({
@@ -40,8 +46,13 @@ async function main() {
       create: { tenantId: tenant.id, name: service.category, active: true },
     });
   }
+  await prisma.serviceCategory.updateMany({
+    where: { tenantId: tenant.id, active: true, name: { notIn: categoryNames } },
+    data: { active: false },
+  });
 
   const roomsByOrder = new Map();
+  const keepRoomIds = [];
   for (const cabin of CABINS) {
     const room = await prisma.room.upsert({
       where: { id: (await prisma.room.findFirst({ where: { tenantId: tenant.id, name: cabin.name }, select: { id: true } }))?.id || '__new__' },
@@ -65,8 +76,14 @@ async function main() {
       },
     });
     roomsByOrder.set(cabin.sortOrder, room);
+    keepRoomIds.push(room.id);
   }
+  await prisma.room.updateMany({
+    where: { tenantId: tenant.id, active: true, id: { notIn: keepRoomIds }, name: { notIn: cabinNames } },
+    data: { active: false },
+  });
 
+  const keepServiceIds = [];
   for (const service of SERVICES) {
     const roomConnections = service.cabinOrders
       .map((order) => roomsByOrder.get(order))
@@ -77,9 +94,10 @@ async function main() {
       select: { id: true },
     });
     if (existing) {
-      await prisma.service.update({
+      const updated = await prisma.service.update({
         where: { id: existing.id },
         data: {
+          name: service.name,
           category: service.category,
           durationMins: service.durationMins,
           bufferMins: 15,
@@ -89,8 +107,9 @@ async function main() {
           rooms: { set: roomConnections },
         },
       });
+      keepServiceIds.push(updated.id);
     } else {
-      await prisma.service.create({
+      const created = await prisma.service.create({
         data: {
           tenantId: tenant.id,
           name: service.name,
@@ -104,8 +123,13 @@ async function main() {
           rooms: { connect: roomConnections },
         },
       });
+      keepServiceIds.push(created.id);
     }
   }
+  await prisma.service.updateMany({
+    where: { tenantId: tenant.id, active: true, id: { notIn: keepServiceIds }, name: { notIn: serviceNames } },
+    data: { active: false },
+  });
 
   console.log(`Catálogo aplicado para ${tenant.name}: ${CABINS.length} cabinas, ${SERVICES.length} servicios.`);
 }
