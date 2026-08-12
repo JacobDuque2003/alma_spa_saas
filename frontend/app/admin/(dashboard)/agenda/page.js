@@ -46,6 +46,38 @@ function cabinDisplayName(name = "") {
   return `${prefix} - ${titleCaseText(rest.join(" - "))}`;
 }
 
+function hexToRgb(hex = "") {
+  const value = String(hex).replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) return null;
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map((n) => Math.round(n).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mixColors(hex, target = "#6B5540", amount = 0.28) {
+  const source = hexToRgb(hex);
+  const dest = hexToRgb(target);
+  if (!source || !dest) return hex || "#8C6E50";
+  return rgbToHex({
+    r: source.r * (1 - amount) + dest.r * amount,
+    g: source.g * (1 - amount) + dest.g * amount,
+    b: source.b * (1 - amount) + dest.b * amount,
+  });
+}
+
+function premiumCabinColor(color = "#8C6E50") {
+  const rgb = hexToRgb(color);
+  if (!rgb) return "#8C6E50";
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  return luminance > 0.62 ? mixColors(color, "#5E4938", 0.42) : mixColors(color, "#6B5540", 0.18);
+}
+
 const ROOM_COLORS = ["#8C6E50", "#C9A876", "#A89A87", "#EBCDB5"];
 const DAY_NAMES = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
 
@@ -751,25 +783,27 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
         <div style={{ borderBottom: "1px solid rgba(168,154,135,0.32)", background: date === today ? "rgba(235,205,181,0.18)" : "rgba(247,245,240,0.75)" }} />
         {visibleColumns.map((room) => {
           const roomColor = roomColorMap[room.id] || room.colorHex || "#8C6E50";
+          const premiumColor = premiumCabinColor(roomColor);
           return (
             <div
               key={room.id}
               style={{
                 minHeight: 78,
                 padding: "12px 14px",
-                borderLeft: "1px solid rgba(255,255,255,0.22)",
-                borderBottom: "1px solid rgba(168,154,135,0.32)",
-                background: roomColor,
+                borderLeft: "1px solid rgba(168,154,135,0.20)",
+                borderBottom: `2px solid ${premiumColor}`,
+                background: "linear-gradient(180deg, rgba(253,252,250,0.98) 0%, rgba(247,245,240,0.88) 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 textAlign: "center",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
               }}
             >
               <strong
                 className="font-heading"
                 style={{
-                  color: "#FDFCFA",
+                  color: premiumColor,
                   fontSize: 18,
                   fontWeight: 700,
                   lineHeight: 1.12,
@@ -778,7 +812,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
                   display: "-webkit-box",
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: "vertical",
-                  textShadow: "0 1px 8px rgba(64,51,39,0.18)",
+                  textShadow: "0 1px 0 rgba(255,255,255,0.55)",
                 }}
               >
                 {cabinDisplayName(room.name)}
