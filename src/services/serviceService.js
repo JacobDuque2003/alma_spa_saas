@@ -163,7 +163,7 @@ async function updateService(actor, id, changes) {
 }
 
 async function deleteService(actor, id) {
-  return updateService(actor, id, { active: false });
+  return updateService(actor, id, { active: false, roomIds: [] });
 }
 
 module.exports = { listServices, getService, createService, updateService, deleteService };

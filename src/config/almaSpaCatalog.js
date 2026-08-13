@@ -25,7 +25,6 @@ const CABINS = [
 const SERVICES = [
   { name: 'Limpieza facial', category: 'facial', durationMins: 60, colorHex: '#8E24AA', cabinOrders: [2] },
   { name: 'Aero yoga', category: 'yoga', durationMins: 60, colorHex: '#C0CA33', cabinOrders: [8] },
-  { name: 'Almuerzos', category: 'operativo', durationMins: 60, colorHex: '#039BE5', cabinOrders: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
   { name: 'Camilla Ceragem', category: 'ceragem', durationMins: 45, colorHex: '#9E9D24', cabinOrders: [6] },
   { name: 'Corporal - Reductor', category: 'corporal', durationMins: 60, colorHex: '#F4511E', cabinOrders: [4] },
   { name: 'Cumplea\u00f1os', category: 'recordatorio', durationMins: 15, colorHex: '#C0CA33', cabinOrders: [1] },

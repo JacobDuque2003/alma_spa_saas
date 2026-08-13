@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Download, Edit3, Loader2, Plus, Upload, X, Sparkles, Tag, DoorOpen } from "lucide-react";
+import { Download, Loader2, Plus, Upload, X, Sparkles, Trash2 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
@@ -132,35 +132,45 @@ function Toggle({ checked, onChange }) {
   );
 }
 
-function ServiceFormModal({ categories, phase, onClose, onSaved }) {
+function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
   const [durationMins, setDurationMins] = useState("60");
   const [bufferMins, setBufferMins] = useState("15");
   const [colorHex, setColorHex] = useState("#8C6E50");
+  const [selectedRoomIds, setSelectedRoomIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
 
+  const activeRooms = rooms.filter((room) => room.active !== false);
+  const selectedRooms = activeRooms.filter((room) => selectedRoomIds.includes(room.id));
+
+  function toggleRoom(roomId) {
+    setSelectedRoomIds((prev) => prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [...prev, roomId]);
+    setValidation(null);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim() || !category.trim() || !Number(priceUsd) || !Number(durationMins)) {
-      setValidation("Nombre, categoría y precio son requeridos");
+    if (!name.trim() || selectedRoomIds.length === 0 || priceUsd === "" || Number(priceUsd) < 0 || !Number(durationMins)) {
+      setValidation("Nombre, precio, duración y al menos una cabina son requeridos");
       return;
     }
     setValidation(null);
     setSaving(true);
     try {
+      const primaryArea = selectedRooms[0]?.specialty || "general";
       const created = await authFetch("/services", {
         method: "POST",
         body: {
           name: name.trim(),
-          category: category.trim(),
+          category: primaryArea,
           priceUsd: Number(priceUsd),
           durationMins: Number(durationMins),
           bufferMins: Number(bufferMins || 15),
           colorHex,
+          roomIds: selectedRoomIds,
           offersHomeService: false,
         },
       });
@@ -177,107 +187,82 @@ function ServiceFormModal({ categories, phase, onClose, onSaved }) {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Masaje relajante" /></div>
         <div>
-          <label style={labelStyle}>Área del servicio</label>
-          <input style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="facial, corporal, láser..." list="cat-suggestions" />
-          {categories.length > 0 && <datalist id="cat-suggestions">{categories.map((c) => <option key={c} value={c} />)}</datalist>}
+          <label style={labelStyle}>Área / cabinas permitidas</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {activeRooms.map((room) => {
+              const checked = selectedRoomIds.includes(room.id);
+              return (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => toggleRoom(room.id)}
+                  style={{
+                    padding: "9px 10px",
+                    borderRadius: 12,
+                    border: checked ? `1px solid ${room.colorHex || "#8C6E50"}` : "1px solid rgba(168,154,135,0.32)",
+                    background: checked ? hexToRgba(room.colorHex || "#8C6E50", 0.13) : "#FDFCFA",
+                    color: checked ? "#6B5540" : "#8C6E50",
+                    fontSize: 12,
+                    fontWeight: checked ? 700 : 500,
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  {room.name}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ margin: "7px 0 0", fontSize: 11, color: "#A89A87" }}>
+            La agenda asignará automáticamente una cabina disponible entre las seleccionadas.
+          </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div><label style={labelStyle}>Duración</label><input type="number" min="15" step="15" style={inputStyle} value={durationMins} onChange={(e) => setDurationMins(e.target.value)} placeholder="60" /></div>
           <div><label style={labelStyle}>Pausa</label><input type="number" min="0" step="5" style={inputStyle} value={bufferMins} onChange={(e) => setBufferMins(e.target.value)} placeholder="15" /></div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 84px", gap: 10, alignItems: "end" }}>
-          <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
+          <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" min="0" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
           <div><label style={labelStyle}>Color</label><input type="color" style={{ ...inputStyle, padding: 5, height: 40 }} value={colorHex} onChange={(e) => setColorHex(e.target.value)} /></div>
         </div>
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
-          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear servicio"}</button>
+          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando..." : "Crear servicio"}</button>
         </div>
       </form>
     </Modal>
   );
 }
 
-function RoomFormModal({ categories, phase, onClose, onSaved }) {
-  const [name, setName] = useState("");
-  const [specialty, setSpecialty] = useState(categories[0] || "");
-  const [colorHex, setColorHex] = useState("#8C6E50");
-  const [saving, setSaving] = useState(false);
-  const [validation, setValidation] = useState(null);
-  const toast = useToast();
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!name.trim() || !specialty) {
-      setValidation("Nombre y especialidad son requeridos");
-      return;
-    }
-    setValidation(null);
-    setSaving(true);
-    try {
-      const created = await authFetch("/rooms", { method: "POST", body: { name: name.trim(), specialty, colorHex } });
-      toast.success(`Cabina "${created.name}" creada`);
-      onSaved(created);
-    } catch (err) {
-      toast.error(err.message || "Error al crear cabina");
-      setSaving(false);
-    }
-  }
-
+function DeleteServiceModal({ service, phase, onClose, onConfirm, saving }) {
   return (
-    <Modal title="Nueva cabina" phase={phase} onClose={onClose}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Cabina 4 - CORPORAL" /></div>
-        <div>
-          <label style={labelStyle}>Especialidad</label>
-          <select value={specialty} onChange={(e) => setSpecialty(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+    <Modal title="Eliminar servicio" phase={phase} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "#6B5540" }}>
+          Vas a quitar <strong>{service?.name}</strong> de la oferta del spa. Ya no aparecerá para nuevas reservas,
+          pero las citas e historiales anteriores se conservan.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button type="button" onClick={onClose} disabled={saving} style={pillSecondary}>Cancelar</button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={saving}
+            style={{
+              ...pillPrimary,
+              background: "#A84F4A",
+              opacity: saving ? 0.65 : 1,
+              cursor: saving ? "wait" : "pointer",
+            }}
+          >
+            {saving ? "Eliminando..." : "Eliminar"}
+          </button>
         </div>
-        <div><label style={labelStyle}>Color de cabina</label><input type="color" style={{ ...inputStyle, padding: 5, height: 40 }} value={colorHex} onChange={(e) => setColorHex(e.target.value)} /></div>
-        {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
-        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-          <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
-          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear cabina"}</button>
-        </div>
-      </form>
+      </div>
     </Modal>
   );
 }
-
-function CategoryFormModal({ phase, onClose, onSaved }) {
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [validation, setValidation] = useState(null);
-  const toast = useToast();
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!name.trim()) { setValidation("El nombre es requerido"); return; }
-    setValidation(null);
-    setSaving(true);
-    try {
-      const created = await authFetch("/categories", { method: "POST", body: { name: name.trim() } });
-      toast.success(`Categoría "${created.name}" creada`);
-      onSaved(created);
-    } catch (err) { toast.error(err.message || "Error al crear la categoría"); setSaving(false); }
-  }
-
-  return (
-    <Modal title="Nueva categoría" phase={phase} onClose={onClose}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="masajes, faciales, corporales..." autoFocus /></div>
-        {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
-        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-          <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
-          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando…" : "Crear categoría"}</button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
 const DAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 function BusinessHoursPanel({ onRefresh }) {
@@ -318,7 +303,7 @@ function BusinessHoursPanel({ onRefresh }) {
             setAfternoonOpen(false);
           }
         } else if (bh.start && bh.end) {
-          // Shape viejo — se muestra como morning único, afternoon cerrada.
+          // Shape viejo: se muestra como morning único, afternoon cerrada.
           setMorningOpen(true);
           setMorningStart(bh.start);
           setMorningEnd(bh.end);
@@ -409,7 +394,7 @@ function BusinessHoursPanel({ onRefresh }) {
       {validationMsg && <p style={{ fontSize: 13, color: "#C25450", margin: 0 }}>{validationMsg}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={save} disabled={saving} style={{ padding: "8px 22px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
-          {saving ? "Guardando…" : "Guardar horario"}
+          {saving ? "Guardando..." : "Guardar horario"}
         </button>
         {saved && <span style={{ fontSize: 12, color: "#8C6E50" }}>Guardado</span>}
       </div>
@@ -427,7 +412,7 @@ function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, on
           onClick={onToggle}
           style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: open ? "rgba(85,107,47,0.12)" : "transparent", color: open ? "#556B2F" : "#A89A87", fontSize: 12, fontWeight: 500, cursor: "pointer" }}
         >
-          {open ? "Abierta" : "Cerrada — activar"}
+          {open ? "Abierta" : "Cerrada - activar"}
         </button>
       </div>
       {open && (
@@ -446,94 +431,6 @@ function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, on
   );
 }
 
-function RoomRow({ r, categories, expanded, onToggleExpand, onUpdate, isLast }) {
-  const [name, setName] = useState(r.name);
-  const [specialty, setSpecialty] = useState(r.specialty);
-  const [colorHex, setColorHex] = useState(r.colorHex || "#8C6E50");
-  const [opensAt, setOpensAt] = useState(r.opensAt || "09:00");
-  const [closesAt, setClosesAt] = useState(r.closesAt || "20:00");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setName(r.name);
-    setSpecialty(r.specialty);
-    setColorHex(r.colorHex || "#8C6E50");
-    setOpensAt(r.opensAt || "09:00");
-    setClosesAt(r.closesAt || "20:00");
-  }, [r]);
-
-  const dirty = name !== r.name || specialty !== r.specialty || colorHex !== (r.colorHex || "#8C6E50") || opensAt !== (r.opensAt || "09:00") || closesAt !== (r.closesAt || "20:00");
-  const active = r.active !== false;
-
-  async function handleSave() {
-    if (!name.trim()) return;
-    setSaving(true);
-    try {
-      await onUpdate(r, { name: name.trim(), specialty, colorHex, opensAt, closesAt });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div style={{ borderBottom: isLast ? "none" : "1px solid rgba(168,154,135,0.3)", opacity: active ? 1 : 0.5 }}>
-      <div
-        onClick={onToggleExpand}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", cursor: "pointer", gap: 10 }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span style={{ width: 10, height: 10, borderRadius: "50%", background: r.colorHex || "#C9A876", boxShadow: `0 0 0 4px ${hexToRgba(r.colorHex || "#C9A876", 0.14)}`, flexShrink: 0 }} />
-          <span style={{ fontSize: 14, fontWeight: 500, color: "#6B5540", whiteSpace: "nowrap" }}>{r.name}</span>
-          <span style={{ fontSize: 12, color: "#A89A87", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.specialty} · {r.opensAt || "09:00"}-{r.closesAt || "20:00"}</span>
-          {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450", flexShrink: 0 }}>Inactivo</span>}
-        </div>
-        <Toggle checked={active} onChange={(val) => onUpdate(r, { active: val })} />
-      </div>
-      {expanded && (
-        <div style={{ padding: "0 0 18px", display: "flex", flexDirection: "column", gap: 12 }} onClick={(e) => e.stopPropagation()}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={labelStyle}>Nombre</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Especialidad</label>
-              <select value={specialty} onChange={(e) => setSpecialty(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 84px", gap: 10, alignItems: "end" }}>
-            <div>
-              <label style={labelStyle}>Color de cabina</label>
-              <div style={{ height: 40, borderRadius: 10, background: colorHex, border: "1px solid rgba(168,154,135,0.32)", boxShadow: `inset 0 0 0 999px ${hexToRgba("#FFFFFF", 0.1)}` }} />
-            </div>
-            <div>
-              <label style={labelStyle}>Editar</label>
-              <input type="color" value={colorHex} onChange={(e) => setColorHex(e.target.value)} style={{ ...inputStyle, padding: 5, height: 40 }} />
-            </div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={labelStyle}>Apertura</label>
-              <input type="time" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Cierre</label>
-              <input type="time" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} style={inputStyle} />
-            </div>
-          </div>
-          {dirty && (
-            <button onClick={handleSave} disabled={saving} style={{ alignSelf: "flex-start", padding: "8px 20px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
-              {saving ? "Guardando…" : "Guardar"}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function ConfiguracionPage() {
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -541,24 +438,16 @@ export default function ConfiguracionPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [dbCategories, setDbCategories] = useState([]);
   const [showServiceForm, setShowServiceForm] = useState(false);
-  const [showRoomForm, setShowRoomForm] = useState(false);
-  const [showCatForm, setShowCatForm] = useState(false);
+  const [deleteServiceTarget, setDeleteServiceTarget] = useState(null);
+  const [deletingService, setDeletingService] = useState(false);
   const serviceAnim = useAnimatedMount(showServiceForm, 220);
-  const roomAnim = useAnimatedMount(showRoomForm, 220);
-  const catAnim = useAnimatedMount(showCatForm, 220);
-  const [editCatId, setEditCatId] = useState(null);
-  const [editCatName, setEditCatName] = useState("");
-  const [expandedRoomId, setExpandedRoomId] = useState(null);
-
-  const derivedCategories = useMemo(() => [...new Set(services.map((s) => s.category))], [services]);
-  const categories = useMemo(() => {
-    const dbNames = dbCategories.map((c) => c.name);
-    const merged = [...dbNames, ...derivedCategories.filter((d) => !dbNames.includes(d))];
-    return merged;
-  }, [dbCategories, derivedCategories]);
+  const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
+  const visibleServices = useMemo(
+    () => services.filter((s) => s.active !== false || (Array.isArray(s.rooms) && s.rooms.length > 0)),
+    [services]
+  );
   const averagePrice = activeServices.length
     ? activeServices.reduce((sum, s) => sum + Number(s.priceUsd || 0), 0) / activeServices.length
     : 0;
@@ -570,10 +459,9 @@ export default function ConfiguracionPage() {
     setLoading(true);
     setLoadError("");
     try {
-      const [s, r, cats] = await Promise.all([authFetch("/services"), authFetch("/rooms"), authFetch("/categories").catch(() => [])]);
+      const [s, r] = await Promise.all([authFetch("/services"), authFetch("/rooms")]);
       setServices(s);
       setRooms(r);
-      setDbCategories(Array.isArray(cats) ? cats : []);
     } catch (err) {
       setLoadError(err.message);
       toast.error(err.message);
@@ -598,15 +486,18 @@ export default function ConfiguracionPage() {
     }
   }
 
-  async function updateRoom(room, changes) {
+  async function deleteService(service) {
+    if (!service || deletingService) return;
+    setDeletingService(true);
     try {
-      const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: changes });
-      setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, ...updated } : r)));
-      if (changes.active === true) toast.success("Cabina habilitada");
-      else if (changes.active === false) toast.warning("Cabina deshabilitada");
-      else toast.info("Cabina actualizada");
+      await authFetch(`/services/${service.id}`, { method: "DELETE" });
+      setServices((prev) => prev.filter((s) => s.id !== service.id));
+      toast.warning(`Servicio "${service.name}" eliminado de la oferta`);
+      setDeleteServiceTarget(null);
     } catch (err) {
-      toast.error(friendlyConfigError(err.message, "Error al actualizar cabina"));
+      toast.error(friendlyConfigError(err.message, "No se pudo eliminar el servicio"));
+    } finally {
+      setDeletingService(false);
     }
   }
 
@@ -637,12 +528,12 @@ export default function ConfiguracionPage() {
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
               <SectionHeader
                 title="Servicios y precios"
-                subtitle="Cada servicio incluye su duración estándar y el precio que se cobra al cliente."
+                subtitle="Cada servicio incluye su duración estándar, pausa, precio y cabinas permitidas."
                 onAdd={() => setShowServiceForm(true)}
                 addLabel="Añadir servicio"
               />
               <div style={{ display: "flex", flexDirection: "column" }}>
-                {services.map((s, i, arr) => {
+                {visibleServices.map((s, i, arr) => {
                   const active = s.active !== false;
                   return (
                     <div key={s.id} style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5, flexDirection: isMobile ? "column" : "row" }}>
@@ -655,6 +546,9 @@ export default function ConfiguracionPage() {
                           </div>
                           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>
                             {s.durationMins || 60} min de sesión · {s.bufferMins ?? 15} min de pausa · bloque total {(s.durationMins || 60) + (s.bufferMins ?? 15)} min
+                          </p>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#8C6E50", opacity: 0.82 }}>
+                            Cabinas permitidas: {Array.isArray(s.rooms) && s.rooms.length > 0 ? s.rooms.map((room) => room.name).join(", ") : "sin cabina asignada"}
                           </p>
                         </div>
                         {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
@@ -674,12 +568,31 @@ export default function ConfiguracionPage() {
                           onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
                           style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
                         />
+                        <button
+                          type="button"
+                          title="Eliminar servicio"
+                          onClick={() => setDeleteServiceTarget(s)}
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 10,
+                            border: "1px solid rgba(168,79,74,0.28)",
+                            background: "rgba(168,79,74,0.06)",
+                            color: "#A84F4A",
+                            display: "grid",
+                            placeItems: "center",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
                         {isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
                     </div>
                   );
                 })}
-                {services.length === 0 && (
+                {visibleServices.length === 0 && (
                   <EmptyState
                     icon={<Sparkles size={28} strokeWidth={1.5} />}
                     title="Todavía no hay servicios"
@@ -727,9 +640,17 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {serviceAnim.shouldRender && <ServiceFormModal categories={categories} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
-      {roomAnim.shouldRender && <RoomFormModal categories={derivedCategories} phase={roomAnim.phase} onClose={() => setShowRoomForm(false)} onSaved={(created) => { setShowRoomForm(false); setRooms((prev) => [...prev, created]); }} />}
-      {catAnim.shouldRender && <CategoryFormModal phase={catAnim.phase} onClose={() => setShowCatForm(false)} onSaved={(created) => { setShowCatForm(false); setDbCategories((prev) => [...prev, created]); }} />}
+      {serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
+      {deleteServiceAnim.shouldRender && deleteServiceTarget && (
+        <DeleteServiceModal
+          service={deleteServiceTarget}
+          phase={deleteServiceAnim.phase}
+          saving={deletingService}
+          onClose={() => setDeleteServiceTarget(null)}
+          onConfirm={() => deleteService(deleteServiceTarget)}
+        />
+      )}
     </div>
   );
 }
+
