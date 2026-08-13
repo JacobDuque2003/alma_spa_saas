@@ -43,6 +43,47 @@ test('GET /clients devuelve datos base sin ClientIntake aunque el cliente tenga 
   assert.equal('intake' in res.body[0], false);
 });
 
+test('GET /clients/export exige permiso extra reportes o configuracion y no exporta ClientIntake', async () => {
+  let argsSeen = null;
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, reportes: true, configuracion: false }) };
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [{
+        id: 'c1',
+        tenantId: 't1',
+        recordNumber: '0077',
+        fullName: 'Camila Andrade',
+        whatsapp: '+593993629256',
+        email: 'camila@test.com',
+        address: 'Quito',
+        birthday: new Date('1997-08-01T00:00:00Z'),
+        active: true,
+        createdAt: new Date('2026-08-01T00:00:00Z'),
+        updatedAt: new Date('2026-08-01T00:00:00Z'),
+        intake: { allergies: 'no debe exportarse' },
+      }];
+    },
+  };
+
+  const res = await supertest(app).get('/clients/export').set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /text\/csv/);
+  assert.equal(argsSeen.where.tenantId, 't1');
+  assert.equal('intake' in argsSeen.select, false);
+  assert.match(res.text, /"Ficha","Nombre","WhatsApp"/);
+  assert.match(res.text, /"0077","Camila Andrade","\+593993629256"/);
+  assert.equal(res.text.includes('no debe exportarse'), false);
+});
+
+test('GET /clients/export niega a personal con clientes pero sin reportes/configuracion', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, reportes: false, configuracion: false }) };
+  prisma.client = { findMany: async () => [] };
+
+  const res = await supertest(app).get('/clients/export').set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 403);
+});
+
 test('GET /clients/:id bloquea cross-tenant', async () => {
   prisma.rolePermission = { findUnique: async () => ({ clientes: true }) };
   prisma.client = {

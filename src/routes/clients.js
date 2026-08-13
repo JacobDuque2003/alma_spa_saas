@@ -1,6 +1,7 @@
 const express = require('express');
 const authenticate = require('../middleware/authenticate');
 const requirePermission = require('../middleware/requirePermission');
+const requireAnyPermission = require('../middleware/requireAnyPermission');
 const requireRole = require('../middleware/requireRole');
 const clientService = require('../services/clientService');
 const clientIntakeService = require('../services/clientIntakeService');
@@ -14,7 +15,33 @@ const router = express.Router();
 // monta en '/', así que un middleware global aquí correría para TODAS las
 // requests —incluidas las rutas públicas montadas después— exigiendo token.
 const clientes = [authenticate, requirePermission('clientes')];
+const clientExport = [authenticate, requirePermission('clientes'), requireAnyPermission('reportes', 'configuracion')];
 const ownerOnly = [authenticate, requireRole('superadmin', 'dueno')];
+
+function csvCell(value) {
+  if (value === null || value === undefined) return '';
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+function clientsToCsv(clients) {
+  const columns = [
+    ['recordNumber', 'Ficha'],
+    ['fullName', 'Nombre'],
+    ['whatsapp', 'WhatsApp'],
+    ['email', 'Email'],
+    ['address', 'Dirección'],
+    ['birthday', 'Cumpleaños'],
+    ['age', 'Edad'],
+    ['active', 'Estado'],
+    ['createdAt', 'Cliente desde'],
+  ];
+  const header = columns.map(([, label]) => csvCell(label)).join(',');
+  const rows = clients.map((client) => columns.map(([key]) => {
+    if (key === 'active') return csvCell(client.active === false ? 'Deshabilitada' : 'Activa');
+    return csvCell(client[key]);
+  }).join(','));
+  return `\uFEFF${[header, ...rows].join('\n')}`;
+}
 
 // Log de seguridad para intentos cross-tenant (403) sobre datos de salud —
 // NO se escribe en ClientIntakeAuditLog (ese log es de accesos legítimos a un
@@ -58,6 +85,17 @@ router.get('/clients/birthdays', clientes, async (req, res, next) => {
     const days = req.query.days !== undefined ? Number(req.query.days) : 7;
     const rows = await clientService.listUpcomingBirthdays(req.user, days);
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/clients/export', clientExport, async (req, res, next) => {
+  try {
+    const clients = await clientService.exportClients(req.user, req.query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="clientes-alma-spa.csv"');
+    res.send(clientsToCsv(clients));
   } catch (err) {
     next(err);
   }

@@ -130,6 +130,22 @@ async function listClients(actor, query = {}) {
   return clients.map(toClientSafeDto);
 }
 
+async function exportClients(actor, query = {}) {
+  const where = {};
+  if (actor.role === 'superadmin') {
+    if (query.tenantId) where.tenantId = query.tenantId;
+  } else {
+    where.tenantId = actor.tenantId;
+  }
+
+  const clients = await prisma.client.findMany({
+    where,
+    select: CLIENT_SAFE_SELECT,
+    orderBy: [{ fullName: 'asc' }, { createdAt: 'desc' }],
+  });
+  return clients.map(toClientSafeDto);
+}
+
 async function searchClients(actor, query = {}) {
   const q = String(query.q || '').trim();
   if (q.length < 2) return [];
@@ -395,4 +411,4 @@ async function listUpcomingBirthdays(actor, days = 7) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, searchClients, getClient, createClient, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, exportClients, searchClients, getClient, createClient, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
