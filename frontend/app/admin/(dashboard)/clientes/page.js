@@ -222,6 +222,57 @@ const menuActionStyle = {
   cursor: "pointer",
 };
 
+function ClientTabButton({ active, label, meta, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "13px 16px",
+        border: "none",
+        borderBottom: active ? "3px solid #8C6E50" : "3px solid transparent",
+        background: active ? "rgba(253,252,250,0.9)" : "transparent",
+        color: active ? "#6B5540" : "#8C6E50",
+        fontSize: 13,
+        fontWeight: active ? 800 : 650,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        minHeight: 48,
+      }}
+    >
+      <span>{label}</span>
+      {meta !== undefined && (
+        <span style={{ fontSize: 11, color: active ? "#F7F5F0" : "#8C6E50", background: active ? "#8C6E50" : "rgba(201,168,118,0.18)", borderRadius: 999, padding: "2px 7px", fontWeight: 800 }}>
+          {meta}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function SummaryTile({ label, value, hint, tone = "gold" }) {
+  const tones = {
+    gold: { bg: "linear-gradient(135deg, rgba(235,205,181,0.72), rgba(253,252,250,0.88))", border: "rgba(201,168,118,0.42)", dot: "#C9A876" },
+    olive: { bg: "linear-gradient(135deg, rgba(92,122,64,0.12), rgba(253,252,250,0.9))", border: "rgba(92,122,64,0.22)", dot: "#5C7A40" },
+    rose: { bg: "linear-gradient(135deg, rgba(142,36,170,0.08), rgba(253,252,250,0.9))", border: "rgba(142,36,170,0.16)", dot: "#8E24AA" },
+    clay: { bg: "linear-gradient(135deg, rgba(140,110,80,0.12), rgba(253,252,250,0.9))", border: "rgba(140,110,80,0.22)", dot: "#8C6E50" },
+  };
+  const theme = tones[tone] || tones.gold;
+  return (
+    <div className="alma-card" style={{ padding: 18, border: `1px solid ${theme.border}`, background: theme.bg, minHeight: 112 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#8C6E50", fontSize: 12, fontWeight: 800, marginBottom: 10 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: theme.dot }} />
+        {label}
+      </div>
+      <div className="font-heading" style={{ fontSize: 28, color: "#6B5540", lineHeight: 1, marginBottom: 8 }}>{value}</div>
+      <div style={{ fontSize: 12, color: "#A89A87", lineHeight: 1.35 }}>{hint}</div>
+    </div>
+  );
+}
+
 const ANTECEDENT_OPTIONS = [
   "Epilepsia",
   "Diabetes",
@@ -303,12 +354,13 @@ export default function ClientesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const isMobile = useIsMobile();
   const toast = useToast();
-  const [mobileShowDetail, setMobileShowDetail] = useState(false);
+  const [mobileShowDetail, setMobileShowDetail] = useState(Boolean(preselectedId));
   const [sortKey, setSortKey] = useState("fullName");
   const [sortDirection, setSortDirection] = useState("asc");
   const [openMenuId, setOpenMenuId] = useState(null);
   const [actionClient, setActionClient] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState("resumen");
   const canExportClients = !!user && (["superadmin", "dueno"].includes(user.role) || user.permissions?.reportes || user.permissions?.configuracion);
 
   const fetchClients = useCallback(async () => {
@@ -316,7 +368,6 @@ export default function ClientesPage() {
     try {
       const data = await authFetch("/clients", { query: query ? { q: query } : undefined });
       setClients(Array.isArray(data) ? data : []);
-      setSelectedId((current) => current || (Array.isArray(data) && data[0]?.id) || null);
     } catch {
       setClients([]);
     } finally {
@@ -349,15 +400,12 @@ export default function ClientesPage() {
     try {
       const data = await authFetch("/clients", { query: { active: "false", ...(query ? { q: query } : {}) } });
       setDisabledClients(Array.isArray(data) ? data : []);
-      if (view === "deshabilitadas") {
-        setSelectedId((current) => (Array.isArray(data) && data.some((c) => c.id === current) ? current : data[0]?.id || null));
-      }
     } catch {
       setDisabledClients([]);
     } finally {
       setDisabledLoading(false);
     }
-  }, [query, view]);
+  }, [query]);
 
   useEffect(() => {
     if (view === "deshabilitadas") fetchDisabledClients();
@@ -405,6 +453,25 @@ export default function ClientesPage() {
   function registerPayment() {
     if (!selectedId) return;
     setShowPaymentForm(true);
+  }
+
+  function openClientDetail(clientId) {
+    setSelectedId(clientId);
+    setOpenMenuId(null);
+    setActiveTab("resumen");
+    if (isMobile) setMobileShowDetail(true);
+  }
+
+  function closeClientDetail() {
+    setSelectedId(null);
+    setDetail(null);
+    setIntake(null);
+    setTreatments([]);
+    setClientAppointments([]);
+    setPlans([]);
+    setBalance(null);
+    setMobileShowDetail(false);
+    setActiveTab("resumen");
   }
 
   const selectedBirthdayInfo = useMemo(() => birthdayList.find((b) => b.id === selectedId) || null, [birthdayList, selectedId]);
@@ -468,105 +535,158 @@ export default function ClientesPage() {
     }
   }
 
+  const balanceAmount = Number(balance?.balanceUsd || 0);
+  const appointmentCount = clientAppointments.length;
+  const treatmentCount = treatments.length;
+  const sortedAppointments = useMemo(
+    () => [...clientAppointments].sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()),
+    [clientAppointments],
+  );
+  const lastAppointment = sortedAppointments[0] || null;
+  const tabItems = [
+    { key: "resumen", label: "Resumen" },
+    { key: "anamnesis", label: "Anamnesis", meta: intake?.consentSigned ? "OK" : "Pend." },
+    { key: "historial", label: "Historial", meta: treatmentCount + appointmentCount },
+    { key: "reservas", label: "Reservas", meta: appointmentCount },
+    { key: "cuenta", label: "Cuenta", meta: balanceAmount > 0 ? money(balanceAmount) : undefined },
+    { key: "estadisticas", label: "Estadísticas" },
+  ];
+
   return (
     <div style={{ display: "flex", height: "100%" }}>
+      {newClientAnim.shouldRender && (
+        <NewClientModal
+          phase={newClientAnim.phase}
+          onClose={() => setShowNewClient(false)}
+          onSaved={(created) => {
+            setShowNewClient(false);
+            setClients((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
+            openClientDetail(created.id);
+          }}
+        />
+      )}
       {/* Sidebar list */}
-      {(!isMobile || !mobileShowDetail) && (
+      {(!selectedId || (isMobile && !mobileShowDetail)) && (
       <div
         style={{
-          width: isMobile ? "100%" : 560,
-          flex: isMobile ? "1" : "0 0 560px",
-          borderRight: isMobile ? "none" : "1px solid rgba(168,154,135,0.35)",
+          width: "100%",
+          flex: "1 1 auto",
+          borderRight: "none",
           display: "flex",
           flexDirection: "column",
-          background: "rgba(247,245,240,0.6)",
+          background: "linear-gradient(135deg, rgba(247,245,240,0.78), rgba(253,252,250,0.55))",
         }}
       >
-        <div style={{ padding: "24px 20px 14px" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+        <div style={{ padding: isMobile ? "22px 16px 14px" : "28px 34px 16px" }}>
+          <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", gap: 16, marginBottom: 18, flexDirection: isMobile ? "column" : "row" }}>
             <div>
-              <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: 0 }}>
+              <h1 className="font-heading" style={{ fontSize: isMobile ? 28 : 34, fontWeight: 600, color: "#6B5540", margin: 0 }}>
                 Clientes
               </h1>
               <span style={{ display: "block", marginTop: 4, fontSize: 13, color: "#A89A87" }}>
-                {currentCount} {currentCount === 1 ? "clienta" : "clientas"}
+                Directorio general · {currentCount} {currentCount === 1 ? "clienta" : "clientas"}
               </span>
             </div>
-            {canExportClients && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+              {canExportClients && (
+                <button
+                  type="button"
+                  onClick={handleExportClients}
+                  disabled={exporting}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 7,
+                    padding: "10px 16px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(140,110,80,0.38)",
+                    background: "#FDFCFA",
+                    color: "#8C6E50",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: exporting ? "wait" : "pointer",
+                    opacity: exporting ? 0.65 : 1,
+                    whiteSpace: "nowrap",
+                    flex: isMobile ? 1 : "initial",
+                  }}
+                >
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  Exportar
+                </button>
+              )}
               <button
-                type="button"
-                onClick={handleExportClients}
-                disabled={exporting}
+                onClick={() => setShowNewClient(true)}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 7,
-                  padding: "9px 14px",
+                  justifyContent: "center",
+                  padding: "10px 18px",
                   borderRadius: 999,
-                  border: "1px solid rgba(140,110,80,0.38)",
-                  background: "#FDFCFA",
-                  color: "#8C6E50",
-                  fontSize: 12,
+                  border: "none",
+                  background: "#8C6E50",
+                  color: "#F7F5F0",
+                  fontSize: 13,
                   fontWeight: 800,
-                  cursor: exporting ? "wait" : "pointer",
-                  opacity: exporting ? 0.65 : 1,
-                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  flex: isMobile ? 1 : "initial",
                 }}
               >
-                {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                Exportar
+                + Nueva clienta
               </button>
-            )}
+            </div>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: "#FDFCFA",
-              border: "1px solid rgba(168,154,135,0.5)",
-              borderRadius: 999,
-              padding: "10px 16px",
-            }}
-          >
-            <Search size={12} style={{ color: "#A89A87", flexShrink: 0 }} />
-            <input
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 420px) 1fr", gap: 12, alignItems: "center" }}>
+            <div
               style={{
-                border: "none",
-                background: "none",
-                outline: "none",
-                fontSize: 14,
-                color: "#6B5540",
-                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#FDFCFA",
+                border: "1px solid rgba(168,154,135,0.5)",
+                borderRadius: 999,
+                padding: "11px 16px",
               }}
-              placeholder="Busca por nombre o WhatsApp..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 7, marginTop: 12, overflowX: "auto", paddingBottom: 2 }}>
-            <ClientFilterButton active={view === "todas"} onClick={() => setView("todas")}>
-              Todas
-            </ClientFilterButton>
-            <ClientFilterButton active={view === "cumples"} onClick={() => setView("cumples")}>
-              Cumpleaños
-            </ClientFilterButton>
-            <ClientFilterButton active={view === "deshabilitadas"} onClick={() => setView("deshabilitadas")}>
-              Deshabilitadas
-            </ClientFilterButton>
+            >
+              <Search size={13} style={{ color: "#A89A87", flexShrink: 0 }} />
+              <input
+                style={{
+                  border: "none",
+                  background: "none",
+                  outline: "none",
+                  fontSize: 14,
+                  color: "#6B5540",
+                  width: "100%",
+                }}
+                placeholder="Busca por nombre o WhatsApp..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 2, justifyContent: isMobile ? "flex-start" : "flex-end" }}>
+              <ClientFilterButton active={view === "todas"} onClick={() => setView("todas")}>
+                Todas
+              </ClientFilterButton>
+              <ClientFilterButton active={view === "cumples"} onClick={() => setView("cumples")}>
+                Cumpleaños
+              </ClientFilterButton>
+              <ClientFilterButton active={view === "deshabilitadas"} onClick={() => setView("deshabilitadas")}>
+                Deshabilitadas
+              </ClientFilterButton>
+            </div>
           </div>
         </div>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 12px 12px", overflowY: "auto", gap: 6 }}>
+        <div className="alma-card" style={{ flex: 1, display: "flex", flexDirection: "column", margin: isMobile ? "0 12px 12px" : "0 34px 28px", padding: isMobile ? "12px" : "18px", overflowY: "auto", gap: 6, minHeight: 0 }}>
           {!isMobile && (
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "82px minmax(180px,1.2fr) minmax(130px,0.9fr) minmax(118px,0.8fr) 94px 44px",
                 gap: 12,
-                padding: "0 12px 8px",
+                padding: "0 12px 12px",
                 alignItems: "center",
                 borderBottom: "1px solid rgba(168,154,135,0.22)",
-                marginBottom: 4,
+                marginBottom: 8,
               }}
             >
               <SortButton label="Ficha" sortKey="recordNumber" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
@@ -594,49 +714,28 @@ export default function ClientesPage() {
                 selected={client.id === selectedId}
                 menuOpen={openMenuId === client.id}
                 isMobile={isMobile}
-                onSelect={() => { setSelectedId(client.id); setOpenMenuId(null); if (isMobile) setMobileShowDetail(true); }}
+                onSelect={() => openClientDetail(client.id)}
                 onMenu={() => setOpenMenuId((id) => (id === client.id ? null : client.id))}
-                onEdit={() => { setActionClient(client); setSelectedId(client.id); setOpenMenuId(null); setShowEditClient(true); }}
-                onDisable={() => { setActionClient(client); setSelectedId(client.id); setOpenMenuId(null); setShowDeleteClient(true); }}
+                onEdit={() => { setActionClient(client); openClientDetail(client.id); setShowEditClient(true); }}
+                onDisable={() => { setActionClient(client); openClientDetail(client.id); setShowDeleteClient(true); }}
                 onEnable={() => { setSelectedId(client.id); setOpenMenuId(null); handleEnableClient(client.id); }}
               />
             ))
           )}
         </div>
-        <div style={{ padding: "14px 20px", borderTop: "1px solid rgba(168,154,135,0.35)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <button
-            onClick={() => setShowNewClient(true)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "9px 18px",
-              borderRadius: 999,
-              border: "1px solid #8C6E50",
-              background: "none",
-              color: "#8C6E50",
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
-          >
-            + Nueva clienta
-          </button>
-          <span style={{ fontSize: 11, color: "#A89A87" }}>Ficha · contacto · cumpleaños</span>
-        </div>
       </div>
       )}
 
       {/* Detail panel */}
-      {(!isMobile || mobileDetailAnim.shouldRender) && (
-      <div key={isMobile ? undefined : selectedId} className={isMobile ? `alma-slide-right alma-anim-${mobileDetailAnim.phase}` : "alma-stagger"} style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 30px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
-        {isMobile && (
-          <button
-            onClick={() => setMobileShowDetail(false)}
+      {selectedId && (!isMobile || mobileDetailAnim.shouldRender) && (
+      <div key={isMobile ? undefined : selectedId} className={isMobile ? `alma-slide-right alma-anim-${mobileDetailAnim.phase}` : "alma-stagger"} style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 34px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto", background: "linear-gradient(135deg, rgba(247,245,240,0.62), rgba(253,252,250,0.55))" }}>
+        <button
+            onClick={closeClientDetail}
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              padding: "8px 0",
+              padding: "8px 4px",
               background: "none",
               border: "none",
               cursor: "pointer",
@@ -648,9 +747,8 @@ export default function ClientesPage() {
             }}
           >
             <ArrowLeft size={18} />
-            Clientes
+            Volver a clientes
           </button>
-        )}
         {!selectedId ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#A89A87", fontSize: 14 }}>
             Selecciona una clienta para ver su ficha.
@@ -700,17 +798,6 @@ export default function ClientesPage() {
                 phase={editIntakeAnim.phase}
                 onClose={() => setShowEditIntake(false)}
                 onSaved={() => { setShowEditIntake(false); fetchDetail(); }}
-              />
-            )}
-            {newClientAnim.shouldRender && (
-              <NewClientModal
-                phase={newClientAnim.phase}
-                onClose={() => setShowNewClient(false)}
-                onSaved={(created) => {
-                  setShowNewClient(false);
-                  setClients((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
-                  setSelectedId(created.id);
-                }}
               />
             )}
             {/* Header */}
@@ -856,13 +943,60 @@ export default function ClientesPage() {
               </div>
             </div>
 
-            {/* Content grid */}
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.2fr", gap: 18, flex: 1, minHeight: 0 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 18, minHeight: 0 }}>
-                <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />
-                <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />
+            <div className="alma-card" style={{ padding: 0, overflow: "hidden", border: "1px solid rgba(168,154,135,0.24)", background: "rgba(253,252,250,0.82)" }}>
+              <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid rgba(168,154,135,0.22)", background: "rgba(235,232,225,0.34)" }}>
+                {tabItems.map((tab) => (
+                  <ClientTabButton
+                    key={tab.key}
+                    active={activeTab === tab.key}
+                    label={tab.label}
+                    meta={tab.meta}
+                    onClick={() => setActiveTab(tab.key)}
+                  />
+                ))}
               </div>
-              <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} onSaved={fetchDetail} />
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0 }}>
+              {activeTab === "resumen" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, minmax(0, 1fr))", gap: 14 }}>
+                    <SummaryTile
+                      label="Reservas"
+                      value={appointmentCount}
+                      hint={lastAppointment ? `Última: ${shortDate(lastAppointment.startsAt)}` : "Sin reservas registradas"}
+                      tone="gold"
+                    />
+                    <SummaryTile
+                      label="Tratamientos"
+                      value={treatmentCount}
+                      hint={treatmentCount ? "Historial clínico-estético activo" : "Sin tratamientos todavía"}
+                      tone="rose"
+                    />
+                    <SummaryTile
+                      label="Cuenta"
+                      value={balanceAmount > 0 ? money(balanceAmount) : "Al día"}
+                      hint={balanceAmount > 0 ? "Saldo por cobrar" : balanceAmount < 0 ? "Tiene saldo a favor" : "Sin saldo pendiente"}
+                      tone={balanceAmount > 0 ? "clay" : "olive"}
+                    />
+                    <SummaryTile
+                      label="Cumpleaños"
+                      value={detail.birthday ? birthdayDateLabel(detail.birthday) : "—"}
+                      hint={detail.age != null ? `${detail.age} años` : "Sin fecha registrada"}
+                      tone="gold"
+                    />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 18 }}>
+                    <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} compact />
+                    <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} compact />
+                  </div>
+                </div>
+              )}
+              {activeTab === "anamnesis" && <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />}
+              {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} onSaved={fetchDetail} />}
+              {activeTab === "reservas" && <ReservationsCard appointments={clientAppointments} />}
+              {activeTab === "cuenta" && <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />}
+              {activeTab === "estadisticas" && <ClientStatsCard client={detail} appointments={clientAppointments} treatments={treatments} balance={balance} />}
             </div>
           </>
         ) : (
@@ -876,13 +1010,13 @@ export default function ClientesPage() {
   );
 }
 
-function IntakeCard({ intake, onEdit }) {
+function IntakeCard({ intake, onEdit, compact = false }) {
   const parsedConditions = parseChecklistText(intake?.conditions || "");
   const answeredAntecedents = ANTECEDENT_OPTIONS
     .map((item) => ({ item, value: parsedConditions.answers[item] || (parsedConditions.selected.includes(item) ? "SI" : null) }))
     .filter((row) => row.value);
   return (
-    <div className="alma-card" style={{ padding: 22, border: "1px solid rgba(142,36,170,0.12)", background: "linear-gradient(135deg, #fffdf8, rgba(142,36,170,0.035))" }}>
+    <div className="alma-card" style={{ padding: compact ? 20 : 24, border: "1px solid rgba(142,36,170,0.12)", background: "linear-gradient(135deg, #fffdf8, rgba(142,36,170,0.035))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           Ficha de anamnesis
@@ -930,7 +1064,7 @@ function IntakeCard({ intake, onEdit }) {
   );
 }
 
-function PlansBalanceCard({ plans, balance, onPayment }) {
+function PlansBalanceCard({ plans, balance, onPayment, compact = false }) {
   const activePlan = (plans || []).find((p) => p.active) || plans?.[0];
   const balanceAmount = Number(balance?.balanceUsd || 0);
   const entries = Array.isArray(balance?.entries) ? balance.entries : [];
@@ -941,7 +1075,7 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
       : "Cuenta al día";
 
   return (
-    <div className="alma-card" style={{ padding: 22, flex: 1 }}>
+    <div className="alma-card" style={{ padding: compact ? 20 : 24, flex: 1 }}>
       <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: "0 0 14px" }}>
         Cuenta de la clienta
       </h3>
@@ -1032,6 +1166,91 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ReservationsCard({ appointments = [] }) {
+  const statusInfo = {
+    pendiente: { label: "Pendiente", color: "#8C6E50", bg: "rgba(201,168,118,0.16)" },
+    confirmado: { label: "Confirmada", color: "#5C7A40", bg: "rgba(92,122,64,0.12)" },
+    cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
+    no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },
+  };
+  const rows = [...appointments].sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
+
+  return (
+    <div className="alma-card" style={{ padding: 24, minHeight: 360 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
+        <div>
+          <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>Reservas</h3>
+          <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 13 }}>Agenda histórica de esta clienta.</p>
+        </div>
+        <span style={{ color: "#A89A87", fontSize: 13 }}>{rows.length} registros</span>
+      </div>
+      {rows.length === 0 ? (
+        <p style={{ textAlign: "center", padding: "70px 0", fontSize: 13, color: "#A89A87" }}>Todavía no hay reservas registradas.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows.map((appointment) => {
+            const info = statusInfo[appointment.status] || statusInfo.pendiente;
+            return (
+              <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 14, alignItems: "center", padding: "14px 16px", borderRadius: 14, border: "1px solid rgba(168,154,135,0.2)", background: "rgba(253,252,250,0.76)" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 999, background: appointment.service?.colorHex || "#C9A876" }} />
+                    <strong style={{ color: "#6B5540", fontSize: 14 }}>{appointment.service?.name || "Reserva"}</strong>
+                  </div>
+                  <div style={{ color: "#A89A87", fontSize: 12 }}>
+                    {shortDate(appointment.startsAt)} · {appointment.room?.name || "Sin cabina"}{appointment.staff?.fullName ? ` · ${appointment.staff.fullName}` : ""}
+                  </div>
+                  {appointment.indications && <div style={{ marginTop: 5, color: "#8C6E50", fontSize: 12 }}>{appointment.indications}</div>}
+                </div>
+                <span style={{ padding: "5px 10px", borderRadius: 999, color: info.color, background: info.bg, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>
+                  {info.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientStatsCard({ client, appointments = [], treatments = [], balance }) {
+  const confirmed = appointments.filter((a) => a.status === "confirmado").length;
+  const noShows = appointments.filter((a) => a.status === "no_show").length;
+  const balanceAmount = Number(balance?.balanceUsd || 0);
+  const firstVisit = appointments.length
+    ? [...appointments].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0]
+    : null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 }}>
+        <SummaryTile label="Asistencias" value={confirmed} hint="Reservas confirmadas / asistidas" tone="olive" />
+        <SummaryTile label="No asistió" value={noShows} hint="Citas marcadas como no-show" tone="clay" />
+        <SummaryTile label="Tratamientos" value={treatments.length} hint="Registros clínico-estéticos" tone="rose" />
+        <SummaryTile label="Saldo" value={balanceAmount === 0 ? "Al día" : money(Math.abs(balanceAmount))} hint={balanceAmount > 0 ? "Por cobrar" : balanceAmount < 0 ? "A favor" : "Sin pendiente"} tone={balanceAmount > 0 ? "clay" : "olive"} />
+      </div>
+      <div className="alma-card" style={{ padding: 24, background: "linear-gradient(135deg, #fffdf8, rgba(201,168,118,0.08))" }}>
+        <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: "0 0 16px" }}>Lectura rápida</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <div style={{ padding: 14, borderRadius: 14, background: "rgba(253,252,250,0.7)", border: "1px solid rgba(168,154,135,0.2)" }}>
+            <div style={{ color: "#A89A87", fontSize: 12, marginBottom: 4 }}>Cliente desde</div>
+            <strong style={{ color: "#6B5540", fontSize: 14 }}>{shortDate(client?.createdAt)}</strong>
+          </div>
+          <div style={{ padding: 14, borderRadius: 14, background: "rgba(253,252,250,0.7)", border: "1px solid rgba(168,154,135,0.2)" }}>
+            <div style={{ color: "#A89A87", fontSize: 12, marginBottom: 4 }}>Primera reserva registrada</div>
+            <strong style={{ color: "#6B5540", fontSize: 14 }}>{firstVisit ? shortDate(firstVisit.startsAt) : "Sin reservas"}</strong>
+          </div>
+          <div style={{ padding: 14, borderRadius: 14, background: "rgba(253,252,250,0.7)", border: "1px solid rgba(168,154,135,0.2)" }}>
+            <div style={{ color: "#A89A87", fontSize: 12, marginBottom: 4 }}>Cumpleaños</div>
+            <strong style={{ color: "#6B5540", fontSize: 14 }}>{client?.birthday ? `${birthdayDateLabel(client.birthday)} · ${client.age ?? "—"} años` : "Sin fecha"}</strong>
+          </div>
+        </div>
       </div>
     </div>
   );
