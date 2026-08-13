@@ -61,6 +61,24 @@ test('listClients puede listar deshabilitados sin filtrar ClientIntake', async (
   assert.equal(result[0].active, false);
 });
 
+test('listClients active=all lista activas y deshabilitadas sin filtrar ClientIntake', async () => {
+  let argsSeen = null;
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [];
+    },
+  };
+
+  await clientService.listClients({ role: 'dueno', tenantId: 't1' }, { active: 'all', limit: 300 });
+  assert.equal(argsSeen.where.tenantId, 't1');
+  assert.equal('active' in argsSeen.where, false);
+  assert.equal(argsSeen.take, 300);
+  assert.equal(argsSeen.select.fullName, true);
+  assert.equal('intake' in argsSeen.select, false);
+  assert.equal('allergiesEnc' in argsSeen.select, false);
+});
+
 test('searchClients devuelve DTO mínimo tenant-scoped y busca por teléfono local', async () => {
   let argsSeen = null;
   prisma.client = {

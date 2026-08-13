@@ -93,7 +93,9 @@ function parseBirthdayOrThrow(value) {
 
 async function listClients(actor, query = {}) {
   const activeQuery = String(query.active ?? 'true').toLowerCase();
-  const where = { active: activeQuery === 'false' ? false : true };
+  const where = {};
+  if (activeQuery === 'false') where.active = false;
+  if (activeQuery === 'true') where.active = true;
   if (actor.role === 'superadmin') {
     if (query.tenantId) where.tenantId = query.tenantId;
   } else {
@@ -120,7 +122,7 @@ async function listClients(actor, query = {}) {
     }
   }
 
-  const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 100);
+  const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
   const clients = await prisma.client.findMany({
     where,
     select: CLIENT_SAFE_SELECT,
