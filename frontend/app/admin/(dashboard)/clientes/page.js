@@ -126,12 +126,12 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
           gap: 12,
           padding: "13px 12px",
           borderRadius: 14,
-          background: selected ? "rgba(235,205,181,0.48)" : "#FDFCFA",
-          border: selected ? "1px solid rgba(201,168,118,0.35)" : "1px solid rgba(168,154,135,0.18)",
+          background: selected ? "linear-gradient(135deg, rgba(235,205,181,0.68), #FDFCFA)" : "linear-gradient(135deg, #FFFFFF, rgba(253,252,250,0.86))",
+          border: selected ? "1px solid rgba(201,168,118,0.62)" : "1px solid rgba(201,168,118,0.28)",
           cursor: "pointer",
           textAlign: "left",
           width: "100%",
-          boxShadow: selected ? "0 10px 26px rgba(107,85,64,0.08)" : "none",
+          boxShadow: selected ? "0 16px 34px rgba(107,85,64,0.14)" : "0 10px 24px rgba(107,85,64,0.07), inset 0 1px 0 rgba(255,255,255,0.9)",
         }}
       >
         <span style={{ width: 38, height: 38, borderRadius: "50%", background: selected ? "#C9A876" : "rgba(201,168,118,0.32)", color: selected ? "#F7F5F0" : "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
@@ -160,8 +160,9 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
         minHeight: 62,
         padding: "10px 12px",
         borderRadius: 16,
-        border: selected ? "1px solid rgba(201,168,118,0.55)" : "1px solid transparent",
-        background: selected ? "linear-gradient(135deg, rgba(235,205,181,0.42), rgba(253,252,250,0.95))" : "rgba(253,252,250,0.52)",
+        border: selected ? "1px solid rgba(201,168,118,0.62)" : "1px solid rgba(201,168,118,0.24)",
+        background: selected ? "linear-gradient(135deg, rgba(235,205,181,0.56), rgba(253,252,250,0.98))" : "linear-gradient(135deg, #FFFFFF, rgba(253,252,250,0.82))",
+        boxShadow: selected ? "0 18px 38px rgba(107,85,64,0.15), inset 0 1px 0 rgba(255,255,255,0.82)" : "0 12px 28px rgba(107,85,64,0.07), inset 0 1px 0 rgba(255,255,255,0.92)",
         cursor: "pointer",
         position: "relative",
       }}
@@ -316,6 +317,7 @@ export default function ClientesPage() {
   const [selectedId, setSelectedId] = useState(preselectedId || null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("todas");
+  const [statusFilter, setStatusFilter] = useState("todas");
   const [birthdayList, setBirthdayList] = useState([]);
   const [birthdayLoading, setBirthdayLoading] = useState(false);
   const [detail, setDetail] = useState(null);
@@ -451,11 +453,17 @@ export default function ClientesPage() {
   }, [isMobile, preselectedId]);
 
   const visibleClients = useMemo(() => {
-    if (view === "cumples") return sortClients(birthdayList, sortKey === "birthday" ? "birthday" : sortKey, sortDirection);
-    return sortClients(clients, sortKey, sortDirection);
-  }, [birthdayList, clients, sortDirection, sortKey, view]);
+    const source = view === "cumples" ? birthdayList : clients;
+    const filtered = source.filter((client) => {
+      if (statusFilter === "activas") return client.active !== false;
+      if (statusFilter === "deshabilitadas") return client.active === false;
+      return true;
+    });
+    return sortClients(filtered, view === "cumples" && sortKey === "birthday" ? "birthday" : sortKey, sortDirection);
+  }, [birthdayList, clients, sortDirection, sortKey, statusFilter, view]);
   const currentCount = visibleClients.length;
   const listLoading = view === "cumples" ? birthdayLoading : loading;
+  const statusFilterLabel = statusFilter === "activas" ? "Activas" : statusFilter === "deshabilitadas" ? "Deshabilitadas" : "Todas";
 
   function changeSort(key) {
     setSortKey((current) => {
@@ -465,6 +473,14 @@ export default function ClientesPage() {
       }
       setSortDirection(key === "createdAt" || key === "birthday" ? "desc" : "asc");
       return key;
+    });
+  }
+
+  function cycleStatusFilter() {
+    setStatusFilter((current) => {
+      if (current === "todas") return "activas";
+      if (current === "activas") return "deshabilitadas";
+      return "todas";
     });
   }
 
@@ -521,10 +537,9 @@ export default function ClientesPage() {
   const appointmentCount = clientAppointments.length;
   const treatmentCount = treatments.length;
   const tabItems = [
-    { key: "resumen", label: "Resumen" },
+    { key: "resumen", label: "Resumen", meta: Array.isArray(balance?.entries) ? balance.entries.length : 0 },
     { key: "anamnesis", label: "Anamnesis", meta: intake?.consentSigned ? "OK" : "Pend." },
     { key: "historial", label: "Historial", meta: treatmentCount + appointmentCount },
-    { key: "movimientos", label: "Movimientos", meta: Array.isArray(balance?.entries) ? balance.entries.length : 0 },
   ];
 
   return (
@@ -644,6 +659,9 @@ export default function ClientesPage() {
               </ClientFilterButton>
               <ClientFilterButton active={view === "cumples"} onClick={() => setView("cumples")}>
                 Cumpleaños
+              </ClientFilterButton>
+              <ClientFilterButton active={statusFilter !== "todas"} onClick={cycleStatusFilter}>
+                Estado: {statusFilterLabel}
               </ClientFilterButton>
             </div>
           </div>
@@ -905,10 +923,9 @@ export default function ClientesPage() {
             </div>
 
             <div style={{ flex: 1, minHeight: 0 }}>
-              {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} onCopyEmail={handleCopyEmail} />}
+              {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} balance={balance} plans={plans} onPayment={registerPayment} onCopyEmail={handleCopyEmail} />}
               {activeTab === "anamnesis" && <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />}
               {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} onSaved={fetchDetail} />}
-              {activeTab === "movimientos" && <PlansBalanceCard plans={plans} balance={balance} onPayment={registerPayment} />}
             </div>
           </>
         ) : (
@@ -922,38 +939,41 @@ export default function ClientesPage() {
   );
 }
 
-function ClientPersonalSummaryCard({ client, onCopyEmail }) {
+function ClientPersonalSummaryCard({ client, balance, plans, onPayment, onCopyEmail }) {
   const birthday = client?.birthday ? birthdayDateLabel(client.birthday) : "Sin fecha";
   const age = client?.age != null ? `${client.age} años` : "Sin edad";
   const email = client?.email || "Sin correo";
 
   return (
-    <div className="alma-card" style={{ padding: 24, background: "linear-gradient(135deg, rgba(253,252,250,0.96), rgba(235,205,181,0.14))", border: "1px solid rgba(201,168,118,0.22)" }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        <div>
-          <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>Resumen de la clienta</h3>
-          <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 13 }}>Datos generales para identificarla rápido antes de atenderla.</p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 18, alignItems: "stretch" }}>
+      <div className="alma-card" style={{ padding: 24, background: "linear-gradient(135deg, rgba(253,252,250,0.98), rgba(235,205,181,0.16))", border: "1px solid rgba(201,168,118,0.24)", boxShadow: "0 22px 55px rgba(107,85,64,0.08)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+          <div>
+            <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>Información</h3>
+            <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 13 }}>Datos principales de la clienta.</p>
+          </div>
+          <span style={{ borderRadius: 999, padding: "6px 11px", fontSize: 12, fontWeight: 800, color: client?.active === false ? "#9A4E48" : "#5C7A40", background: client?.active === false ? "rgba(194,84,80,0.08)" : "rgba(92,122,64,0.10)" }}>
+            {client?.active === false ? "Deshabilitada" : "Activa"}
+          </span>
         </div>
-        <span style={{ borderRadius: 999, padding: "6px 11px", fontSize: 12, fontWeight: 800, color: client?.active === false ? "#9A4E48" : "#5C7A40", background: client?.active === false ? "rgba(194,84,80,0.08)" : "rgba(92,122,64,0.10)" }}>
-          {client?.active === false ? "Deshabilitada" : "Activa"}
-        </span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+          <PersonalInfoItem label="Ficha" value={client?.recordNumber || "Sin número"} />
+          <PersonalInfoItem label="WhatsApp" value={client?.whatsapp || "Sin teléfono"} />
+          <PersonalInfoItem
+            label="Correo"
+            value={email}
+            action={client?.email ? (
+              <button type="button" onClick={() => onCopyEmail(client.email)} title="Copiar correo" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 999, border: "1px solid rgba(168,154,135,0.28)", background: "#FDFCFA", color: "#8C6E50", cursor: "pointer", flexShrink: 0 }}>
+                <Copy size={13} />
+              </button>
+            ) : null}
+          />
+          <PersonalInfoItem label="Cumpleaños" value={`${birthday} · ${age}`} />
+          <PersonalInfoItem label="Clienta desde" value={shortDate(client?.createdAt)} />
+          <PersonalInfoItem label="Dirección" value={client?.address || "Sin dirección"} />
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
-        <PersonalInfoItem label="Ficha" value={client?.recordNumber || "Sin número"} />
-        <PersonalInfoItem label="WhatsApp" value={client?.whatsapp || "Sin teléfono"} />
-        <PersonalInfoItem
-          label="Correo"
-          value={email}
-          action={client?.email ? (
-            <button type="button" onClick={() => onCopyEmail(client.email)} title="Copiar correo" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 999, border: "1px solid rgba(168,154,135,0.28)", background: "#FDFCFA", color: "#8C6E50", cursor: "pointer", flexShrink: 0 }}>
-              <Copy size={13} />
-            </button>
-          ) : null}
-        />
-        <PersonalInfoItem label="Cumpleaños" value={`${birthday} · ${age}`} />
-        <PersonalInfoItem label="Clienta desde" value={shortDate(client?.createdAt)} />
-        <PersonalInfoItem label="Dirección" value={client?.address || "Sin dirección"} />
-      </div>
+      <AccountMovementsPanel plans={plans} balance={balance} onPayment={onPayment} />
     </div>
   );
 }
@@ -1009,7 +1029,7 @@ function IntakeCard({ intake, onEdit }) {
   );
 }
 
-function PlansBalanceCard({ plans, balance, onPayment }) {
+function AccountMovementsPanel({ plans, balance, onPayment }) {
   const activePlan = (plans || []).find((p) => p.active) || plans?.[0];
   const balanceAmount = Number(balance?.balanceUsd || 0);
   const entries = Array.isArray(balance?.entries) ? balance.entries : [];
@@ -1021,30 +1041,35 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
 
   return (
     <div className="alma-card" style={{ padding: 24, flex: 1, background: "linear-gradient(135deg, rgba(253,252,250,0.96), rgba(92,122,64,0.055))" }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <div>
-          <h3 className="font-heading" style={{ fontSize: 22, fontWeight: 600, color: "#6B5540", margin: 0 }}>
-            Movimientos de cuenta
-          </h3>
-          <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 13 }}>Abonos y cargos registrados para esta clienta.</p>
+      <div style={{ borderRadius: 22, padding: 20, color: "#FDF8EF", background: "linear-gradient(135deg, #8C6E50 0%, #6B5540 58%, #4F3F31 100%)", boxShadow: "0 22px 45px rgba(107,85,64,0.22)", position: "relative", overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ position: "absolute", inset: "auto -55px -70px auto", width: 220, height: 220, borderRadius: "50%", border: "1px solid rgba(253,248,239,0.13)" }} />
+        <div style={{ position: "absolute", inset: "-85px auto auto 42%", width: 230, height: 230, borderRadius: "50%", border: "1px solid rgba(253,248,239,0.11)" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", position: "relative" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", opacity: 0.78 }}>Cuenta</div>
+            <div className="font-heading" style={{ marginTop: 10, fontSize: 30, lineHeight: 1, color: "#FDF8EF" }}>{balanceAmount === 0 ? "Al día" : money(Math.abs(balanceAmount))}</div>
+            <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>{balanceLabel}</div>
+          </div>
+          <button
+            onClick={onPayment}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "9px 15px",
+              borderRadius: 999,
+              background: "#FDF8EF",
+              color: "#6B5540",
+              fontSize: 12,
+              fontWeight: 850,
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            + Abono
+          </button>
         </div>
-        <button
-          onClick={onPayment}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            padding: "9px 16px",
-            borderRadius: 999,
-            background: "#8C6E50",
-            color: "#F7F5F0",
-            fontSize: 12,
-            fontWeight: 800,
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          Registrar abono
-        </button>
       </div>
       {activePlan ? (
         <div style={{ background: "rgba(235,205,181,0.26)", border: "1px solid rgba(201,168,118,0.28)", borderRadius: 14, padding: 14, marginBottom: 14 }}>
@@ -1073,24 +1098,6 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
       ) : (
         <p style={{ fontSize: 13, color: "#A89A87", marginBottom: 14 }}>Sin planes activos.</p>
       )}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          background: "rgba(253,252,250,0.72)",
-          border: "1px solid rgba(168,154,135,0.18)",
-          borderRadius: 14,
-          padding: "13px 14px",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 12, color: "#A89A87", marginBottom: 3 }}>Estado actual</div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: balanceAmount > 0 ? "#8C6E50" : balanceAmount < 0 ? "#5C7A40" : "#6B5540" }}>
-            {balanceLabel}
-          </div>
-        </div>
-      </div>
       <div style={{ marginTop: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{"Movimientos de cuenta"}</span>
@@ -1105,13 +1112,13 @@ function PlansBalanceCard({ plans, balance, onPayment }) {
               return (
                 <div key={entry.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 10px", borderRadius: 9, background: "rgba(253,252,250,0.72)", border: "1px solid rgba(168,154,135,0.18)" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{isPayment ? "Abono recibido" : "Cargo generado"}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#6B5540" }}>{isPayment ? "Entró dinero" : "Cargo generado"}</div>
                     <div style={{ fontSize: 11, color: "#A89A87", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {entry.description || entry.method || shortDate(entry.createdAt)}
                     </div>
                   </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: isPayment ? "#6F7F45" : "#8C6E50", whiteSpace: "nowrap" }}>
-                    {isPayment ? "-" : "+"}{money(entry.amountUsd)}
+                  <div style={{ fontSize: 12, fontWeight: 800, color: isPayment ? "#5C7A40" : "#9A6A42", whiteSpace: "nowrap" }}>
+                    {isPayment ? "+" : ""}{money(entry.amountUsd)}
                   </div>
                 </div>
               );
@@ -1529,4 +1536,3 @@ function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
     </div>
   );
 }
-
