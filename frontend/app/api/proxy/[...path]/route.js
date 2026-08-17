@@ -43,6 +43,14 @@ async function proxyRequest(req, { params }) {
   if (outOfSchedule) responseHeaders["X-Alma-Out-Of-Schedule"] = outOfSchedule;
   if (outOfScheduleNext) responseHeaders["X-Alma-Out-Of-Schedule-Next"] = outOfScheduleNext;
 
+  if (res.status === 204 || res.status === 205) {
+    delete responseHeaders["Content-Type"];
+    return new NextResponse(null, {
+      status: res.status,
+      headers: responseHeaders,
+    });
+  }
+
   return new NextResponse(data, {
     status: res.status,
     headers: responseHeaders,
