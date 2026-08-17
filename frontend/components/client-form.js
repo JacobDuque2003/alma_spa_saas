@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatEcuadorPhone } from "@/lib/phone-format";
 import { useToast } from "./toast-provider";
 
 // Shared fields for creating or editing a client. Used from Clientes
@@ -29,7 +30,7 @@ export function ClientForm({
   compact = false,
 }) {
   const [fullName, setFullName] = useState(initial.fullName || "");
-  const [whatsapp, setWhatsapp] = useState(initial.whatsapp || "");
+  const [whatsapp, setWhatsapp] = useState(formatEcuadorPhone(initial.whatsapp || ""));
   const [email, setEmail] = useState(initial.email || "");
   const [recordNumber, setRecordNumber] = useState(initial.recordNumber || "");
   const [address, setAddress] = useState(initial.address || "");
@@ -41,7 +42,7 @@ export function ClientForm({
   async function handleSubmit(e) {
     e.preventDefault();
     if (!fullName.trim() || !whatsapp.trim()) {
-      setValidation("Nombre y WhatsApp son obligatorios");
+      setValidation("Nombre y teléfono son obligatorios");
       return;
     }
     setValidation(null);
@@ -68,8 +69,8 @@ export function ClientForm({
         <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ej: Camila Andrade" />
       </div>
       <div>
-        <label style={labelStyle}>WhatsApp</label>
-        <input style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+593999000000" />
+        <label style={labelStyle}>Teléfono</label>
+        <input style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="0993629256" />
       </div>
       <div>
         <label style={labelStyle}>Correo (opcional)</label>

@@ -24,7 +24,6 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { authFetch } from "@/lib/auth-client";
 import { BirthdayToast } from "@/components/birthday-toast";
 import { ToastProvider } from "@/components/toast-provider";
-import { GlobalSearch } from "@/components/global-search";
 
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true, icon: CalendarDays },
@@ -199,11 +198,6 @@ function Shell({ children }) {
 
   const navContent = (
     <>
-      {!sidebarCollapsed && (
-      <div style={{ padding: "0 4px 14px" }}>
-        <GlobalSearch />
-      </div>
-      )}
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {navItems.map((item) => {
           const active = item.enabled && pathname.startsWith(item.href);

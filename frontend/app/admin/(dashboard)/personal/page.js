@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, ShieldCheck, X, ArrowLeft, Pencil } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, Clock3, Inbox, Loader2, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Pencil } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
@@ -67,11 +67,25 @@ const PERMISSION_GROUPS = [
 
 const MODULES = PERMISSION_GROUPS.flatMap((group) => group.items);
 
-function initials(name = "") {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "US";
-}
 function roleLabel(role) {
-  return ({ superadmin: "Cuenta de plataforma", dueno: "Duena", personal: "Terapeuta" })[role] || role;
+  return ({ superadmin: "Cuenta de plataforma", dueno: "Dueña", personal: "Terapeuta" })[role] || role;
+}
+function roleIcon(user, size = 16) {
+  if (user?.isProtected || user?.role === "superadmin") return <ShieldCheck size={size} />;
+  if (user?.role === "dueno") return <UserCog size={size} />;
+  return <Users size={size} />;
+}
+function groupIcon(title, size = 16) {
+  const Icon = ({
+    Agenda: CalendarDays,
+    Clientes: Users,
+    Bandeja: Inbox,
+    Reportes: BarChart3,
+    Equipo: UserCog,
+    Configuración: Settings,
+    Cuenta: ClipboardList,
+  })[title] || ClipboardList;
+  return <Icon size={size} />;
 }
 function permissionsSummary(user) {
   const rp = user.rolePermission || {};
@@ -85,7 +99,7 @@ function permissionsSummary(user) {
 
 function PermissionGroupList({ value, onChange, compact = false }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: compact ? 10 : 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))", gap: compact ? 10 : 12 }}>
       {PERMISSION_GROUPS.map((group) => {
         const enabledCount = group.items.filter(([key]) => !!value[key]).length;
         return (
@@ -108,15 +122,20 @@ function PermissionGroupList({ value, onChange, compact = false }) {
                 gap: 12,
               }}
             >
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: compact ? 13 : 14, fontWeight: 800, color: "#6B5540" }}>
-                  {group.title}
+              <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(140,110,80,0.10)", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {groupIcon(group.title, 15)}
                 </span>
-                {!compact && (
-                  <span style={{ display: "block", fontSize: 12, color: "#A89A87", marginTop: 2 }}>
-                    {group.description}
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: compact ? 13 : 14, fontWeight: 800, color: "#6B5540" }}>
+                    {group.title}
                   </span>
-                )}
+                  {!compact && (
+                    <span style={{ display: "block", fontSize: 11, color: "#A89A87", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {group.description}
+                    </span>
+                  )}
+                </span>
               </span>
               <span
                 style={{
@@ -148,7 +167,7 @@ function PermissionGroupList({ value, onChange, compact = false }) {
                 >
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{label}</span>
-                    {!compact && <span style={{ fontSize: 12, color: "#A89A87" }}>{desc}</span>}
+                    {!compact && <span style={{ fontSize: 11, color: "#A89A87" }}>{desc}</span>}
                   </span>
                   <span
                     aria-hidden="true"
@@ -550,7 +569,7 @@ export default function PersonalPage() {
                       flexShrink: 0,
                     }}
                   >
-                    {user.isProtected ? <ShieldCheck size={16} /> : initials(user.name)}
+                    {roleIcon(user, 17)}
                   </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -580,7 +599,7 @@ export default function PersonalPage() {
                       }}
                     >
                       {user.isProtected
-                        ? "Acceso tecnico del sistema"
+                        ? "Acceso técnico del sistema"
                         : permissionsSummary(user)}
                     </p>
                   </div>
@@ -719,14 +738,14 @@ export default function PersonalPage() {
                   fontWeight: 700,
                 }}
               >
-                {selected.isProtected ? <ShieldCheck size={22} /> : initials(selected.name)}
+                {roleIcon(selected, 22)}
               </span>
               <div>
                 <h2 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>
-                  Permisos de {selected.name}
+                  Permisos de cuenta
                 </h2>
                 <p style={{ margin: "4px 0 0", fontSize: 13, color: "#A89A87" }}>
-                  Rol: {roleLabel(selected.role)} · {selected.email}
+                  {selected.name} · Rol: {roleLabel(selected.role)} · {selected.email}
                 </p>
               </div>
             </div>
@@ -744,7 +763,7 @@ export default function PersonalPage() {
               >
                 <ShieldCheck size={22} style={{ marginBottom: 12, color: "#8C6E50" }} />
                 <b style={{ display: "block", color: "#6B5540" }}>Cuenta de plataforma protegida</b>
-                El backend bloquea edicion, eliminacion y cambios de permisos para esta cuenta. Este panel solo muestra el estado.
+                El backend bloquea edición, eliminación y cambios de permisos para esta cuenta. Este panel solo muestra el estado.
               </div>
             ) : selected.role !== "personal" ? (
               <div
@@ -758,17 +777,24 @@ export default function PersonalPage() {
                 }}
               >
                 <b style={{ display: "block", color: "#6B5540" }}>Acceso completo</b>
-                Las cuentas duena/superadmin no usan permisos por modulo; el backend les concede acceso completo.
+                Las cuentas Dueña/Super Admin no usan permisos por módulo; el backend les concede acceso completo.
               </div>
             ) : (
               <>
                 <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 20px" }}>
                   Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
                 </p>
-                <PermissionGroupList
-                  value={draft}
-                  onChange={(key, checked) => setDraft((d) => ({ ...d, [key]: checked }))}
-                />
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.25fr) minmax(320px, 0.75fr)", gap: 18, alignItems: "start" }}>
+                  <PermissionGroupList
+                    value={draft}
+                    onChange={(key, checked) => setDraft((d) => ({ ...d, [key]: checked }))}
+                  />
+                  <AccessScheduleEditor
+                    compact
+                    user={selected}
+                    onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))}
+                  />
+                </div>
 
                 {loadError && (
                   <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>
@@ -810,7 +836,6 @@ export default function PersonalPage() {
                   </button>
                 </div>
 
-                <AccessScheduleEditor user={selected} onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))} />
               </>
             )}
           </>
@@ -862,14 +887,15 @@ function initialDraftFromUser(user) {
   return draft;
 }
 
-function AccessScheduleEditor({ user, onSaved }) {
+function AccessScheduleEditor({ user, onSaved, compact = false }) {
   const toast = useToast();
+  const accessSchedule = user?.accessSchedule;
   const [draft, setDraft] = useState(() => initialDraftFromUser(user));
   const [saving, setSaving] = useState(false);
   const [businessHours, setBusinessHours] = useState(null);
   const [workDays, setWorkDays] = useState(null);
 
-  useEffect(() => { setDraft(initialDraftFromUser(user)); }, [user?.id, user?.accessSchedule]);
+  useEffect(() => { setDraft(initialDraftFromUser({ accessSchedule })); }, [user?.id, accessSchedule]);
 
   useEffect(() => {
     authFetch("/tenant/config").then((cfg) => {
@@ -937,10 +963,23 @@ function AccessScheduleEditor({ user, onSaved }) {
   }
 
   return (
-    <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid rgba(168,154,135,0.35)" }}>
+    <div
+      style={{
+        marginTop: compact ? 0 : 32,
+        padding: compact ? 16 : "24px 0 0",
+        borderTop: compact ? "none" : "1px solid rgba(168,154,135,0.35)",
+        border: compact ? "1px solid rgba(168,154,135,0.28)" : undefined,
+        borderRadius: compact ? 16 : undefined,
+        background: compact ? "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))" : undefined,
+        boxShadow: compact ? "0 14px 28px rgba(107,85,64,0.06)" : undefined,
+      }}
+    >
       <div style={{ marginBottom: 12 }}>
-        <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Horario de acceso</h3>
-        <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>
+        <h3 className="font-heading" style={{ fontSize: compact ? 17 : 18, fontWeight: 600, color: "#6B5540", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
+          <Clock3 size={16} />
+          Horario de acceso
+        </h3>
+        <p style={{ margin: 0, fontSize: compact ? 12 : 13, color: "#A89A87" }}>
           Restringe a qué horas puede iniciar sesión esta cuenta. Se aplica en cada request usando la zona horaria del spa.
         </p>
       </div>
@@ -967,18 +1006,18 @@ function AccessScheduleEditor({ user, onSaved }) {
               Usar horario del spa
             </button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 8 }}>
             {SCHEDULE_DAYS.map(([key, label]) => {
               const win = draft[key];
               const open = !!win;
               return (
-                <div key={key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, width: 110, cursor: "pointer" }}>
+                <div key={key} style={{ display: "flex", alignItems: compact ? "flex-start" : "center", gap: compact ? 8 : 12, flexDirection: compact ? "column" : "row" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, width: compact ? "auto" : 110, cursor: "pointer" }}>
                     <input type="checkbox" checked={open} onChange={() => toggleDay(key)} style={{ width: 16, height: 16, accentColor: "#8C6E50" }} />
                     <span style={{ fontSize: 13, color: open ? "#6B5540" : "#A89A87" }}>{label}</span>
                   </label>
                   {open ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, width: compact ? "100%" : undefined }}>
                       <input type="time" value={win.start} onChange={(e) => updateDay(key, "start", e.target.value)} style={{ padding: "6px 10px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" }} />
                       <span style={{ fontSize: 12, color: "#A89A87" }}>a</span>
                       <input type="time" value={win.end} onChange={(e) => updateDay(key, "end", e.target.value)} style={{ padding: "6px 10px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" }} />
@@ -993,7 +1032,7 @@ function AccessScheduleEditor({ user, onSaved }) {
         </>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
         <button
           onClick={clearSchedule}
           disabled={saving}

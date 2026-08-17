@@ -9,6 +9,7 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useGridTransition } from "@/lib/use-grid-transition";
 import { NewClientModal } from "@/components/new-client-modal";
 import { useToast } from "@/components/toast-provider";
+import { formatEcuadorPhone, phoneSearchText } from "@/lib/phone-format";
 
 const HOURS = [8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19];
 const STATUS_COLORS = {
@@ -96,6 +97,32 @@ function formatTime(iso) {
   });
 }
 
+function formatSearchDate(iso) {
+  return new Date(iso).toLocaleDateString("es-EC", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "America/Guayaquil",
+  });
+}
+
+function matchesAgendaSearch(appt, query) {
+  const q = query.trim().toLocaleLowerCase("es-EC");
+  if (!q) return true;
+  const client = appt.client || {};
+  return [
+    client.fullName,
+    client.recordNumber,
+    phoneSearchText(client.whatsapp),
+    appt.service?.name,
+    appt.room?.name,
+    appt.staff?.name,
+    appt.indications,
+    formatSearchDate(appt.startsAt),
+    formatTime(appt.startsAt),
+  ].filter(Boolean).join(" ").toLocaleLowerCase("es-EC").includes(q);
+}
+
 function getEcuadorHour(iso) {
   const parts = new Date(iso).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -171,6 +198,8 @@ export default function AgendaPage() {
   const [staffList, setStaffList] = useState([]);
   const [navDirection, setNavDirection] = useState(0);
   const [agendaQuery, setAgendaQuery] = useState("");
+  const [agendaResults, setAgendaResults] = useState([]);
+  const [agendaSearching, setAgendaSearching] = useState(false);
 
   const detailAnim = useAnimatedMount(!!selected, 220);
   const slotGroupAnim = useAnimatedMount(!!slotGroup, 220);
@@ -186,26 +215,7 @@ export default function AgendaPage() {
   const { gridClass, onAnimationEnd } = useGridTransition(navDirection, loading);
 
   const effectiveView = isMobile ? "day" : view;
-  const filteredAppointments = useMemo(() => {
-    const query = agendaQuery.trim().toLocaleLowerCase("es-EC");
-    if (!query) return appointments;
-    return appointments.filter((appt) => {
-      const client = appt.client || {};
-      const haystack = [
-        client.fullName,
-        client.whatsapp,
-        client.recordNumber,
-        appt.service?.name,
-        appt.room?.name,
-        appt.staff?.name,
-        appt.indications,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase("es-EC");
-      return haystack.includes(query);
-    });
-  }, [agendaQuery, appointments]);
+  const filteredAppointments = appointments;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -238,6 +248,38 @@ export default function AgendaPage() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const query = agendaQuery.trim();
+    if (query.length < 2) {
+      setAgendaResults([]);
+      setAgendaSearching(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setAgendaSearching(true);
+      try {
+        const anchor = new Date(`${selectedDate}T12:00:00`);
+        const year = anchor.getFullYear();
+        const rows = await authFetch("/appointments", {
+          query: {
+            from: `${year - 1}-01-01T00:00:00`,
+            to: `${year + 1}-12-31T23:59:59`,
+          },
+        }).catch(() => []);
+        if (!cancelled) {
+          setAgendaResults((Array.isArray(rows) ? rows : []).filter((appt) => matchesAgendaSearch(appt, query)).slice(0, 12));
+        }
+      } finally {
+        if (!cancelled) setAgendaSearching(false);
+      }
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [agendaQuery, selectedDate]);
+
   function navigate(dir) {
     setNavDirection(dir);
     const d = new Date(selectedDate + "T12:00:00");
@@ -248,6 +290,14 @@ export default function AgendaPage() {
   function handleCreated() {
     setShowNewForm(false);
     fetchData();
+  }
+
+  function openAgendaResult(appt) {
+    if (!appt?.startsAt) return;
+    setSelectedDate(toLocalDate(new Date(appt.startsAt)));
+    setView("day");
+    setSelected(appt);
+    setAgendaResults([]);
   }
 
   const roomColorMap = {};
@@ -291,11 +341,9 @@ export default function AgendaPage() {
             >
               Agenda
             </h1>
+            <div style={{ position: "relative", flex: 1, minWidth: isMobile ? 0 : 260, maxWidth: isMobile ? "none" : 390 }}>
             <label
               style={{
-                flex: 1,
-                minWidth: isMobile ? 0 : 260,
-                maxWidth: isMobile ? "none" : 360,
                 display: "flex",
                 alignItems: "center",
                 gap: 9,
@@ -322,6 +370,63 @@ export default function AgendaPage() {
                 }}
               />
             </label>
+            {agendaQuery.trim().length >= 2 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  left: 0,
+                  right: 0,
+                  zIndex: 30,
+                  borderRadius: 18,
+                  border: "1px solid rgba(168,154,135,0.32)",
+                  background: "#FDFCFA",
+                  boxShadow: "0 24px 48px rgba(107,85,64,0.16)",
+                  overflow: "hidden",
+                  maxHeight: 340,
+                  overflowY: "auto",
+                }}
+              >
+                {agendaSearching ? (
+                  <div style={{ padding: "14px 16px", fontSize: 13, color: "#A89A87" }}>Buscando en toda la agenda…</div>
+                ) : agendaResults.length ? (
+                  agendaResults.map((appt) => (
+                    <button
+                      key={appt.id}
+                      type="button"
+                      onClick={() => openAgendaResult(appt)}
+                      style={{
+                        width: "100%",
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        gap: 10,
+                        padding: "12px 14px",
+                        border: "none",
+                        borderBottom: "1px solid rgba(168,154,135,0.14)",
+                        background: "transparent",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ minWidth: 0 }}>
+                        <strong style={{ display: "block", color: "#6B5540", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {appt.client?.fullName || "Clienta"} · {appt.service?.name || "Servicio"}
+                        </strong>
+                        <span style={{ display: "block", color: "#A89A87", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {appt.client?.recordNumber ? `Ficha ${appt.client.recordNumber} · ` : ""}{formatEcuadorPhone(appt.client?.whatsapp)} · {appt.room?.name || "Sin cabina"}
+                        </span>
+                      </span>
+                      <span style={{ color: "#8C6E50", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>
+                        {formatSearchDate(appt.startsAt)} · {formatTime(appt.startsAt)}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div style={{ padding: "14px 16px", fontSize: 13, color: "#A89A87" }}>No encontré citas con esa búsqueda.</div>
+                )}
+              </div>
+            )}
+            </div>
           </div>
           {isMobile && (
             <button
@@ -1301,7 +1406,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                   <span style={{ color: "#A89A87" }}>Cliente</span>
                   <div style={{ textAlign: "right" }}>
                     <div>{appt.client.fullName}</div>
-                    {appt.client.whatsapp && <div style={{ fontSize: 12, color: "#A89A87" }}>{appt.client.whatsapp}</div>}
+                    {appt.client.whatsapp && <div style={{ fontSize: 12, color: "#A89A87" }}>{formatEcuadorPhone(appt.client.whatsapp)}</div>}
                   </div>
                 </div>
               )}
@@ -1608,7 +1713,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                   {clientResults.map((c) => (
                     <button key={c.id} type="button" onClick={() => selectClient(c)} style={{ width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(168,154,135,0.2)", cursor: "pointer", display: "flex", justifyContent: "space-between", fontSize: 14, color: "#6B5540" }}>
                       <span>{c.fullName}</span>
-                      <span style={{ fontSize: 12, color: "#A89A87" }}>{c.whatsapp}</span>
+                      <span style={{ fontSize: 12, color: "#A89A87" }}>{formatEcuadorPhone(c.whatsapp)}</span>
                     </button>
                   ))}
                 </div>
@@ -1618,7 +1723,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                   <Loader2 size={16} className="animate-spin" style={{ color: "#A89A87", margin: "0 auto" }} />
                 </div>
               )}
-              {selectedClient && <p style={{ fontSize: 12, color: "#8C6E50", marginTop: 6 }}>{selectedClient.whatsapp}</p>}
+              {selectedClient && <p style={{ fontSize: 12, color: "#8C6E50", marginTop: 6 }}>{formatEcuadorPhone(selectedClient.whatsapp)}</p>}
               {!selectedClient && clientSearch.length >= 2 && clientResults.length === 0 && !searching && (
                 <button type="button" onClick={() => setShowNewClient(true)} style={{ fontSize: 12, color: "#8C6E50", background: "none", border: "none", cursor: "pointer", marginTop: 6, textDecoration: "underline" }}>+ Crear nueva clienta</button>
               )}

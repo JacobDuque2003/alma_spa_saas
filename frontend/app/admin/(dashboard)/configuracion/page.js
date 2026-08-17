@@ -444,10 +444,7 @@ export default function ConfiguracionPage() {
   const serviceAnim = useAnimatedMount(showServiceForm, 220);
   const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
-  const visibleServices = useMemo(
-    () => services.filter((s) => s.active !== false || (Array.isArray(s.rooms) && s.rooms.length > 0)),
-    [services]
-  );
+  const visibleServices = activeServices;
   const averagePrice = activeServices.length
     ? activeServices.reduce((sum, s) => sum + Number(s.priceUsd || 0), 0) / activeServices.length
     : 0;
@@ -518,7 +515,7 @@ export default function ConfiguracionPage() {
         ) : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(180px, 1fr))", gap: 14 }}>
-              <SummaryCard label="Servicios activos" value={`${activeServices.length}`} detail={`${services.length} servicios registrados`} />
+              <SummaryCard label="Servicios activos" value={`${activeServices.length}`} detail="Solo oferta visible para reservas" />
               <SummaryCard label="Bloque promedio" value={averageBlockMins ? `${averageBlockMins} min` : "—"} detail="Incluye la pausa entre sesiones" />
               <SummaryCard label="Precio promedio" value={activeServices.length ? money(averagePrice) : "—"} detail="Solo servicios habilitados" />
             </div>

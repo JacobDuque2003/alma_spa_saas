@@ -11,6 +11,7 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { ClientForm } from "@/components/client-form";
 import { NewClientModal } from "@/components/new-client-modal";
 import { useToast } from "@/components/toast-provider";
+import { formatEcuadorPhone } from "@/lib/phone-format";
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
@@ -144,7 +145,7 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.fullName}</div>
           <div style={{ fontSize: 12, color: "#A89A87", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {client.recordNumber ? `Ficha ${client.recordNumber} · ` : ""}{client.whatsapp}{client.email ? ` · ${client.email}` : ""}
+            {client.recordNumber ? `Ficha ${client.recordNumber} · ` : ""}{formatEcuadorPhone(client.whatsapp)}{client.email ? ` · ${client.email}` : ""}
           </div>
           {view === "cumples" && <div style={{ marginTop: 2, fontSize: 12, color: "#8C6E50", fontWeight: 700 }}>{birthdayHint}</div>}
         </div>
@@ -182,7 +183,7 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
           <div style={{ fontSize: 14, color: "#6B5540", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.fullName}</div>
         </div>
       </div>
-      <div style={{ fontSize: 12, color: "#8C6E50", fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.whatsapp}</div>
+      <div style={{ fontSize: 12, color: "#8C6E50", fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatEcuadorPhone(client.whatsapp)}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ fontSize: 12, color: client.email ? "#6B5540" : "#A89A87", fontWeight: client.email ? 650 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
           {emailValue}
@@ -693,7 +694,7 @@ export default function ClientesPage() {
             >
               <SortButton label="Ficha" sortKey="recordNumber" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
               <SortButton label="Clienta" sortKey="fullName" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-              <SortButton label="WhatsApp" sortKey="whatsapp" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
+              <SortButton label="Teléfono" sortKey="whatsapp" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
               <SortButton label="Email" sortKey="email" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
               <SortButton label="Cumpleaños" sortKey="birthday" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
               <span style={{ fontSize: 11, fontWeight: 800, color: "#A89A87", textTransform: "uppercase", letterSpacing: 0.5 }}>Estado</span>
@@ -838,11 +839,12 @@ export default function ClientesPage() {
                       alignItems: "center",
                       padding: "9px 20px",
                       borderRadius: 999,
-                      border: "1px solid rgba(168,154,135,0.5)",
-                      background: "none",
-                      color: "#6B5540",
+                      border: "1px solid rgba(44,78,110,0.42)",
+                      background: "linear-gradient(135deg, #2F5F8A, #244A6D)",
+                      color: "#F7FBFF",
                       fontSize: 13,
-                      fontWeight: 500,
+                      fontWeight: 800,
+                      boxShadow: "0 12px 24px rgba(44,78,110,0.16)",
                       cursor: "pointer",
                     }}
                   >
@@ -976,7 +978,7 @@ function ClientPersonalSummaryCard({ client, balance, plans, canEdit, canEditPay
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
           <PersonalInfoItem label="Ficha" value={client?.recordNumber || "Sin número"} />
-          <PersonalInfoItem label="WhatsApp" value={client?.whatsapp || "Sin teléfono"} />
+          <PersonalInfoItem label="Teléfono" value={formatEcuadorPhone(client?.whatsapp) || "Sin teléfono"} />
           <PersonalInfoItem
             label="Correo"
             value={email}
