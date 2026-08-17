@@ -678,7 +678,7 @@ export default function ClientesPage() {
             </div>
           </div>
         </div>
-        <div className="alma-card" style={{ flex: 1, display: "flex", flexDirection: "column", margin: isMobile ? "0 12px 12px" : "0 34px 28px", padding: isMobile ? "12px" : "18px", overflow: "hidden", gap: 6, minHeight: 0 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", margin: isMobile ? "0 12px 12px" : "0 34px 28px", padding: 0, overflow: "hidden", gap: 6, minHeight: 0 }}>
           {!isMobile && (
             <div
               style={{
@@ -847,7 +847,7 @@ export default function ClientesPage() {
                       cursor: "pointer",
                     }}
                   >
-                    Editar
+                    Editar datos
                   </button>
                 )}
                 {canToggleClientStatus && detail.active === false ? (
@@ -1018,7 +1018,7 @@ function IntakeCard({ intake, canEdit, onEdit }) {
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           Ficha de anamnesis
         </h3>
-        {canEdit && <button onClick={onEdit} style={{ fontSize: 13, color: "#8C6E50", textDecoration: "underline", cursor: "pointer", background: "none", border: "none" }}>Editar</button>}
+        {canEdit && <button onClick={onEdit} style={{ fontSize: 13, color: "#8C6E50", textDecoration: "underline", cursor: "pointer", background: "none", border: "none" }}>Editar ficha</button>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>

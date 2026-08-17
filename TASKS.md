@@ -1,5 +1,13 @@
 # Tareas — Alma Spa Backend
 
+## Pulido visual / feedback de la dueña
+
+- [x] Clientes: quitar el contenedor grande que envolvía todas las filas para evitar "cuadros dentro de cuadros".
+- [x] Clientes: diferenciar "Editar datos" de "Editar ficha" para que la ficha de anamnesis no tenga doble acción confusa.
+- [ ] Unificar controles visuales pendientes: selectores, calendario/date picker y estados de Agenda con el mismo estilo premium.
+- [ ] Equipo: seguir simplificando permisos y horarios para reducir scroll y ruido visual.
+- [ ] Reportes: mejorar lectura con gráficos/jerarquía visual menos genérica.
+
 ## Fase 5C/5D - Panel admin Clientes/CRM/Reportes/Personal/Configuracion - COMPLETADA (2026-07-16)
 
 - [x] Revision bloqueante real con Backend Architect y Security/AppSec antes de implementar.
