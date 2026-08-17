@@ -839,16 +839,15 @@ export default function ClientesPage() {
                       alignItems: "center",
                       padding: "9px 20px",
                       borderRadius: 999,
-                      border: "1px solid rgba(44,78,110,0.42)",
-                      background: "linear-gradient(135deg, #2F5F8A, #244A6D)",
-                      color: "#F7FBFF",
+                      border: "1px solid rgba(168,154,135,0.5)",
+                      background: "rgba(253,252,250,0.72)",
+                      color: "#6B5540",
                       fontSize: 13,
-                      fontWeight: 800,
-                      boxShadow: "0 12px 24px rgba(44,78,110,0.16)",
+                      fontWeight: 700,
                       cursor: "pointer",
                     }}
                   >
-                    Guardar
+                    Editar
                   </button>
                 )}
                 {canToggleClientStatus && detail.active === false ? (

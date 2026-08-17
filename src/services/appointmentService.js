@@ -215,7 +215,7 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
     return isRangeInsideBusinessHours(hours, localHHMM(startsAt, getTenantTimezone(tenantConfig)), localHHMM(endsAt, getTenantTimezone(tenantConfig)));
   });
   if (roomsInsideWindow.length === 0) {
-    throw new BadRequestError('La cita estÃ¡ fuera del horario de atenciÃ³n');
+    throw new BadRequestError('La cita está fuera del horario de atención');
   }
   const freeRooms = roomsInsideWindow.filter((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
   const freeStaff = staffCandidates.filter((s) => isResourceFree(conflicting, 'staffId', s.id, startsAt, endsAt));

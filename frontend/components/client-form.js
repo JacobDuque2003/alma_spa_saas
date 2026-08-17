@@ -104,7 +104,19 @@ export function ClientForm({
         <button
           type="submit"
           disabled={saving}
-          style={{ padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1 }}
+          style={{
+            padding: "10px 0",
+            borderRadius: 999,
+            border: "1px solid rgba(47,95,138,0.45)",
+            background: "linear-gradient(135deg, rgba(47,95,138,0.12), rgba(47,95,138,0.06))",
+            color: "#2F5F8A",
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: saving ? "wait" : "pointer",
+            flex: 1,
+            opacity: saving ? 0.6 : 1,
+            boxShadow: "0 10px 22px rgba(47,95,138,0.08)",
+          }}
         >
           {saving ? "Guardando…" : submitLabel}
         </button>

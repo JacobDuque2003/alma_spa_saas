@@ -481,14 +481,18 @@ export default function PersonalPage() {
     setDraft(Object.fromEntries(MODULES.map(([k]) => [k, !!selected?.rolePermission?.[k]])));
   }, [selected]);
 
-  async function savePermissions() {
+  async function updatePermission(key, checked) {
     if (!selected || selected.isProtected || selected.role !== "personal") return;
+    const previous = draft;
+    const next = { ...draft, [key]: checked };
+    setDraft(next);
     setSaving(true);
     try {
-      await authFetch(`/users/${selected.id}/permissions`, { method: "PATCH", body: draft });
-      setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, rolePermission: { ...u.rolePermission, ...draft } } : u)));
-      toast.success("Permisos guardados");
+      await authFetch(`/users/${selected.id}/permissions`, { method: "PATCH", body: next });
+      setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, rolePermission: { ...u.rolePermission, ...next } } : u)));
+      toast.success(checked ? "Permiso habilitado" : "Permiso deshabilitado");
     } catch (err) {
+      setDraft(previous);
       toast.error(err.message || "Error al guardar permisos");
     } finally {
       setSaving(false);
@@ -603,9 +607,9 @@ export default function PersonalPage() {
                         : permissionsSummary(user)}
                     </p>
                   </div>
-                  {!user.isProtected && user.role === "personal" && user.accessSchedule == null && (
+                  {!user.isProtected && user.role === "personal" && (user.accessSchedule == null || user.accessSchedule?.alwaysAllowed) && (
                     <span
-                      title="Sin horario configurado — acceso 24/7"
+                      title="Acceso 24/7 — sin restricción horaria"
                       style={{
                         padding: "3px 10px",
                         borderRadius: 999,
@@ -618,7 +622,7 @@ export default function PersonalPage() {
                         flexShrink: 0,
                       }}
                     >
-                      Sin horario · 24/7
+                      Acceso 24/7
                     </span>
                   )}
                   {!user.isProtected && (
@@ -787,7 +791,7 @@ export default function PersonalPage() {
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.25fr) minmax(320px, 0.75fr)", gap: 18, alignItems: "start" }}>
                   <PermissionGroupList
                     value={draft}
-                    onChange={(key, checked) => setDraft((d) => ({ ...d, [key]: checked }))}
+                    onChange={updatePermission}
                   />
                   <AccessScheduleEditor
                     compact
@@ -801,40 +805,6 @@ export default function PersonalPage() {
                     {loadError}
                   </div>
                 )}
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
-                  <button
-                    onClick={() => setDraft(Object.fromEntries(MODULES.map(([k]) => [k, !!selected.rolePermission?.[k]])))}
-                    style={{
-                      padding: "9px 22px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(168,154,135,0.5)",
-                      background: "transparent",
-                      color: "#6B5540",
-                      fontSize: 13,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={savePermissions}
-                    disabled={saving}
-                    style={{
-                      padding: "9px 22px",
-                      borderRadius: 999,
-                      background: "#8C6E50",
-                      color: "#F7F5F0",
-                      border: "none",
-                      fontSize: 13,
-                      fontWeight: 500,
-                      cursor: saving ? "wait" : "pointer",
-                      opacity: saving ? 0.7 : 1,
-                    }}
-                  >
-                    {saving ? "Guardando..." : "Guardar cambios"}
-                  </button>
-                </div>
 
               </>
             )}
@@ -881,7 +851,7 @@ function emptyScheduleShape() {
 
 function initialDraftFromUser(user) {
   const s = user?.accessSchedule;
-  if (!s) return emptyScheduleShape();
+  if (!s) return { ...emptyScheduleShape(), alwaysAllowed: true };
   const draft = { alwaysAllowed: !!s.alwaysAllowed };
   for (const [k] of SCHEDULE_DAYS) draft[k] = s[k] || null;
   return draft;
@@ -944,19 +914,6 @@ function AccessScheduleEditor({ user, onSaved, compact = false }) {
       if (onSaved) onSaved(updated);
     } catch (err) {
       toast.error(err?.message || "No se pudo guardar el horario");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function clearSchedule() {
-    setSaving(true);
-    try {
-      const updated = await authFetch(`/users/${user.id}`, { method: "PATCH", body: { accessSchedule: null } });
-      toast.info("Horario removido — acceso 24/7 con badge en la lista");
-      if (onSaved) onSaved(updated);
-    } catch (err) {
-      toast.error(err?.message || "No se pudo actualizar");
     } finally {
       setSaving(false);
     }
@@ -1032,14 +989,7 @@ function AccessScheduleEditor({ user, onSaved, compact = false }) {
         </>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
-        <button
-          onClick={clearSchedule}
-          disabled={saving}
-          style={{ padding: "9px 18px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: "transparent", color: "#856330", fontSize: 12, cursor: saving ? "wait" : "pointer" }}
-        >
-          Remover horario (acceso 24/7)
-        </button>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
         <button
           onClick={save}
           disabled={saving}

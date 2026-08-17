@@ -400,6 +400,32 @@ export default function AgendaPage() {
                   minWidth: 0,
                 }}
               />
+              {agendaQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgendaQuery("");
+                    setAgendaResults([]);
+                    setAgendaSearching(false);
+                  }}
+                  aria-label="Limpiar búsqueda de agenda"
+                  style={{
+                    border: "none",
+                    background: "rgba(168,154,135,0.14)",
+                    color: "#8C6E50",
+                    borderRadius: "50%",
+                    width: 22,
+                    height: 22,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
             </label>
             {agendaQuery.trim().length >= 2 && (
               <div
@@ -750,6 +776,12 @@ function lanePosition(lane, inset = 3) {
   return { left: "calc(" + (lane.index * width) + "% + " + inset + "px)", width: "calc(" + width + "% - " + (inset * 2) + "px)" };
 }
 
+function hourTopOffset(hours, hour, minutes, hourHeight) {
+  const index = hours.indexOf(hour);
+  if (index === -1) return null;
+  return index * hourHeight + (minutes / 60) * hourHeight;
+}
+
 function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, onSelectGroup }) {
   const days = getWeekDays(selectedDate);
   const HOUR_HEIGHT = 66;
@@ -859,7 +891,8 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                 const appt = entry.type === "group" ? entry.appointments[0] : entry.appointment;
                 const h = getEcuadorHour(appt.startsAt);
                 const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
-                const topOffset = (h - HOURS[0]) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+                const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT);
+                if (topOffset == null) return null;
                 const duration = appt.service?.durationMins || 60;
                 const height = (duration / 60) * HOUR_HEIGHT;
 
@@ -1048,9 +1081,8 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
               {roomAppointments.map((appt) => {
                 const h = getEcuadorHour(appt.startsAt);
                 const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
-                const hourIndex = HOURS.indexOf(h);
-                if (hourIndex === -1) return null;
-                const topOffset = hourIndex * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+                const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT);
+                if (topOffset == null) return null;
                 const duration = appt.service?.durationMins || 60;
                 const height = (duration / 60) * HOUR_HEIGHT;
                 const color = appointmentColor(appt, roomColorMap);
@@ -1157,7 +1189,8 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
             const appt = entry.type === "group" ? entry.appointments[0] : entry.appointment;
             const h = getEcuadorHour(appt.startsAt);
             const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
-            const topOffset = (h - HOURS[0]) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+            const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT);
+            if (topOffset == null) return null;
             const duration = appt.service?.durationMins || 60;
             const height = (duration / 60) * HOUR_HEIGHT;
 
