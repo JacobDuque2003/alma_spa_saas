@@ -123,6 +123,37 @@ function matchesAgendaSearch(appt, query) {
   ].filter(Boolean).join(" ").toLocaleLowerCase("es-EC").includes(q);
 }
 
+const OPEN_APPOINTMENT_STATUSES = new Set(["pendiente", "confirmado"]);
+
+function addMinutesToDate(date, mins) {
+  return new Date(date.getTime() + Number(mins || 0) * 60_000);
+}
+
+function totalServiceBlockMins(service) {
+  return Number(service?.durationMins || 60) + Number(service?.bufferMins ?? 15);
+}
+
+function overlapsRange(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+function getResourceId(item, key) {
+  if (!item) return null;
+  if (item[key]) return item[key];
+  if (key === "roomId") return item.room?.id || null;
+  if (key === "staffId") return item.staff?.id || null;
+  return null;
+}
+
+function isResourceBusy(appointments, resourceKey, resourceId, start, end) {
+  if (!resourceId || !start || !end) return false;
+  return appointments.some((appt) => {
+    if (!OPEN_APPOINTMENT_STATUSES.has(appt.status)) return false;
+    if (getResourceId(appt, resourceKey) !== resourceId) return false;
+    return overlapsRange(new Date(appt.startsAt), new Date(appt.endsAt), start, end);
+  });
+}
+
 function getEcuadorHour(iso) {
   const parts = new Date(iso).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -1515,6 +1546,161 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
   );
 }
 
+function PremiumSelect({
+  label,
+  value,
+  options,
+  placeholder = "Seleccionar",
+  disabled = false,
+  loading = false,
+  emptyLabel = "Sin opciones",
+  onChange,
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+  const hasOptions = options.length > 0;
+  const canOpen = !disabled && !loading && hasOptions;
+
+  return (
+    <div
+      style={{ position: "relative" }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      {label && (
+        <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 6 }}>
+          {label}
+        </label>
+      )}
+      <button
+        type="button"
+        disabled={!canOpen}
+        onClick={() => setOpen((current) => !current)}
+        style={{
+          width: "100%",
+          minHeight: 44,
+          padding: "10px 14px",
+          border: "1px solid rgba(168,154,135,0.48)",
+          borderRadius: 12,
+          background: disabled || loading ? "rgba(247,245,240,0.66)" : "linear-gradient(135deg, #FDFCFA 0%, #F7F1EA 100%)",
+          color: selected?.disabled ? "#A89A87" : "#6B5540",
+          cursor: canOpen ? "pointer" : "not-allowed",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          textAlign: "left",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72)",
+          opacity: disabled ? 0.68 : 1,
+          fontSize: 14,
+        }}
+      >
+        <span style={{ minWidth: 0 }}>
+          <span
+            style={{
+              display: "block",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              textDecoration: selected?.disabled ? "line-through" : "none",
+              fontWeight: selected ? 600 : 400,
+            }}
+          >
+            {loading ? "Cargando..." : selected?.label || (hasOptions ? placeholder : emptyLabel)}
+          </span>
+          {selected?.caption && (
+            <span style={{ display: "block", marginTop: 2, fontSize: 11, color: selected.disabled ? "#B85A56" : "#A89A87" }}>
+              {selected.caption}
+            </span>
+          )}
+        </span>
+        <span style={{ color: "#8C6E50", fontSize: 14, transform: open ? "rotate(180deg)" : "none", transition: "transform 160ms ease" }}>⌄</span>
+      </button>
+
+      {open && canOpen && (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 35,
+            left: 0,
+            right: 0,
+            marginTop: 6,
+            border: "1px solid rgba(168,154,135,0.34)",
+            borderRadius: 14,
+            background: "#FDFCFA",
+            boxShadow: "0 18px 38px rgba(107,85,64,0.16)",
+            overflow: "hidden",
+            maxHeight: 236,
+            overflowY: "auto",
+          }}
+        >
+          {options.map((option) => (
+            <button
+              key={option.value || "__auto"}
+              type="button"
+              disabled={option.disabled}
+              onClick={() => {
+                if (option.disabled) return;
+                onChange(option.value);
+                setOpen(false);
+              }}
+              style={{
+                width: "100%",
+                border: "none",
+                borderBottom: "1px solid rgba(168,154,135,0.16)",
+                background: option.disabled ? "rgba(194,84,80,0.055)" : "transparent",
+                padding: "10px 12px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                textAlign: "left",
+                cursor: option.disabled ? "not-allowed" : "pointer",
+                opacity: option.disabled ? 0.62 : 1,
+                color: option.disabled ? "#9F7B74" : "#6B5540",
+              }}
+            >
+              {option.color && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: option.color,
+                    boxShadow: "0 0 0 3px rgba(255,255,255,0.76)",
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    textDecoration: option.disabled ? "line-through" : "none",
+                  }}
+                >
+                  {option.label}
+                </span>
+                {option.caption && (
+                  <span style={{ display: "block", marginTop: 2, fontSize: 11, color: option.disabled ? "#B85A56" : "#A89A87" }}>
+                    {option.caption}
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -1530,6 +1716,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [time, setTime] = useState("");
   const [availableSlots, setAvailableSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [dayAppointments, setDayAppointments] = useState([]);
   const [roomId, setRoomId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [indications, setIndications] = useState("");
@@ -1549,6 +1736,82 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       return rooms.filter((room) => room.specialty === selectedService.category);
     },
     [rooms, selectedService]
+  );
+  const selectedStart = useMemo(() => (time ? new Date(time) : null), [time]);
+  const selectedEnd = useMemo(
+    () => (selectedStart && selectedService ? addMinutesToDate(selectedStart, totalServiceBlockMins(selectedService)) : null),
+    [selectedStart, selectedService]
+  );
+  const busyRoomIds = useMemo(() => {
+    if (!selectedStart || !selectedEnd) return new Set();
+    return new Set(
+      compatibleRooms
+        .filter((room) => isResourceBusy(dayAppointments, "roomId", room.id, selectedStart, selectedEnd))
+        .map((room) => room.id)
+    );
+  }, [compatibleRooms, dayAppointments, selectedEnd, selectedStart]);
+  const busyStaffIds = useMemo(() => {
+    if (!selectedStart || !selectedEnd) return new Set();
+    return new Set(
+      staff
+        .filter((person) => isResourceBusy(dayAppointments, "staffId", person.id, selectedStart, selectedEnd))
+        .map((person) => person.id)
+    );
+  }, [dayAppointments, selectedEnd, selectedStart, staff]);
+  const freeCompatibleRooms = useMemo(
+    () => compatibleRooms.filter((room) => !busyRoomIds.has(room.id)),
+    [busyRoomIds, compatibleRooms]
+  );
+  const serviceOptions = useMemo(
+    () => services.map((service) => ({
+      value: service.id,
+      label: service.name,
+      caption: `${service.durationMins} min de sesión · ${service.bufferMins ?? 15} min de pausa · $${Number(service.priceUsd).toFixed(2)}`,
+      color: premiumCabinColor(service.colorHex || "#8C6E50"),
+    })),
+    [services]
+  );
+  const timeOptions = useMemo(
+    () => availableSlots.map((slot) => ({ value: slot, label: formatTime(slot), caption: selectedService ? `${selectedService.name} · bloque ${totalServiceBlockMins(selectedService)} min` : "" })),
+    [availableSlots, selectedService]
+  );
+  const roomOptions = useMemo(() => {
+    if (!selectedService) return [];
+    const autoDisabled = compatibleRooms.length === 0 || freeCompatibleRooms.length === 0;
+    return [
+      {
+        value: "",
+        label: "Asignar automáticamente",
+        caption: compatibleRooms.length === 0
+          ? "Sin cabina compatible"
+          : freeCompatibleRooms.length === 0
+            ? "Todas ocupadas en este horario"
+            : `${freeCompatibleRooms.length} cabina(s) libre(s)`,
+        disabled: autoDisabled,
+      },
+      ...compatibleRooms.map((room) => {
+        const busy = busyRoomIds.has(room.id);
+        return {
+          value: room.id,
+          label: cabinDisplayName(room.name),
+          caption: busy ? "Ocupada en este horario" : "Libre en este horario",
+          disabled: busy,
+          color: premiumCabinColor(room.colorHex || "#8C6E50"),
+        };
+      }),
+    ];
+  }, [busyRoomIds, compatibleRooms, freeCompatibleRooms.length, selectedService]);
+  const staffOptions = useMemo(
+    () => staff.map((person) => {
+      const busy = busyStaffIds.has(person.id);
+      return {
+        value: person.id,
+        label: person.name,
+        caption: busy ? "Ocupada en este horario" : "Libre en este horario",
+        disabled: busy,
+      };
+    }),
+    [busyStaffIds, staff]
   );
 
   useEffect(() => {
@@ -1589,6 +1852,29 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       .finally(() => setSlotsLoading(false));
   }, [serviceId, date]);
 
+  useEffect(() => {
+    if (!date) {
+      setDayAppointments([]);
+      return undefined;
+    }
+    let cancelled = false;
+    authFetch("/appointments", { query: { from: `${date}T00:00:00`, to: `${date}T23:59:59` } })
+      .then((rows) => {
+        if (!cancelled) setDayAppointments(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDayAppointments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
+  useEffect(() => {
+    if (roomId && busyRoomIds.has(roomId)) setRoomId("");
+    if (staffId && busyStaffIds.has(staffId)) setStaffId("");
+  }, [busyRoomIds, busyStaffIds, roomId, staffId]);
+
   function searchClients(q) {
     setClientSearch(q);
     setSelectedClient(null);
@@ -1625,8 +1911,26 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       const clientId = selectedClient?.id;
       if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
+      if (!time) { setValidation("Selecciona un horario disponible"); setSubmitting(false); return; }
       if (!staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
       if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene cabina compatible activa"); setSubmitting(false); return; }
+      const selectedStaff = staff.find((person) => person.id === staffId);
+      const selectedRoom = compatibleRooms.find((room) => room.id === roomId);
+      if (busyStaffIds.has(staffId)) {
+        toast.error(`${selectedStaff?.name || "La terapeuta seleccionada"} ya está ocupada en ese horario`);
+        setSubmitting(false);
+        return;
+      }
+      if (roomId && busyRoomIds.has(roomId)) {
+        toast.error(`${selectedRoom?.name || "La cabina seleccionada"} ya está ocupada en ese horario`);
+        setSubmitting(false);
+        return;
+      }
+      if (!roomId && freeCompatibleRooms.length === 0) {
+        toast.error("No hay cabinas libres para ese servicio en ese horario");
+        setSubmitting(false);
+        return;
+      }
 
       await authFetch("/appointments", {
         method: "POST",
@@ -1652,7 +1956,6 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     background: "#FDFCFA",
     outline: "none",
   };
-  const selectStyle = { ...inputStyle, appearance: "none", cursor: "pointer" };
   const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 6 };
 
   return (
@@ -1732,13 +2035,14 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
 
           {/* Service */}
           <div>
-            <label style={labelStyle} htmlFor="service">Servicio</label>
-            <select id="service" style={selectStyle} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-              <option value="">Seleccionar servicio</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>{s.name} — {s.durationMins} min — ${Number(s.priceUsd).toFixed(2)}</option>
-              ))}
-            </select>
+            <PremiumSelect
+              label="Servicio"
+              value={serviceId}
+              options={serviceOptions}
+              placeholder="Seleccionar servicio"
+              emptyLabel="Sin servicios activos"
+              onChange={setServiceId}
+            />
           </div>
 
           {/* Date + Time */}
@@ -1748,33 +2052,31 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               <input id="date" type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
             <div>
-              <label style={labelStyle} htmlFor="time">Hora</label>
-              {slotsLoading ? (
-                <div style={{ ...inputStyle, display: "flex", alignItems: "center", justifyContent: "center" }}><Loader2 size={14} className="animate-spin" style={{ color: "#A89A87" }} /></div>
-              ) : availableSlots.length > 0 ? (
-                <select id="time" style={{ ...inputStyle, appearance: "none", cursor: "pointer" }} value={time} onChange={(e) => setTime(e.target.value)}>
-                  {availableSlots.map((s) => <option key={s} value={s}>{formatTime(s)}</option>)}
-                </select>
-              ) : (
-                <div style={{ ...inputStyle, color: "#A89A87", fontSize: 13 }}>{serviceId ? "Sin horarios" : "Elige servicio"}</div>
-              )}
+              <PremiumSelect
+                label="Hora"
+                value={time}
+                options={timeOptions}
+                placeholder="Seleccionar hora"
+                emptyLabel={serviceId ? "Sin horarios" : "Elige servicio"}
+                loading={slotsLoading}
+                disabled={!serviceId}
+                onChange={setTime}
+              />
             </div>
           </div>
 
           {/* Room + Staff */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
-              <label style={labelStyle} htmlFor="room">Cabina</label>
-              <select
-                id="room"
-                style={selectStyle}
+              <PremiumSelect
+                label="Cabina"
                 value={roomId}
                 disabled={!selectedService || compatibleRooms.length === 0}
-                onChange={(e) => setRoomId(e.target.value)}
-              >
-                <option value="">{!selectedService ? "Elige servicio" : compatibleRooms.length === 0 ? "Sin cabina compatible" : "Asignar automáticamente"}</option>
-                {compatibleRooms.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
-              </select>
+                options={roomOptions}
+                placeholder={!selectedService ? "Elige servicio" : "Asignar automáticamente"}
+                emptyLabel={!selectedService ? "Elige servicio" : "Sin cabina compatible"}
+                onChange={setRoomId}
+              />
               {selectedService && compatibleRooms.length === 1 && (
                 <p style={{ margin: "6px 0 0", fontSize: 12, color: "#8C6E50" }}>
                   {"Disponible para este servicio: "}{compatibleRooms[0].name}
@@ -1787,11 +2089,15 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               )}
             </div>
             <div>
-              <label style={labelStyle} htmlFor="staff">Terapeuta</label>
-              <select id="staff" style={selectStyle} value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-                <option value="">Seleccionar</option>
-                {staff.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-              </select>
+              <PremiumSelect
+                label="Terapeuta"
+                value={staffId}
+                options={staffOptions}
+                placeholder="Seleccionar terapeuta"
+                emptyLabel="Sin terapeutas activas"
+                disabled={!time}
+                onChange={setStaffId}
+              />
             </div>
           </div>
 

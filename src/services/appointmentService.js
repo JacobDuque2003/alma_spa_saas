@@ -427,7 +427,7 @@ async function createManualAppointment(actor, data) {
     },
   });
   if (!isResourceFree(conflicting, 'staffId', staff.id, startsAt, endsAt)) {
-    throw new SlotUnavailableError();
+    throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
   }
 
   let resolvedRoomId = null;
@@ -438,7 +438,7 @@ async function createManualAppointment(actor, data) {
     }
     assertInsideBusinessHours(tenant?.config, startsAt, endsAt, roomBusinessHours(room, tenant?.config, dateStr));
     if (!isResourceFree(conflicting, 'roomId', room.id, startsAt, endsAt)) {
-      throw new SlotUnavailableError();
+      throw new SlotUnavailableError('La cabina seleccionada ya está ocupada en ese horario');
     }
     resolvedRoomId = room.id;
   } else {
@@ -447,7 +447,7 @@ async function createManualAppointment(actor, data) {
       return isRangeInsideBusinessHours(hours, localHHMM(startsAt, getTenantTimezone(tenant?.config)), localHHMM(endsAt, getTenantTimezone(tenant?.config)));
     });
     if (roomsInsideWindow.length === 0) {
-      throw new BadRequestError('La cita estÃ¡ fuera del horario de atenciÃ³n');
+      throw new BadRequestError('La cita está fuera del horario de atención');
     }
     const freeRoom = roomsInsideWindow.find((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
     if (!freeRoom) {
@@ -516,9 +516,11 @@ async function updateAppointment(actor, id, changes) {
         OR: [{ roomId }, { staffId }],
       },
     });
-    if (!isResourceFree(conflicting, 'roomId', roomId, startsAt, endsAt)
-      || !isResourceFree(conflicting, 'staffId', staffId, startsAt, endsAt)) {
-      throw new SlotUnavailableError();
+    if (!isResourceFree(conflicting, 'staffId', staffId, startsAt, endsAt)) {
+      throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
+    }
+    if (!isResourceFree(conflicting, 'roomId', roomId, startsAt, endsAt)) {
+      throw new SlotUnavailableError('La cabina seleccionada ya está ocupada en ese horario');
     }
   }
 
