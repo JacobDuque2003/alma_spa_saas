@@ -115,7 +115,7 @@ export default function ReportesPage() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 16 : 20 }}>
           {/* Ocupacion */}
-          <RCard title="Ocupacion por gabinete" compact={isMobile} stagger={!hasAnimated} index={0}>
+          <RCard title="Ocupación por cabina" compact={isMobile} stagger={!hasAnimated} index={0}>
             <Bars
               items={occ.map((r) => ({ name: r.roomName, value: r.porcentaje, suffix: "%" }))}
               note="Horas reservadas sobre horas disponibles del periodo."
@@ -145,19 +145,19 @@ export default function ReportesPage() {
           </RCard>
 
           {/* Servicios mas vendidos */}
-          <RCard title="Servicios mas vendidos" compact={isMobile} stagger={!hasAnimated} index={2}>
+          <RCard title="Servicios más vendidos" compact={isMobile} stagger={!hasAnimated} index={2}>
             <Rank items={sold.slice(0, 5).map((s) => ({ name: s.serviceName || "Servicio", value: `${s.count} sesiones` }))} />
           </RCard>
 
           {/* Desempeno */}
-          <RCard title="Desempeno por terapeuta" compact={isMobile} stagger={!hasAnimated} index={3}>
+          <RCard title="Desempeño por terapeuta" compact={isMobile} stagger={!hasAnimated} index={3}>
             <Bars
               items={staff.map((s) => ({
                 name: s.staffName,
                 value: s.citasAtendidas,
                 label: s.ingresosUsd ? `${s.citasAtendidas} · ${money(s.ingresosUsd)}` : `${s.citasAtendidas}`,
               }))}
-              note="Sesiones atendidas; ingresos visibles solo para la duena."
+              note="Sesiones atendidas; ingresos visibles solo para la dueña."
             />
           </RCard>
 

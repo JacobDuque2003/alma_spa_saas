@@ -170,6 +170,7 @@ export default function AgendaPage() {
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
   const [staffList, setStaffList] = useState([]);
   const [navDirection, setNavDirection] = useState(0);
+  const [agendaQuery, setAgendaQuery] = useState("");
 
   const detailAnim = useAnimatedMount(!!selected, 220);
   const slotGroupAnim = useAnimatedMount(!!slotGroup, 220);
@@ -185,6 +186,26 @@ export default function AgendaPage() {
   const { gridClass, onAnimationEnd } = useGridTransition(navDirection, loading);
 
   const effectiveView = isMobile ? "day" : view;
+  const filteredAppointments = useMemo(() => {
+    const query = agendaQuery.trim().toLocaleLowerCase("es-EC");
+    if (!query) return appointments;
+    return appointments.filter((appt) => {
+      const client = appt.client || {};
+      const haystack = [
+        client.fullName,
+        client.whatsapp,
+        client.recordNumber,
+        appt.service?.name,
+        appt.room?.name,
+        appt.staff?.name,
+        appt.indications,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("es-EC");
+      return haystack.includes(query);
+    });
+  }, [agendaQuery, appointments]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -262,13 +283,46 @@ export default function AgendaPage() {
           borderBottom: "1px solid rgba(168,154,135,0.35)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h1
-            className="font-heading"
-            style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: 0 }}
-          >
-            Agenda
-          </h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: isMobile ? "1 1 auto" : "0 1 520px" }}>
+            <h1
+              className="font-heading"
+              style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: 0, flexShrink: 0 }}
+            >
+              Agenda
+            </h1>
+            <label
+              style={{
+                flex: 1,
+                minWidth: isMobile ? 0 : 260,
+                maxWidth: isMobile ? "none" : 360,
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                border: "1px solid rgba(168,154,135,0.42)",
+                borderRadius: 999,
+                padding: "9px 13px",
+                background: "rgba(253,252,250,0.86)",
+                boxShadow: "0 10px 26px rgba(107,85,64,0.06)",
+              }}
+            >
+              <Search size={16} style={{ color: "#A89A87", flexShrink: 0 }} />
+              <input
+                value={agendaQuery}
+                onChange={(e) => setAgendaQuery(e.target.value)}
+                placeholder="Buscar por clienta o ficha..."
+                style={{
+                  border: "none",
+                  outline: "none",
+                  background: "transparent",
+                  color: "#6B5540",
+                  fontSize: 13,
+                  width: "100%",
+                  minWidth: 0,
+                }}
+              />
+            </label>
+          </div>
           {isMobile && (
             <button
               onClick={() => setShowNewForm(true)}
@@ -370,7 +424,7 @@ export default function AgendaPage() {
           </div>
         ) : isMobile ? (
           <MobileCardList
-            appointments={appointments}
+            appointments={filteredAppointments}
             date={selectedDate}
             roomColorMap={roomColorMap}
             rooms={rooms}
@@ -379,7 +433,7 @@ export default function AgendaPage() {
           />
         ) : effectiveView === "week" ? (
           <WeekGrid
-            appointments={appointments}
+            appointments={filteredAppointments}
             selectedDate={selectedDate}
             today={today}
             roomColorMap={roomColorMap}
@@ -388,7 +442,7 @@ export default function AgendaPage() {
           />
         ) : (
           <CabinDayGrid
-            appointments={appointments}
+            appointments={filteredAppointments}
             rooms={rooms}
             date={selectedDate}
             today={today}
@@ -765,19 +819,20 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
     .map((appt) => appt.room);
   const columns = [...configuredRooms, ...fallbackRooms];
   const visibleColumns = columns.length ? columns : [{ id: "__sin-cabina", name: "Sin cabinas", specialty: "configuración" }];
-  const minWidth = Math.max(760, 56 + visibleColumns.length * 190);
+  const minWidth = visibleColumns.length > 7 ? 0 : Math.max(720, 56 + visibleColumns.length * 168);
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: "0 clamp(12px, 2vw, 32px) 28px", maxWidth: "100%" }}>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(178px, 1fr))`,
+          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(${visibleColumns.length > 7 ? 128 : 158}px, 1fr))`,
           border: "1px solid rgba(168,154,135,0.4)",
           borderRadius: 12,
           background: "#F7F5F0",
           overflow: "hidden",
           minWidth,
+          width: "100%",
         }}
       >
         <div style={{ borderBottom: "1px solid rgba(168,154,135,0.32)", background: date === today ? "rgba(235,205,181,0.18)" : "rgba(247,245,240,0.75)" }} />
@@ -1116,7 +1171,7 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
                   <span style={{ display: "block", color: "#A89A87", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.service?.name || "Servicio"}</span>
                 </span>
                 <span style={{ color: "#A89A87", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  {appt.room?.name || "Sin gabinete"}
+                  {appt.room?.name || "Sin cabina"}
                 </span>
               </button>
             );
@@ -1543,7 +1598,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                 <Search size={14} style={{ position: "absolute", left: 12, top: 13, color: "#A89A87" }} />
                 <input
                   style={{ ...inputStyle, paddingLeft: 34 }}
-                  placeholder="Buscar por nombre o WhatsApp…"
+                  placeholder="Buscar por nombre o ficha…"
                   value={clientSearch}
                   onChange={(e) => searchClients(e.target.value)}
                 />

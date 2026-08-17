@@ -171,7 +171,7 @@ export default function CRMPage() {
       >
         <div style={{ padding: "24px 20px 14px" }}>
           <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 14px" }}>
-            CRM · WhatsApp
+            Bandeja · WhatsApp
           </h1>
           <div style={{ display: "flex", gap: 8 }}>
             <button
@@ -691,7 +691,7 @@ export default function CRMPage() {
                 }}
               >
                 <ArrowLeft size={18} />
-                CRM
+                Bandeja
               </button>
             )}
             Selecciona una conversación.

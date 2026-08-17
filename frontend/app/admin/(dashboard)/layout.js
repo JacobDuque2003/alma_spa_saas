@@ -4,7 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { LogOut, Menu, X } from "lucide-react";
+import {
+  BarChart3,
+  CalendarDays,
+  ClipboardList,
+  Inbox,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  UserCog,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -14,13 +27,13 @@ import { ToastProvider } from "@/components/toast-provider";
 import { GlobalSearch } from "@/components/global-search";
 
 const NAV_ITEMS = [
-  { href: "/admin/agenda", label: "Agenda", enabled: true },
-  { href: "/admin/clientes", label: "Clientes", enabled: true },
-  { href: "/admin/crm", label: "CRM", enabled: true },
-  { href: "/admin/reportes", label: "Reportes", enabled: true },
-  { href: "/admin/personal", label: "Equipo", enabled: true },
-  { href: "/admin/configuracion", label: "Configuración", enabled: true },
-  { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"] },
+  { href: "/admin/agenda", label: "Agenda", enabled: true, icon: CalendarDays },
+  { href: "/admin/clientes", label: "Clientes", enabled: true, icon: Users },
+  { href: "/admin/crm", label: "Bandeja", enabled: true, icon: Inbox },
+  { href: "/admin/reportes", label: "Reportes", enabled: true, icon: BarChart3 },
+  { href: "/admin/personal", label: "Equipo", enabled: true, icon: UserCog },
+  { href: "/admin/configuracion", label: "Configuración", enabled: true, icon: Settings },
+  { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"], icon: ClipboardList },
 ];
 
 const ROLE_LABELS = {
@@ -117,6 +130,7 @@ function Shell({ children }) {
   const [upcomingBirthdays, setUpcomingBirthdays] = useState([]);
   const [introDone, setIntroDone] = useState(false);
   const [outOfSchedule, setOutOfSchedule] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -130,7 +144,14 @@ function Shell({ children }) {
 
   useEffect(() => {
     if (!isMobile) setDrawerOpen(false);
+    if (isMobile) setSidebarCollapsed(false);
   }, [isMobile]);
+
+  useEffect(() => {
+    if (!isMobile && pathname.startsWith("/admin/agenda")) {
+      setSidebarCollapsed(true);
+    }
+  }, [isMobile, pathname]);
 
   useEffect(() => {
     function onOutOfSchedule(event) {
@@ -178,15 +199,17 @@ function Shell({ children }) {
 
   const navContent = (
     <>
-      <div style={{ padding: "0 6px 14px" }}>
+      {!sidebarCollapsed && (
+      <div style={{ padding: "0 4px 14px" }}>
         <GlobalSearch />
       </div>
+      )}
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {navItems.map((item) => {
           const active = item.enabled && pathname.startsWith(item.href);
           const badge = item.href === "/admin/clientes" ? badgeCount : 0;
           return (
-            <NavItem key={item.label} item={item} active={active} isMobile={isMobile} badge={badge} />
+            <NavItem key={item.label} item={item} active={active} isMobile={isMobile} collapsed={sidebarCollapsed} badge={badge} />
           );
         })}
       </nav>
@@ -196,9 +219,10 @@ function Shell({ children }) {
           marginTop: "auto",
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "10px 10px",
+          gap: sidebarCollapsed ? 0 : 8,
+          padding: sidebarCollapsed ? "10px 0" : "10px 10px",
           borderTop: "1px solid rgba(168,154,135,0.35)",
+          justifyContent: sidebarCollapsed ? "center" : "flex-start",
         }}
       >
         {user && (
@@ -211,7 +235,7 @@ function Shell({ children }) {
                 gap: 10,
                 textDecoration: "none",
                 minWidth: 0,
-                flex: 1,
+                flex: sidebarCollapsed ? "0 0 auto" : 1,
               }}
               title="Mi perfil"
             >
@@ -232,6 +256,7 @@ function Shell({ children }) {
               >
                 {getInitials(user.name)}
               </span>
+              {!sidebarCollapsed && (
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div
                   style={{
@@ -249,7 +274,9 @@ function Shell({ children }) {
                   {ROLE_LABELS[user.role] || user.role}
                 </div>
               </div>
+              )}
             </Link>
+            {!sidebarCollapsed && (
             <button
               onClick={logout}
               style={{
@@ -264,6 +291,7 @@ function Shell({ children }) {
             >
               <LogOut size={16} />
             </button>
+            )}
           </>
         )}
       </div>
@@ -365,65 +393,151 @@ function Shell({ children }) {
       <aside
         className="flex flex-col"
         style={{
-          width: 190,
-          flex: "0 0 190px",
-          background: "#F7F5F0",
-          borderRight: "1px solid rgba(168,154,135,0.35)",
-          padding: "24px 12px 16px",
+          width: sidebarCollapsed ? 76 : 214,
+          flex: `0 0 ${sidebarCollapsed ? 76 : 214}px`,
+          background: "linear-gradient(180deg, #FDFCFA 0%, #F2EFEA 100%)",
+          borderRight: "1px solid rgba(168,154,135,0.28)",
+          padding: sidebarCollapsed ? "16px 10px" : "18px 14px 16px",
+          transition: "width var(--motion-base) var(--ease-out-quart), flex-basis var(--motion-base) var(--ease-out-quart)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 4, padding: "0 10px 14px" }}>
-          <span
-            className="font-heading"
-            style={{ fontSize: 18, fontWeight: 600, letterSpacing: 2.5, color: "#6B5540" }}
-          >
-            ALMA
-          </span>
-          <span
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: sidebarCollapsed ? "center" : "space-between",
+            gap: 10,
+            padding: sidebarCollapsed ? "0 0 16px" : "0 2px 16px",
+          }}
+        >
+          {!sidebarCollapsed ? (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "baseline",
+                gap: 4,
+                padding: "10px 12px",
+                borderRadius: 18,
+                background: "#F7F5F0",
+                border: "1px solid rgba(168,154,135,0.28)",
+                boxShadow: "0 12px 30px rgba(107,85,64,0.08)",
+              }}
+            >
+              <span
+                className="font-heading"
+                style={{ fontSize: 18, fontWeight: 600, letterSpacing: 2.5, color: "#6B5540" }}
+              >
+                ALMA
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-pinyon), 'Pinyon Script', cursive",
+                  fontSize: 16,
+                  color: "#C9A876",
+                }}
+              >
+                Spa
+              </span>
+            </div>
+          ) : (
+            <div
+              className="font-heading"
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#F7F5F0",
+                border: "1px solid rgba(168,154,135,0.28)",
+                boxShadow: "0 12px 30px rgba(107,85,64,0.08)",
+                color: "#6B5540",
+                fontSize: 16,
+                fontWeight: 700,
+                letterSpacing: 1.4,
+              }}
+            >
+              A
+            </div>
+          )}
+          {!sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((v) => !v)}
+              title="Ocultar menú"
+              aria-label="Ocultar menú"
+              style={{
+                width: 38,
+                height: 38,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 14,
+                border: "1px solid rgba(168,154,135,0.35)",
+                background: "#F7F5F0",
+                color: "#8C6E50",
+                cursor: "pointer",
+              }}
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          )}
+        </div>
+        {sidebarCollapsed && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            title="Mostrar menú"
+            aria-label="Mostrar menú"
             style={{
-              fontFamily: "var(--font-pinyon), 'Pinyon Script', cursive",
-              fontSize: 16,
-              color: "#C9A876",
+              width: 46,
+              height: 42,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 16,
+              border: "1px solid rgba(168,154,135,0.35)",
+              background: "#F7F5F0",
+              color: "#8C6E50",
+              cursor: "pointer",
+              margin: "0 auto 14px",
             }}
           >
-            Spa
-          </span>
-        </div>
+            <PanelLeftOpen size={18} />
+          </button>
+        )}
         {navContent}
       </aside>
 
-      <main className="flex-1 overflow-y-auto bg-background">{children}</main>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background">{children}</main>
       <OutOfScheduleBanner active={outOfSchedule} />
       <BirthdayToast nearBirthdays={nearBirthdays} />
     </div>
   );
 }
 
-function NavItem({ item, active, isMobile, badge = 0 }) {
+function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
+  const Icon = item.icon;
   const baseStyle = {
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    padding: isMobile ? "14px 16px" : "9px 12px",
-    borderRadius: 8,
+    justifyContent: collapsed && !isMobile ? "center" : "flex-start",
+    gap: collapsed && !isMobile ? 0 : 10,
+    padding: isMobile ? "14px 16px" : collapsed ? "12px 0" : "11px 13px",
+    borderRadius: active ? 18 : 16,
     fontSize: isMobile ? 15 : 13,
     textDecoration: "none",
-    transition: "background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart)",
-    minHeight: isMobile ? 44 : "auto",
-  };
-
-  const dotStyle = {
-    width: 7,
-    height: 7,
-    borderRadius: "50%",
-    flexShrink: 0,
+    transition: "background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart), border-radius var(--motion-fast) var(--ease-out-quart)",
+    minHeight: isMobile ? 44 : 46,
+    position: "relative",
   };
 
   if (!item.enabled) {
     return (
       <div style={{ ...baseStyle, color: "rgba(168,154,135,0.5)", cursor: "not-allowed" }}>
-        <span style={{ ...dotStyle, border: "1px solid rgba(168,154,135,0.4)" }} />
-        {item.label}
+        {Icon && <Icon size={18} />}
+        {!collapsed && item.label}
       </div>
     );
   }
@@ -434,14 +548,16 @@ function NavItem({ item, active, isMobile, badge = 0 }) {
         href={item.href}
         style={{
           ...baseStyle,
-          background: "#8C6E50",
+          background: "linear-gradient(135deg, #8C6E50 0%, #765A3F 100%)",
           color: "#F7F5F0",
-          fontWeight: 500,
+          fontWeight: 700,
+          boxShadow: active ? "0 12px 28px rgba(107,85,64,0.18)" : "none",
         }}
+        title={collapsed ? item.label : undefined}
       >
-        <span style={{ ...dotStyle, background: "#EBCDB5" }} />
-        {item.label}
-        {badge > 0 && <span className="alma-badge">{badge}</span>}
+        {Icon && <Icon size={18} />}
+        {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
+        {badge > 0 && <span className="alma-badge" style={collapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
       </Link>
     );
   }
@@ -450,16 +566,17 @@ function NavItem({ item, active, isMobile, badge = 0 }) {
     <Link
       href={item.href}
       style={{ ...baseStyle, color: "#6B5540" }}
+      title={collapsed ? item.label : undefined}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = "rgba(235,205,181,0.35)";
+        e.currentTarget.style.background = "rgba(235,205,181,0.38)";
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.background = "transparent";
       }}
     >
-      <span style={{ ...dotStyle, border: "1px solid #A89A87" }} />
-      {item.label}
-      {badge > 0 && <span className="alma-badge">{badge}</span>}
+      {Icon && <Icon size={18} />}
+      {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
+      {badge > 0 && <span className="alma-badge" style={collapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
     </Link>
   );
 }

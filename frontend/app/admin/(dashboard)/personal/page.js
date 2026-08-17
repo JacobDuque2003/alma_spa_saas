@@ -19,21 +19,53 @@ const PLATFORM_SUPPORT_USER = {
   rolePermission: null,
 };
 
-const MODULES = [
-  ["agenda", "Agenda", "Ver y gestionar citas"],
-  ["gabinetes", "Cabinas", "Estado en tiempo real y reservas por cabina"],
-  ["clientes", "Clientes", "Ver directorio, ficha y datos generales"],
-  ["clientesEditar", "Clientes · editar datos", "Crear clientas y editar el resumen/datos personales"],
-  ["clientesAnamnesis", "Clientes · anamnesis", "Editar la ficha de anamnesis y consentimiento"],
-  ["clientesHistorial", "Clientes · historial", "Agregar, editar o eliminar historial de tratamientos"],
-  ["clientesEstado", "Clientes · estado", "Habilitar o deshabilitar clientas"],
-  ["clientesEliminar", "Clientes · eliminar", "Eliminar clientas de forma completa cuando se habilite esa acción"],
-  ["clientesPagos", "Clientes · pagos", "Registrar abonos, cargos, planes y movimientos de cuenta"],
-  ["clientesExportar", "Clientes · exportar", "Exportar el directorio de clientas"],
-  ["crm", "CRM", "Conversaciones de WhatsApp con clientas"],
-  ["reportes", "Reportes", "Ingresos, ocupacion y desempeno"],
-  ["configuracion", "Configuracion", "Servicios, precios, cabinas y planes"],
+const PERMISSION_GROUPS = [
+  {
+    title: "Agenda",
+    description: "Reservas, cabinas y atención diaria",
+    items: [
+      ["agenda", "Ver y gestionar agenda", "Crear, mover y revisar reservas"],
+      ["gabinetes", "Ver cabinas", "Estado en tiempo real y reservas por cabina"],
+    ],
+  },
+  {
+    title: "Clientes",
+    description: "Directorio, ficha y datos sensibles",
+    items: [
+      ["clientes", "Ver clientas", "Directorio, ficha y datos generales"],
+      ["clientesEditar", "Editar resumen", "Crear clientas y editar datos personales"],
+      ["clientesAnamnesis", "Editar anamnesis", "Modificar antecedentes, consentimiento e indicaciones"],
+      ["clientesHistorial", "Editar historial", "Agregar, editar o eliminar tratamientos y reservas"],
+      ["clientesEstado", "Habilitar/deshabilitar", "Activar o pausar clientas"],
+      ["clientesEliminar", "Eliminar clienta", "Eliminar clientas de forma completa cuando exista esa acción"],
+      ["clientesPagos", "Movimientos de cuenta", "Registrar abonos, cargos, planes y saldos"],
+      ["clientesExportar", "Exportar clientas", "Descargar el directorio en Excel"],
+    ],
+  },
+  {
+    title: "Bandeja",
+    description: "Mensajes y recordatorios",
+    items: [
+      ["crm", "Conversaciones", "Bandeja de WhatsApp con clientas"],
+    ],
+  },
+  {
+    title: "Reportes",
+    description: "Métricas del spa",
+    items: [
+      ["reportes", "Ver reportes", "Ingresos, ocupación y desempeño"],
+    ],
+  },
+  {
+    title: "Configuración",
+    description: "Servicios, precios y horario",
+    items: [
+      ["configuracion", "Administrar configuración", "Servicios, precios, cabinas y horario del spa"],
+    ],
+  },
 ];
+
+const MODULES = PERMISSION_GROUPS.flatMap((group) => group.items);
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "US";
@@ -44,8 +76,120 @@ function roleLabel(role) {
 function permissionsSummary(user) {
   const rp = user.rolePermission || {};
   if (user.role !== "personal") return "Acceso completo a todas las secciones";
-  const enabled = MODULES.filter(([k]) => rp[k]).map(([, label]) => label);
+  const enabledGroups = PERMISSION_GROUPS
+    .filter((group) => group.items.some(([k]) => rp[k]))
+    .map((group) => group.title);
+  const enabled = enabledGroups.length ? enabledGroups : MODULES.filter(([k]) => rp[k]).map(([, label]) => label);
   return enabled.length ? enabled.join(", ") : "Sin permisos activos";
+}
+
+function PermissionGroupList({ value, onChange, compact = false }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: compact ? 10 : 14 }}>
+      {PERMISSION_GROUPS.map((group) => {
+        const enabledCount = group.items.filter(([key]) => !!value[key]).length;
+        return (
+          <section
+            key={group.title}
+            style={{
+              border: "1px solid rgba(168,154,135,0.28)",
+              borderRadius: compact ? 12 : 16,
+              background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: compact ? "10px 12px" : "13px 16px",
+                borderBottom: "1px solid rgba(168,154,135,0.18)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: compact ? 13 : 14, fontWeight: 800, color: "#6B5540" }}>
+                  {group.title}
+                </span>
+                {!compact && (
+                  <span style={{ display: "block", fontSize: 12, color: "#A89A87", marginTop: 2 }}>
+                    {group.description}
+                  </span>
+                )}
+              </span>
+              <span
+                style={{
+                  flexShrink: 0,
+                  borderRadius: 999,
+                  padding: "3px 9px",
+                  background: enabledCount ? "rgba(85,107,47,0.12)" : "rgba(168,154,135,0.14)",
+                  color: enabledCount ? "#556B2F" : "#A89A87",
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                {enabledCount}/{group.items.length}
+              </span>
+            </div>
+            <div style={{ padding: compact ? "4px 12px" : "6px 16px" }}>
+              {group.items.map(([key, label, desc], i) => (
+                <label
+                  key={key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 14,
+                    padding: compact ? "9px 0" : "12px 0",
+                    borderBottom: i < group.items.length - 1 ? "1px solid rgba(168,154,135,0.16)" : "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{label}</span>
+                    {!compact && <span style={{ fontSize: 12, color: "#A89A87" }}>{desc}</span>}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 42,
+                      height: 24,
+                      borderRadius: 999,
+                      padding: 3,
+                      background: value[key] ? "#8C6E50" : "rgba(168,154,135,0.25)",
+                      border: value[key] ? "1px solid #8C6E50" : "1px solid rgba(168,154,135,0.35)",
+                      transition: "background var(--motion-fast) var(--ease-out-quart)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "block",
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        background: "#FDFCFA",
+                        transform: value[key] ? "translateX(18px)" : "translateX(0)",
+                        transition: "transform var(--motion-fast) var(--ease-spring)",
+                        boxShadow: "0 2px 6px rgba(58,47,38,0.18)",
+                      }}
+                    />
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={!!value[key]}
+                    onChange={(e) => onChange(key, e.target.checked)}
+                    style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
 }
 
 const inputStyle = {
@@ -232,36 +376,11 @@ function NewUserModal({ phase, onClose, onSaved }) {
           {role === "personal" && (
             <div>
               <label style={{ ...labelStyle, marginBottom: 8 }}>Permisos por módulo</label>
-              <div
-                style={{
-                  border: "1px solid rgba(168,154,135,0.4)",
-                  borderRadius: 8,
-                  padding: "4px 14px",
-                }}
-              >
-                {MODULES.map(([key, label], i) => (
-                  <label
-                    key={key}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      padding: "10px 0",
-                      borderBottom: i < MODULES.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span style={{ fontSize: 13, color: "#6B5540" }}>{label}</span>
-                    <input
-                      type="checkbox"
-                      checked={!!permissions[key]}
-                      onChange={(e) => setPermissions((p) => ({ ...p, [key]: e.target.checked }))}
-                      style={{ width: 18, height: 18, accentColor: "#8C6E50" }}
-                    />
-                  </label>
-                ))}
-              </div>
+              <PermissionGroupList
+                compact
+                value={permissions}
+                onChange={(key, checked) => setPermissions((p) => ({ ...p, [key]: checked }))}
+              />
             </div>
           )}
 
@@ -646,33 +765,10 @@ export default function PersonalPage() {
                 <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 20px" }}>
                   Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
                 </p>
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  {MODULES.map(([key, label, desc], i) => (
-                    <label
-                      key={key}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 16,
-                        padding: "16px 0",
-                        borderBottom: i < MODULES.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <span>
-                        <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540" }}>{label}</span>
-                        <span style={{ fontSize: 12, color: "#A89A87" }}>{desc}</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={!!draft[key]}
-                        onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.checked }))}
-                        style={{ width: 40, height: 20, accentColor: "#8C6E50" }}
-                      />
-                    </label>
-                  ))}
-                </div>
+                <PermissionGroupList
+                  value={draft}
+                  onChange={(key, checked) => setDraft((d) => ({ ...d, [key]: checked }))}
+                />
 
                 {loadError && (
                   <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>
