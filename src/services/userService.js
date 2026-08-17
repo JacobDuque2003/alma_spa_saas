@@ -33,6 +33,26 @@ const USER_SAFE_SELECT = {
   rolePermission: true,
 };
 
+const PERMISSION_KEYS = [
+  'agenda',
+  'gabinetes',
+  'clientes',
+  'crm',
+  'reportes',
+  'configuracion',
+  'clientesEditar',
+  'clientesAnamnesis',
+  'clientesHistorial',
+  'clientesEstado',
+  'clientesEliminar',
+  'clientesPagos',
+  'clientesExportar',
+];
+
+function normalizePermissions(input = {}) {
+  return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, !!input[key]]));
+}
+
 async function listUsers(actor, query = {}) {
   const where = {};
   if (actor.role === 'superadmin') {
@@ -100,12 +120,7 @@ async function createUser(actor, data) {
           ? {
               rolePermission: {
                 create: {
-                  agenda: !!permissions?.agenda,
-                  gabinetes: !!permissions?.gabinetes,
-                  clientes: !!permissions?.clientes,
-                  crm: !!permissions?.crm,
-                  reportes: !!permissions?.reportes,
-                  configuracion: !!permissions?.configuracion,
+                  ...normalizePermissions(permissions),
                 },
               },
             }
@@ -203,18 +218,20 @@ async function updatePermissions(actor, targetUserId, permissions) {
   }
   assertTenantScope(actor, target.tenantId);
 
+  const safePermissions = normalizePermissions(permissions);
+
   return prisma.$transaction(async (tx) => {
     const result = await tx.rolePermission.upsert({
       where: { userId: targetUserId },
-      update: permissions,
-      create: { userId: targetUserId, ...permissions },
+      update: safePermissions,
+      create: { userId: targetUserId, ...safePermissions },
     });
     await writeAuditLog(tx, {
       actor,
       entity: 'user',
       entityId: targetUserId,
       action: 'permissionsChanged',
-      detail: permissions,
+      detail: safePermissions,
     });
     return result;
   });
@@ -230,4 +247,6 @@ module.exports = {
   updatePermissions,
   ProtectedAccountError,
   ForbiddenTenantError,
+  PERMISSION_KEYS,
+  normalizePermissions,
 };

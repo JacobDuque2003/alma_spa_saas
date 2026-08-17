@@ -15,7 +15,13 @@ const router = express.Router();
 // monta en '/', así que un middleware global aquí correría para TODAS las
 // requests —incluidas las rutas públicas montadas después— exigiendo token.
 const clientes = [authenticate, requirePermission('clientes')];
-const clientExport = [authenticate, requirePermission('clientes'), requireAnyPermission('reportes', 'configuracion')];
+const clientEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesEditar')];
+const clientIntakeEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesAnamnesis')];
+const clientHistoryEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesHistorial')];
+const clientStatusEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesEstado')];
+const clientDelete = [authenticate, requirePermission('clientes'), requirePermission('clientesEliminar')];
+const clientPayments = [authenticate, requirePermission('clientes'), requirePermission('clientesPagos')];
+const clientExport = [authenticate, requirePermission('clientes'), requireAnyPermission('clientesExportar', 'reportes', 'configuracion')];
 const ownerOnly = [authenticate, requireRole('superadmin', 'dueno')];
 
 function csvCell(value) {
@@ -69,7 +75,7 @@ router.get('/clients', clientes, async (req, res, next) => {
   }
 });
 
-router.post('/clients', clientes, async (req, res, next) => {
+router.post('/clients', clientEdit, async (req, res, next) => {
   try {
     const client = await clientService.createClient(req.user, req.body);
     res.status(201).json(client);
@@ -112,7 +118,7 @@ router.get('/clients/:clientId', clientes, async (req, res, next) => {
   }
 });
 
-router.patch('/clients/:clientId', clientes, async (req, res, next) => {
+router.patch('/clients/:clientId', clientEdit, async (req, res, next) => {
   try {
     const client = await clientService.updateClient(req.user, req.params.clientId, req.body);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -123,7 +129,7 @@ router.patch('/clients/:clientId', clientes, async (req, res, next) => {
   }
 });
 
-router.patch('/clients/:clientId/disable', ownerOnly, async (req, res, next) => {
+router.patch('/clients/:clientId/disable', clientStatusEdit, async (req, res, next) => {
   try {
     const client = await clientService.deleteClient(req.user, req.params.clientId);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -134,7 +140,7 @@ router.patch('/clients/:clientId/disable', ownerOnly, async (req, res, next) => 
   }
 });
 
-router.patch('/clients/:clientId/enable', ownerOnly, async (req, res, next) => {
+router.patch('/clients/:clientId/enable', clientStatusEdit, async (req, res, next) => {
   try {
     const client = await clientService.enableClient(req.user, req.params.clientId);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -144,7 +150,7 @@ router.patch('/clients/:clientId/enable', ownerOnly, async (req, res, next) => {
     next(err);
   }
 });
-router.delete('/clients/:clientId', ownerOnly, async (req, res, next) => {
+router.delete('/clients/:clientId', clientDelete, async (req, res, next) => {
   try {
     const client = await clientService.deleteClient(req.user, req.params.clientId);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -168,7 +174,7 @@ router.get('/clients/:clientId/intake', clientes, async (req, res, next) => {
   }
 });
 
-router.put('/clients/:clientId/intake', clientes, async (req, res, next) => {
+router.put('/clients/:clientId/intake', clientIntakeEdit, async (req, res, next) => {
   try {
     const result = await clientIntakeService.updateIntakeForActor(req.user, req.params.clientId, req.body);
     if (!result) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -202,7 +208,7 @@ router.get('/clients/:clientId/treatments', clientes, async (req, res, next) => 
   }
 });
 
-router.post('/clients/:clientId/treatments', clientes, async (req, res, next) => {
+router.post('/clients/:clientId/treatments', clientHistoryEdit, async (req, res, next) => {
   try {
     const treatment = await treatmentHistoryService.createTreatment(req.user, req.params.clientId, req.body);
     if (!treatment) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -212,7 +218,7 @@ router.post('/clients/:clientId/treatments', clientes, async (req, res, next) =>
   }
 });
 
-router.patch('/treatments/:id', clientes, async (req, res, next) => {
+router.patch('/treatments/:id', clientHistoryEdit, async (req, res, next) => {
   try {
     const treatment = await treatmentHistoryService.updateTreatment(req.user, req.params.id, req.body);
     if (!treatment) return res.status(404).json({ error: 'Tratamiento no encontrado' });
@@ -222,7 +228,7 @@ router.patch('/treatments/:id', clientes, async (req, res, next) => {
   }
 });
 
-router.delete('/treatments/:id', ownerOnly, async (req, res, next) => {
+router.delete('/treatments/:id', clientHistoryEdit, async (req, res, next) => {
   try {
     const result = await treatmentHistoryService.deleteTreatment(req.user, req.params.id);
     if (!result) return res.status(404).json({ error: 'Tratamiento no encontrado' });
@@ -244,7 +250,7 @@ router.get('/clients/:clientId/plans', clientes, async (req, res, next) => {
   }
 });
 
-router.post('/clients/:clientId/plans', clientes, async (req, res, next) => {
+router.post('/clients/:clientId/plans', clientPayments, async (req, res, next) => {
   try {
     const plan = await clientPlanService.contractPlan(req.user, req.params.clientId, req.body);
     if (!plan) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -254,7 +260,7 @@ router.post('/clients/:clientId/plans', clientes, async (req, res, next) => {
   }
 });
 
-router.post('/client-plans/:id/consume', clientes, async (req, res, next) => {
+router.post('/client-plans/:id/consume', clientHistoryEdit, async (req, res, next) => {
   try {
     const plan = await clientPlanService.consumeSession(req.user, req.params.id);
     if (!plan) return res.status(404).json({ error: 'Plan de cliente no encontrado' });
@@ -264,7 +270,7 @@ router.post('/client-plans/:id/consume', clientes, async (req, res, next) => {
   }
 });
 
-router.post('/client-plans/:id/renew', clientes, async (req, res, next) => {
+router.post('/client-plans/:id/renew', clientPayments, async (req, res, next) => {
   try {
     const plan = await clientPlanService.renewPlan(req.user, req.params.id, req.body);
     if (!plan) return res.status(404).json({ error: 'Plan de cliente no encontrado' });
@@ -286,7 +292,7 @@ router.get('/clients/:clientId/balance', clientes, async (req, res, next) => {
   }
 });
 
-router.post('/clients/:clientId/charges', clientes, async (req, res, next) => {
+router.post('/clients/:clientId/charges', clientPayments, async (req, res, next) => {
   try {
     const entry = await ledgerService.registerCharge(req.user, req.params.clientId, req.body);
     if (!entry) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -296,7 +302,7 @@ router.post('/clients/:clientId/charges', clientes, async (req, res, next) => {
   }
 });
 
-router.post('/clients/:clientId/payments', clientes, async (req, res, next) => {
+router.post('/clients/:clientId/payments', clientPayments, async (req, res, next) => {
   try {
     const entry = await ledgerService.registerPayment(req.user, req.params.clientId, req.body);
     if (!entry) return res.status(404).json({ error: 'Cliente no encontrado' });

@@ -21,11 +21,18 @@ const PLATFORM_SUPPORT_USER = {
 
 const MODULES = [
   ["agenda", "Agenda", "Ver y gestionar citas"],
-  ["gabinetes", "Gabinetes", "Estado en tiempo real y reservas por gabinete"],
-  ["clientes", "Clientes", "Fichas, anamnesis e historial de tratamientos"],
+  ["gabinetes", "Cabinas", "Estado en tiempo real y reservas por cabina"],
+  ["clientes", "Clientes", "Ver directorio, ficha y datos generales"],
+  ["clientesEditar", "Clientes · editar datos", "Crear clientas y editar el resumen/datos personales"],
+  ["clientesAnamnesis", "Clientes · anamnesis", "Editar la ficha de anamnesis y consentimiento"],
+  ["clientesHistorial", "Clientes · historial", "Agregar, editar o eliminar historial de tratamientos"],
+  ["clientesEstado", "Clientes · estado", "Habilitar o deshabilitar clientas"],
+  ["clientesEliminar", "Clientes · eliminar", "Eliminar clientas de forma completa cuando se habilite esa acción"],
+  ["clientesPagos", "Clientes · pagos", "Registrar abonos, cargos, planes y movimientos de cuenta"],
+  ["clientesExportar", "Clientes · exportar", "Exportar el directorio de clientas"],
   ["crm", "CRM", "Conversaciones de WhatsApp con clientas"],
   ["reportes", "Reportes", "Ingresos, ocupacion y desempeno"],
-  ["configuracion", "Configuracion", "Servicios, precios, gabinetes y planes"],
+  ["configuracion", "Configuracion", "Servicios, precios, cabinas y planes"],
 ];
 
 function initials(name = "") {

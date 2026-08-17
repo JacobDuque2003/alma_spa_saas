@@ -77,10 +77,71 @@ test('GET /clients/export exige permiso extra reportes o configuracion y no expo
 });
 
 test('GET /clients/export niega a personal con clientes pero sin reportes/configuracion', async () => {
-  prisma.rolePermission = { findUnique: async () => ({ clientes: true, reportes: false, configuracion: false }) };
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesExportar: false, reportes: false, configuracion: false }) };
   prisma.client = { findMany: async () => [] };
 
   const res = await supertest(app).get('/clients/export').set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 403);
+});
+
+test('GET /clients/export permite permiso fino clientesExportar sin reportes/configuracion', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesExportar: true, reportes: false, configuracion: false }) };
+  prisma.client = { findMany: async () => [] };
+
+  const res = await supertest(app).get('/clients/export').set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /text\/csv/);
+});
+
+test('PATCH /clients/:id exige permiso fino clientesEditar', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEditar: false }) };
+  const res = await supertest(app)
+    .patch('/clients/c1')
+    .set('Authorization', `Bearer ${token()}`)
+    .send({ fullName: 'Camila' });
+  assert.equal(res.status, 403);
+});
+
+test('PUT /clients/:id/intake exige permiso fino clientesAnamnesis', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesAnamnesis: false }) };
+  const res = await supertest(app)
+    .put('/clients/c1/intake')
+    .set('Authorization', `Bearer ${token()}`)
+    .send({ allergies: 'Ninguna' });
+  assert.equal(res.status, 403);
+});
+
+test('PATCH /clients/:id/disable exige permiso fino clientesEstado', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEstado: false }) };
+  const res = await supertest(app)
+    .patch('/clients/c1/disable')
+    .set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 403);
+});
+
+test('DELETE /clients/:id exige permiso fino clientesEliminar', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEliminar: false }) };
+  const res = await supertest(app)
+    .delete('/clients/c1')
+    .set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 403);
+});
+
+test('POST /clients/:id/treatments exige permiso fino clientesHistorial', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesHistorial: false }) };
+  const res = await supertest(app)
+    .post('/clients/c1/treatments')
+    .set('Authorization', `Bearer ${token()}`)
+    .send({ serviceId: 's1', sessionDate: '2026-08-17' });
+  assert.equal(res.status, 403);
+});
+
+test('POST /clients/:id/payments exige permiso fino clientesPagos', async () => {
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesPagos: false }) };
+  const res = await supertest(app)
+    .post('/clients/c1/payments')
+    .set('Authorization', `Bearer ${token()}`)
+    .send({ amountUsd: 10, method: 'efectivo' });
   assert.equal(res.status, 403);
 });
 

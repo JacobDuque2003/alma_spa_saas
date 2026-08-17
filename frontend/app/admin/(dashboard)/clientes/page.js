@@ -60,6 +60,10 @@ function exportFilename() {
   return `clientes-alma-spa-${today}.csv`;
 }
 
+function hasClientPermission(user, key) {
+  return !!user && (["superadmin", "dueno"].includes(user.role) || !!user.permissions?.[key]);
+}
+
 function ClientFilterButton({ active, onClick, children }) {
   return (
     <button
@@ -335,7 +339,12 @@ export default function ClientesPage() {
   const [actionClient, setActionClient] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState("resumen");
-  const canExportClients = !!user && (["superadmin", "dueno"].includes(user.role) || user.permissions?.reportes || user.permissions?.configuracion);
+  const canEditClients = hasClientPermission(user, "clientesEditar");
+  const canEditIntake = hasClientPermission(user, "clientesAnamnesis");
+  const canEditHistory = hasClientPermission(user, "clientesHistorial");
+  const canToggleClientStatus = hasClientPermission(user, "clientesEstado");
+  const canEditPayments = hasClientPermission(user, "clientesPagos");
+  const canExportClients = hasClientPermission(user, "clientesExportar") || hasClientPermission(user, "reportes") || hasClientPermission(user, "configuracion");
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
@@ -538,7 +547,7 @@ export default function ClientesPage() {
   const treatmentCount = treatments.length;
   const tabItems = [
     { key: "resumen", label: "Resumen", meta: Array.isArray(balance?.entries) ? balance.entries.length : 0 },
-    { key: "anamnesis", label: "Anamnesis", meta: intake?.consentSigned ? "OK" : "Pend." },
+    { key: "anamnesis", label: "Anamnesis", meta: intake?.consentSigned ? "Firmada" : "Sin firma" },
     { key: "historial", label: "Historial", meta: treatmentCount + appointmentCount },
   ];
 
@@ -605,25 +614,27 @@ export default function ClientesPage() {
                   Exportar
                 </button>
               )}
-              <button
-                onClick={() => setShowNewClient(true)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "10px 18px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: "#8C6E50",
-                  color: "#F7F5F0",
-                  fontSize: 13,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  flex: isMobile ? 1 : "initial",
-                }}
-              >
-                + Nueva clienta
-              </button>
+              {canEditClients && (
+                <button
+                  onClick={() => setShowNewClient(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "10px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#8C6E50",
+                    color: "#F7F5F0",
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    flex: isMobile ? 1 : "initial",
+                  }}
+                >
+                  + Nueva clienta
+                </button>
+              )}
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 420px) 1fr", gap: 12, alignItems: "center" }}>
@@ -648,7 +659,7 @@ export default function ClientesPage() {
                   color: "#6B5540",
                   width: "100%",
                 }}
-                placeholder="Busca por nombre o WhatsApp..."
+                placeholder="Busca por nombre o ficha..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -819,24 +830,26 @@ export default function ClientesPage() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  onClick={() => setShowEditClient(true)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    padding: "9px 20px",
-                    borderRadius: 999,
-                    border: "1px solid rgba(168,154,135,0.5)",
-                    background: "none",
-                    color: "#6B5540",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                  }}
-                >
-                  Editar
-                </button>
-                {detail.active === false ? (
+                {canEditClients && (
+                  <button
+                    onClick={() => setShowEditClient(true)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "9px 20px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(168,154,135,0.5)",
+                      background: "none",
+                      color: "#6B5540",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Guardar
+                  </button>
+                )}
+                {canToggleClientStatus && detail.active === false ? (
                   <button
                     onClick={handleEnableClient}
                     style={{
@@ -854,7 +867,7 @@ export default function ClientesPage() {
                   >
                     Habilitar
                   </button>
-                ) : (
+                ) : canToggleClientStatus ? (
                   <button
                     onClick={() => setShowDeleteClient(true)}
                     style={{
@@ -872,7 +885,7 @@ export default function ClientesPage() {
                   >
                     Deshabilitar
                   </button>
-                )}
+                ) : null}
                 <Link
                   href="/admin/crm"
                   style={{
@@ -923,9 +936,9 @@ export default function ClientesPage() {
             </div>
 
             <div style={{ flex: 1, minHeight: 0 }}>
-              {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} balance={balance} plans={plans} onPayment={registerPayment} onCopyEmail={handleCopyEmail} />}
-              {activeTab === "anamnesis" && <IntakeCard intake={intake} onEdit={() => setShowEditIntake(true)} />}
-              {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} onSaved={fetchDetail} />}
+              {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} balance={balance} plans={plans} canEdit={canEditClients} canEditPayments={canEditPayments} onEdit={() => setShowEditClient(true)} onPayment={registerPayment} onCopyEmail={handleCopyEmail} />}
+              {activeTab === "anamnesis" && <IntakeCard intake={intake} canEdit={canEditIntake} onEdit={() => setShowEditIntake(true)} />}
+              {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} canEdit={canEditHistory} onSaved={fetchDetail} />}
             </div>
           </>
         ) : (
@@ -939,14 +952,19 @@ export default function ClientesPage() {
   );
 }
 
-function ClientPersonalSummaryCard({ client, balance, plans, onPayment, onCopyEmail }) {
+function ClientPersonalSummaryCard({ client, balance, plans, canEdit, canEditPayments, onEdit, onPayment, onCopyEmail }) {
   const birthday = client?.birthday ? birthdayDateLabel(client.birthday) : "Sin fecha";
   const age = client?.age != null ? `${client.age} años` : "Sin edad";
   const email = client?.email || "Sin correo";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 18, alignItems: "stretch" }}>
-      <div className="alma-card" style={{ padding: 24, background: "linear-gradient(135deg, rgba(253,252,250,0.98), rgba(235,205,181,0.16))", border: "1px solid rgba(201,168,118,0.24)", boxShadow: "0 22px 55px rgba(107,85,64,0.08)" }}>
+      <div
+        className="alma-card"
+        onClick={canEdit ? onEdit : undefined}
+        title={canEdit ? "Editar información de la clienta" : undefined}
+        style={{ padding: 24, background: "linear-gradient(135deg, rgba(253,252,250,0.98), rgba(235,205,181,0.16))", border: "1px solid rgba(201,168,118,0.24)", boxShadow: "0 22px 55px rgba(107,85,64,0.08)", cursor: canEdit ? "pointer" : "default" }}
+      >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
           <div>
             <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>Información</h3>
@@ -963,7 +981,7 @@ function ClientPersonalSummaryCard({ client, balance, plans, onPayment, onCopyEm
             label="Correo"
             value={email}
             action={client?.email ? (
-              <button type="button" onClick={() => onCopyEmail(client.email)} title="Copiar correo" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 999, border: "1px solid rgba(168,154,135,0.28)", background: "#FDFCFA", color: "#8C6E50", cursor: "pointer", flexShrink: 0 }}>
+              <button type="button" onClick={(event) => { event.stopPropagation(); onCopyEmail(client.email); }} title="Copiar correo" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 999, border: "1px solid rgba(168,154,135,0.28)", background: "#FDFCFA", color: "#8C6E50", cursor: "pointer", flexShrink: 0 }}>
                 <Copy size={13} />
               </button>
             ) : null}
@@ -973,12 +991,22 @@ function ClientPersonalSummaryCard({ client, balance, plans, onPayment, onCopyEm
           <PersonalInfoItem label="Dirección" value={client?.address || "Sin dirección"} />
         </div>
       </div>
-      <AccountMovementsPanel plans={plans} balance={balance} onPayment={onPayment} />
+      <AccountMovementsPanel plans={plans} balance={balance} canEditPayments={canEditPayments} onPayment={onPayment} />
     </div>
   );
 }
 
-function IntakeCard({ intake, onEdit }) {
+function intakeTone(value) {
+  if (value === "SI") {
+    return { bg: "rgba(142,36,170,0.08)", border: "rgba(142,36,170,0.18)", chipBg: "#8E24AA", chipColor: "#FFFFFF" };
+  }
+  if (value === "NO") {
+    return { bg: "rgba(92,122,64,0.075)", border: "rgba(92,122,64,0.18)", chipBg: "rgba(92,122,64,0.16)", chipColor: "#5C7A40" };
+  }
+  return { bg: "rgba(168,154,135,0.08)", border: "rgba(168,154,135,0.18)", chipBg: "rgba(168,154,135,0.18)", chipColor: "#8C6E50" };
+}
+
+function IntakeCard({ intake, canEdit, onEdit }) {
   const parsedConditions = parseChecklistText(intake?.conditions || "");
   const antecedents = ANTECEDENT_OPTIONS
     .map((item) => ({ item, value: parsedConditions.answers[item] || (parsedConditions.selected.includes(item) ? "SI" : "NO") }));
@@ -989,20 +1017,23 @@ function IntakeCard({ intake, onEdit }) {
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>
           Ficha de anamnesis
         </h3>
-        <button onClick={onEdit} style={{ fontSize: 13, color: "#8C6E50", textDecoration: "underline", cursor: "pointer", background: "none", border: "none" }}>Editar</button>
+        {canEdit && <button onClick={onEdit} style={{ fontSize: 13, color: "#8C6E50", textDecoration: "underline", cursor: "pointer", background: "none", border: "none" }}>Editar</button>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
           <div style={{ fontSize: 12, color: "#A89A87", marginBottom: 8 }}>Antecedentes clínicos · marque SI/NO</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(235px, 1fr))", gap: 8 }}>
-              {antecedents.map(({ item, value }) => (
-                <div key={item} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, border: "1px solid rgba(168,154,135,0.2)", background: value === "SI" ? "rgba(142,36,170,0.08)" : "rgba(168,154,135,0.08)", borderRadius: 10, padding: "7px 9px" }}>
-                  <span style={{ fontSize: 12, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item}</span>
-                  <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "3px 7px", background: value === "SI" ? "#8E24AA" : "rgba(168,154,135,0.24)", color: value === "SI" ? "#FFFFFF" : "#8C6E50" }}>
-                    {value}
-                  </span>
-                </div>
-              ))}
+              {antecedents.map(({ item, value }) => {
+                const tone = intakeTone(value);
+                return (
+                  <div key={item} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, border: `1px solid ${tone.border}`, background: tone.bg, borderRadius: 10, padding: "7px 9px" }}>
+                    <span style={{ fontSize: 12, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item}</span>
+                    <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "3px 7px", background: tone.chipBg, color: tone.chipColor }}>
+                      {value || "—"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(168,154,135,0.18)", background: "rgba(253,252,250,0.68)" }}>
             <div style={{ fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Indicaciones / observaciones</div>
@@ -1029,7 +1060,7 @@ function IntakeCard({ intake, onEdit }) {
   );
 }
 
-function AccountMovementsPanel({ plans, balance, onPayment }) {
+function AccountMovementsPanel({ plans, balance, canEditPayments, onPayment }) {
   const activePlan = (plans || []).find((p) => p.active) || plans?.[0];
   const balanceAmount = Number(balance?.balanceUsd || 0);
   const entries = Array.isArray(balance?.entries) ? balance.entries : [];
@@ -1050,25 +1081,27 @@ function AccountMovementsPanel({ plans, balance, onPayment }) {
             <div className="font-heading" style={{ marginTop: 10, fontSize: 30, lineHeight: 1, color: "#FDF8EF" }}>{balanceAmount === 0 ? "Al día" : money(Math.abs(balanceAmount))}</div>
             <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>{balanceLabel}</div>
           </div>
-          <button
-            onClick={onPayment}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "9px 15px",
-              borderRadius: 999,
-              background: "#FDF8EF",
-              color: "#6B5540",
-              fontSize: 12,
-              fontWeight: 850,
-              border: "none",
-              cursor: "pointer",
-              boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            + Abono
-          </button>
+          {canEditPayments && (
+            <button
+              onClick={onPayment}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "9px 15px",
+                borderRadius: 999,
+                background: "#FDF8EF",
+                color: "#6B5540",
+                fontSize: 12,
+                fontWeight: 850,
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              + Abono
+            </button>
+          )}
         </div>
       </div>
       {activePlan ? (
@@ -1297,6 +1330,7 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 7, maxHeight: 260, overflowY: "auto", padding: "2px 2px 4px" }}>
               {ANTECEDENT_OPTIONS.map((item) => {
                 const answer = antecedentAnswers[item] || "";
+                const tone = intakeTone(answer);
                 return (
                   <div
                     key={item}
@@ -1305,8 +1339,8 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: 10,
-                      border: "1px solid rgba(168,154,135,0.24)",
-                      background: answer === "SI" ? "rgba(142,36,170,0.07)" : "#FDFCFA",
+                      border: `1px solid ${tone.border}`,
+                      background: tone.bg,
                       borderRadius: 10,
                       padding: "7px 8px 7px 10px",
                       fontSize: 12,
@@ -1323,8 +1357,8 @@ function EditIntakeModal({ clientId, intake, phase, onClose, onSaved }) {
                             border: "none",
                             borderRadius: 999,
                             padding: "5px 10px",
-                            background: answer === value ? (value === "SI" ? "#8E24AA" : "#A89A87") : "rgba(168,154,135,0.14)",
-                            color: answer === value ? "#FFFFFF" : "#8C6E50",
+                            background: answer === value ? (value === "SI" ? "#8E24AA" : "rgba(92,122,64,0.18)") : "rgba(168,154,135,0.14)",
+                            color: answer === value ? (value === "SI" ? "#FFFFFF" : "#5C7A40") : "#8C6E50",
                             fontSize: 11,
                             fontWeight: 800,
                             cursor: "pointer",
@@ -1385,7 +1419,7 @@ function TreatmentDeleteModal({ treatment, phase, onClose, onDeleted }) {
   );
 }
 
-function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
+function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSaved }) {
   const [showForm, setShowForm] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
@@ -1399,9 +1433,9 @@ function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
   const deleteTreatmentAnim = useAnimatedMount(Boolean(treatmentToDelete), 220);
 
   useEffect(() => {
-    if (!showForm) return;
+    if (!showForm || !canEdit) return;
     authFetch("/services").then((s) => setServices(Array.isArray(s) ? s.filter((x) => x.active) : [])).catch(() => {});
-  }, [showForm]);
+  }, [showForm, canEdit]);
 
   function resetForm() {
     setEditingTreatment(null);
@@ -1466,7 +1500,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>Historial de la clienta</h3>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 13, color: "#A89A87" }}>{(treatments || []).length} tratamientos · {(appointments || []).length} reservas</span>
-          <button onClick={() => (showForm ? (setShowForm(false), resetForm()) : openCreate())} style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{showForm ? "Cancelar" : "+ Agregar"}</button>
+          {canEdit && <button onClick={() => (showForm ? (setShowForm(false), resetForm()) : openCreate())} style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{showForm ? "Cancelar" : "+ Agregar"}</button>}
         </div>
       </div>
       {deleteTreatmentAnim.shouldRender && treatmentToDelete && (
@@ -1478,7 +1512,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
         />
       )}
 
-      {showForm && (
+      {canEdit && showForm && (
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, padding: 14, background: "rgba(201,168,118,0.08)", borderRadius: 10 }}>
           <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Servicio</label><select value={serviceId} onChange={(e) => setServiceId(e.target.value)} disabled={Boolean(editingTreatment)} style={{ ...inputSt, appearance: "none", cursor: editingTreatment ? "not-allowed" : "pointer", opacity: editingTreatment ? 0.72 : 1 }}><option value="">Seleccionar...</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Fecha</label><input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} style={inputSt} /></div>
@@ -1521,10 +1555,10 @@ function TreatmentsCard({ treatments, appointments = [], clientId, onSaved }) {
                       <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.service?.name || "Tratamiento"}</span>
                       <span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)} · Tratamiento registrado</span>
                     </div>
-                    <div style={{ display: "flex", gap: 6 }}>
+                    {canEdit && <div style={{ display: "flex", gap: 6 }}>
                       <button type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil size={14} /></button>
                       <button type="button" onClick={() => setTreatmentToDelete(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
-                    </div>
+                    </div>}
                   </div>
                   {t.notes && <div style={{ fontSize: 13, color: "#8C6E50", marginBottom: 6 }}>{t.notes}</div>}
                 </div>

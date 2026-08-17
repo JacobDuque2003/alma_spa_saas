@@ -4,7 +4,21 @@ const { login, hashPassword, OutOfScheduleError } = require('../services/authSer
 const authenticate = require('../middleware/authenticate');
 const prisma = require('../utils/prisma');
 
-const MODULE_PERMISSIONS = ['agenda', 'gabinetes', 'clientes', 'crm', 'reportes', 'configuracion'];
+const MODULE_PERMISSIONS = [
+  'agenda',
+  'gabinetes',
+  'clientes',
+  'crm',
+  'reportes',
+  'configuracion',
+  'clientesEditar',
+  'clientesAnamnesis',
+  'clientesHistorial',
+  'clientesEstado',
+  'clientesEliminar',
+  'clientesPagos',
+  'clientesExportar',
+];
 
 const rateBuckets = new Map();
 function bucketRateLimit(keyFn, limit, windowMs, message) {
