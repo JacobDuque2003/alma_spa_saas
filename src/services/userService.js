@@ -134,6 +134,7 @@ async function createUser(actor, data) {
       entityId: user.id,
       action: 'create',
       detail: pickSafe('user', { name, email, role, canAttendAppointments: !!canAttendAppointments }),
+      tenantId: user.tenantId,
     });
     return user;
   });
@@ -176,6 +177,7 @@ async function updateUser(actor, targetUserId, changes) {
       entityId: targetUserId,
       action,
       detail: pickSafe('user', safeChanges),
+      tenantId: target.tenantId,
     });
     return user;
   });
@@ -190,6 +192,9 @@ async function deleteUser(actor, targetUserId) {
   if (target.isProtected) {
     throw new ProtectedAccountError();
   }
+  if (actor.id === targetUserId) {
+    throw new BadRequestError('No puedes eliminar tu propia cuenta');
+  }
   assertTenantScope(actor, target.tenantId);
 
   return prisma.$transaction(async (tx) => {
@@ -200,6 +205,7 @@ async function deleteUser(actor, targetUserId) {
       entityId: targetUserId,
       action: 'purge',
       detail: pickSafe('user', target),
+      tenantId: target.tenantId,
     });
     return deleted;
   });
@@ -232,6 +238,7 @@ async function updatePermissions(actor, targetUserId, permissions) {
       entityId: targetUserId,
       action: 'permissionsChanged',
       detail: safePermissions,
+      tenantId: target.tenantId,
     });
     return result;
   });

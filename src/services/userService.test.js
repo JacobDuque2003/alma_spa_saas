@@ -62,6 +62,26 @@ test('updateUser permite a superadmin (sin tenant) operar sobre cualquier tenant
   assert.equal(result.name, 'Nuevo Nombre');
 });
 
+test('updateUser de superadmin audita dentro del tenant de la cuenta afectada', async () => {
+  let auditData = null;
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u2', isProtected: false, tenantId: 'tenant-spa', active: true }),
+      update: async (args) => ({ id: 'u2', ...args.data }),
+    },
+  });
+  prisma.adminAuditLog.create = async ({ data }) => { auditData = data; return {}; };
+
+  await userService.updateUser(
+    { role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' },
+    'u2',
+    { active: false }
+  );
+
+  assert.equal(auditData.tenantId, 'tenant-spa');
+  assert.equal(auditData.action, 'deactivate');
+});
+
 test('updateUser aplica cambios normalmente cuando no hay conflicto', async () => {
   mockPrisma({
     user: {
@@ -72,6 +92,19 @@ test('updateUser aplica cambios normalmente cuando no hay conflicto', async () =
 
   const result = await userService.updateUser({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 'u3', { active: false });
   assert.equal(result.active, false);
+});
+
+test('deleteUser rechaza que el superadmin se elimine a sí mismo', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'sa1', isProtected: false, tenantId: 'tenant-spa' }),
+    },
+  });
+
+  await assert.rejects(
+    () => userService.deleteUser({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' }, 'sa1'),
+    (err) => err.status === 400 && /propia cuenta/.test(err.message)
+  );
 });
 
 test('createUser ignora por completo un tenantId forjado en el body y usa el del JWT del actor', async () => {

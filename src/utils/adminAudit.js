@@ -22,10 +22,13 @@ function resolveAction(entity, changes, previousState) {
   return 'update';
 }
 
-function writeAuditLog(tx, { actor, entity, entityId, action, detail }) {
+function writeAuditLog(tx, { actor, entity, entityId, action, detail, tenantId = actor.tenantId }) {
+  if (!tenantId) {
+    throw new Error('No se puede auditar una acción sin tenantId');
+  }
   return tx.adminAuditLog.create({
     data: {
-      tenantId: actor.tenantId,
+      tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       entity,

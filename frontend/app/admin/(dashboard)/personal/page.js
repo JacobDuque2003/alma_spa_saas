@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { BarChart3, CalendarDays, ClipboardList, Clock3, Inbox, Loader2, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Pencil } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, Clock3, Inbox, Loader2, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
+import { useAuth } from "@/lib/auth-context";
 
 const PLATFORM_SUPPORT_USER = {
   id: "platform-support",
@@ -98,117 +99,61 @@ function permissionsSummary(user) {
   return enabled.length ? enabled.join(", ") : "Sin permisos activos";
 }
 
-function PermissionGroupList({ value, onChange, compact = false, readOnly = false }) {
+function PermissionGroupCard({ group, value, onChange, compact, readOnly }) {
+  const enabledCount = group.items.filter(([key]) => !!value[key]).length;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))", gap: compact ? 10 : 12 }}>
-      {PERMISSION_GROUPS.map((group) => {
-        const enabledCount = group.items.filter(([key]) => !!value[key]).length;
-        return (
-          <section
-            key={group.title}
-            style={{
-              border: "1px solid rgba(168,154,135,0.28)",
-              borderRadius: compact ? 12 : 16,
-              background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: compact ? "10px 12px" : "13px 16px",
-                borderBottom: "1px solid rgba(168,154,135,0.18)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-              }}
-            >
-              <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
-                <span style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(140,110,80,0.10)", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {groupIcon(group.title, 15)}
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: compact ? 13 : 14, fontWeight: 800, color: "#6B5540" }}>
-                    {group.title}
-                  </span>
-                  {!compact && (
-                    <span style={{ display: "block", fontSize: 11, color: "#A89A87", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {group.description}
-                    </span>
-                  )}
-                </span>
-              </span>
-              <span
-                style={{
-                  flexShrink: 0,
-                  borderRadius: 999,
-                  padding: "3px 9px",
-                  background: enabledCount ? "rgba(85,107,47,0.12)" : "rgba(168,154,135,0.14)",
-                  color: enabledCount ? "#556B2F" : "#A89A87",
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                {enabledCount}/{group.items.length}
-              </span>
-            </div>
-            <div style={{ padding: compact ? "4px 12px" : "6px 16px" }}>
-              {group.items.map(([key, label, desc], i) => (
-                <label
-                  key={key}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 14,
-                    padding: compact ? "9px 0" : "12px 0",
-                    borderBottom: i < group.items.length - 1 ? "1px solid rgba(168,154,135,0.16)" : "none",
-                    cursor: readOnly ? "default" : "pointer",
-                  }}
-                >
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{label}</span>
-                    {!compact && <span style={{ fontSize: 11, color: "#A89A87" }}>{desc}</span>}
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 42,
-                      height: 24,
-                      borderRadius: 999,
-                      padding: 3,
-                      background: value[key] ? "#8C6E50" : "rgba(168,154,135,0.25)",
-                      border: value[key] ? "1px solid #8C6E50" : "1px solid rgba(168,154,135,0.35)",
-                      transition: "background var(--motion-fast) var(--ease-out-quart)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "block",
-                        width: 16,
-                        height: 16,
-                        borderRadius: "50%",
-                        background: "#FDFCFA",
-                        transform: value[key] ? "translateX(18px)" : "translateX(0)",
-                        transition: "transform var(--motion-fast) var(--ease-spring)",
-                        boxShadow: "0 2px 6px rgba(58,47,38,0.18)",
-                      }}
-                    />
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={!!value[key]}
-                    onChange={(e) => { if (!readOnly) onChange(key, e.target.checked); }}
-                    disabled={readOnly}
-                    style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
-                  />
-                </label>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+    <section
+      style={{
+        border: "1px solid rgba(168,154,135,0.28)",
+        borderRadius: compact ? 12 : 16,
+        background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: compact ? "10px 12px" : "13px 16px", borderBottom: "1px solid rgba(168,154,135,0.18)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
+          <span style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(140,110,80,0.10)", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {groupIcon(group.title, 15)}
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: compact ? 13 : 14, fontWeight: 800, color: "#6B5540" }}>{group.title}</span>
+            {!compact && <span style={{ display: "block", fontSize: 11, color: "#A89A87", marginTop: 2 }}>{group.description}</span>}
+          </span>
+        </span>
+        <span style={{ flexShrink: 0, borderRadius: 999, padding: "3px 9px", background: enabledCount ? "rgba(85,107,47,0.12)" : "rgba(168,154,135,0.14)", color: enabledCount ? "#556B2F" : "#A89A87", fontSize: 11, fontWeight: 700 }}>{enabledCount}/{group.items.length}</span>
+      </div>
+      <div style={{ padding: compact ? "4px 12px" : "6px 16px" }}>
+        {group.items.map(([key, label, desc], i) => (
+          <label key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: compact ? "9px 0" : "12px 0", borderBottom: i < group.items.length - 1 ? "1px solid rgba(168,154,135,0.16)" : "none", cursor: readOnly ? "default" : "pointer" }}>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{label}</span>
+              {!compact && <span style={{ fontSize: 11, color: "#A89A87" }}>{desc}</span>}
+            </span>
+            <span aria-hidden="true" style={{ width: 42, height: 24, borderRadius: 999, padding: 3, background: value[key] ? "#8C6E50" : "rgba(168,154,135,0.25)", border: value[key] ? "1px solid #8C6E50" : "1px solid rgba(168,154,135,0.35)", transition: "background var(--motion-fast) var(--ease-out-quart)", flexShrink: 0 }}>
+              <span style={{ display: "block", width: 16, height: 16, borderRadius: "50%", background: "#FDFCFA", transform: value[key] ? "translateX(18px)" : "translateX(0)", transition: "transform var(--motion-fast) var(--ease-spring)", boxShadow: "0 2px 6px rgba(58,47,38,0.18)" }} />
+            </span>
+            <input type="checkbox" checked={!!value[key]} onChange={(e) => { if (!readOnly) onChange(key, e.target.checked); }} disabled={readOnly} style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PermissionGroupList({ value, onChange, compact = false, readOnly = false }) {
+  const columns = compact
+    ? [PERMISSION_GROUPS]
+    : [
+        PERMISSION_GROUPS.filter((group) => group.title !== "Clientes"),
+        PERMISSION_GROUPS.filter((group) => group.title === "Clientes"),
+      ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: compact ? 10 : 12, alignItems: "start" }}>
+      {columns.map((groups, index) => (
+        <div key={index} style={{ display: "flex", flexDirection: "column", gap: compact ? 10 : 12, minWidth: 0 }}>
+          {groups.map((group) => <PermissionGroupCard key={group.title} group={group} value={value} onChange={onChange} compact={compact} readOnly={readOnly} />)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -422,6 +367,7 @@ function NewUserModal({ phase, onClose, onSaved }) {
 }
 
 export default function PersonalPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [draft, setDraft] = useState({});
@@ -430,11 +376,14 @@ export default function PersonalPage() {
   const [loadError, setLoadError] = useState("");
   const [showNewUser, setShowNewUser] = useState(false);
   const [toggling, setToggling] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const isMobile = useIsMobile();
   const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const newUserAnim = useAnimatedMount(showNewUser, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
+  const canDeleteAccounts = currentUser?.role === "superadmin";
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -498,6 +447,22 @@ export default function PersonalPage() {
       toast.error(err.message || "Error al guardar permisos");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!deleteTarget || deleteTarget.isProtected) return;
+    setDeleting(true);
+    try {
+      await authFetch(`/users/${deleteTarget.id}`, { method: "DELETE" });
+      setUsers((prev) => prev.filter((user) => user.id !== deleteTarget.id));
+      setSelectedId((current) => current === deleteTarget.id ? null : current);
+      toast.success(`${deleteTarget.name} fue eliminada`);
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err.message || "No se pudo eliminar la cuenta");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -615,7 +580,6 @@ export default function PersonalPage() {
                         onClick={(e) => { e.stopPropagation(); toggleActive(user); }}
                         disabled={toggling === user.id}
                         title={user.active ? "Desactivar cuenta" : "Activar cuenta"}
-                        className="alma-pencil-button"
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -649,6 +613,7 @@ export default function PersonalPage() {
                         onClick={(e) => { e.stopPropagation(); setSelectedId(user.id); if (isMobile) setMobileShowDetail(true); }}
                         title="Editar cuenta"
                         aria-label="Editar cuenta"
+                        className="alma-pencil-button"
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -665,6 +630,16 @@ export default function PersonalPage() {
                       >
                         <Pencil className="alma-pencil-icon" size={13} />
                       </button>
+                      {canDeleteAccounts && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(user); }}
+                          title="Eliminar cuenta"
+                          aria-label={`Eliminar cuenta de ${user.name}`}
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, padding: 0, borderRadius: "50%", border: "1px solid rgba(194,84,80,0.35)", background: "rgba(194,84,80,0.05)", color: "#B85A56", cursor: "pointer" }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -763,14 +738,15 @@ export default function PersonalPage() {
                 <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 16px" }}>
                   Esta cuenta tiene acceso completo por su rol. Se muestra el alcance para que la dueña pueda revisarlo con la misma claridad que el personal.
                 </p>
-                <PermissionGroupList value={FULL_ACCESS_PERMISSIONS} onChange={() => {}} readOnly />
+                <PermissionGroupList value={FULL_ACCESS_PERMISSIONS} onChange={() => {}} compact={isMobile} readOnly />
+                <ScheduleSummary schedule={selected.accessSchedule} />
               </>
             ) : (
               <>
                 <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 20px" }}>
                   Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
                 </p>
-                <PermissionGroupList value={draft} onChange={updatePermission} />
+                <PermissionGroupList value={draft} onChange={updatePermission} compact={isMobile} />
                 <AccessScheduleEditor
                   compact
                   user={selected}
@@ -805,6 +781,53 @@ export default function PersonalPage() {
           }}
         />
       )}
+      {deleteTarget && (
+        <DeleteAccountModal
+          user={deleteTarget}
+          deleting={deleting}
+          onClose={() => { if (!deleting) setDeleteTarget(null); }}
+          onConfirm={deleteAccount}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScheduleSummary({ schedule }) {
+  const normalized = initialDraftFromUser({ accessSchedule: schedule });
+  const openDays = SCHEDULE_DAYS.filter(([key]) => normalized[key]);
+  return (
+    <section style={{ marginTop: 12, border: "1px solid rgba(168,154,135,0.28)", borderRadius: 16, padding: 16, background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(140,110,80,0.10)", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Clock3 size={15} /></span>
+        <div>
+          <b style={{ display: "block", fontSize: 14, color: "#6B5540" }}>Horario registrado</b>
+          <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "#A89A87" }}>Consulta del horario asociado a esta cuenta.</span>
+        </div>
+      </div>
+      {normalized.alwaysAllowed ? (
+        <span style={{ display: "inline-block", padding: "5px 10px", borderRadius: 999, background: "rgba(85,107,47,0.12)", color: "#556B2F", fontSize: 12, fontWeight: 700 }}>Acceso 24/7</span>
+      ) : openDays.length ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 12 }}>
+          {openDays.map(([key, label]) => <div key={key} style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(235,232,225,0.5)", fontSize: 12, color: "#6B5540" }}><b>{label}</b><span style={{ marginLeft: 6, color: "#A89A87" }}>{normalized[key].start}–{normalized[key].end}</span></div>)}
+        </div>
+      ) : <span style={{ fontSize: 12, color: "#A89A87" }}>Sin horario definido.</span>}
+    </section>
+  );
+}
+
+function DeleteAccountModal({ user, deleting, onClose, onConfirm }) {
+  return (
+    <div className="alma-backdrop" onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)", padding: 16 }}>
+      <div className="alma-card alma-modal" onClick={(event) => event.stopPropagation()} style={{ width: "100%", maxWidth: 430, padding: 24, position: "relative" }}>
+        <button onClick={onClose} disabled={deleting} aria-label="Cerrar" style={{ position: "absolute", top: 14, right: 14, background: "transparent", border: 0, color: "#A89A87", cursor: deleting ? "wait" : "pointer" }}><X size={20} /></button>
+        <h2 className="font-heading" style={{ margin: "0 0 10px", color: "#6B5540", fontSize: 23 }}>Eliminar cuenta</h2>
+        <p style={{ margin: "0 0 20px", color: "#6B5540", fontSize: 14, lineHeight: 1.55 }}>Vas a eliminar la cuenta de <b>{user.name}</b>. Esta acción no se puede deshacer y la persona perderá el acceso inmediatamente.</p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button type="button" onClick={onClose} disabled={deleting} style={pillSecondary}>Cancelar</button>
+          <button type="button" onClick={onConfirm} disabled={deleting} style={{ ...pillPrimary, background: "#B85A56", opacity: deleting ? 0.65 : 1 }}>{deleting ? "Eliminando…" : "Eliminar cuenta"}</button>
+        </div>
+      </div>
     </div>
   );
 }
