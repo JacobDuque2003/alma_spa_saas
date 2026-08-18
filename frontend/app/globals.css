@@ -142,6 +142,25 @@
     box-shadow: 12px 0 32px rgba(107,85,64,0.055);
   }
 
+  @keyframes alma-pencil-write {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    35% { transform: translate3d(2px, -2px, 0) rotate(-12deg); }
+    72% { transform: translate3d(-1px, 1px, 0) rotate(8deg); }
+    100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  }
+
+  .alma-pencil-button:hover .alma-pencil-icon,
+  .alma-pencil-button:focus-visible .alma-pencil-icon {
+    animation: alma-pencil-write 560ms var(--ease-spring) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .alma-pencil-button:hover .alma-pencil-icon,
+    .alma-pencil-button:focus-visible .alma-pencil-icon {
+      animation: none;
+    }
+  }
+
   button,
   [role="button"],
   [tabindex="0"] {

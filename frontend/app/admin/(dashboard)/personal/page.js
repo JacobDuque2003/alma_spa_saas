@@ -66,6 +66,7 @@ const PERMISSION_GROUPS = [
 ];
 
 const MODULES = PERMISSION_GROUPS.flatMap((group) => group.items);
+const FULL_ACCESS_PERMISSIONS = Object.fromEntries(MODULES.map(([key]) => [key, true]));
 
 function roleLabel(role) {
   return ({ superadmin: "Cuenta de plataforma", dueno: "Dueña", personal: "Terapeuta" })[role] || role;
@@ -97,7 +98,7 @@ function permissionsSummary(user) {
   return enabled.length ? enabled.join(", ") : "Sin permisos activos";
 }
 
-function PermissionGroupList({ value, onChange, compact = false }) {
+function PermissionGroupList({ value, onChange, compact = false, readOnly = false }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))", gap: compact ? 10 : 12 }}>
       {PERMISSION_GROUPS.map((group) => {
@@ -162,7 +163,7 @@ function PermissionGroupList({ value, onChange, compact = false }) {
                     gap: 14,
                     padding: compact ? "9px 0" : "12px 0",
                     borderBottom: i < group.items.length - 1 ? "1px solid rgba(168,154,135,0.16)" : "none",
-                    cursor: "pointer",
+                    cursor: readOnly ? "default" : "pointer",
                   }}
                 >
                   <span style={{ minWidth: 0 }}>
@@ -198,7 +199,8 @@ function PermissionGroupList({ value, onChange, compact = false }) {
                   <input
                     type="checkbox"
                     checked={!!value[key]}
-                    onChange={(e) => onChange(key, e.target.checked)}
+                    onChange={(e) => { if (!readOnly) onChange(key, e.target.checked); }}
+                    disabled={readOnly}
                     style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
                   />
                 </label>
@@ -500,10 +502,10 @@ export default function PersonalPage() {
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "28px 32px", display: "flex", gap: isMobile ? 0 : 24, overflow: "hidden" }}>
+    <div style={{ flex: 1, minWidth: 0, minHeight: 0, height: isMobile ? "auto" : "100%", boxSizing: "border-box", padding: isMobile ? "16px" : "28px 32px", display: "flex", gap: isMobile ? 0 : 24, overflow: "hidden" }}>
       {/* User list */}
       {(!isMobile || !mobileShowDetail) && (
-      <div style={{ width: isMobile ? "100%" : 420, flex: isMobile ? "1" : "0 0 420px", display: "flex", flexDirection: "column" }}>
+      <div style={{ width: isMobile ? "100%" : 420, flex: isMobile ? "1" : "0 0 420px", minHeight: 0, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <h1 className="font-heading" style={{ fontSize: 26, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>
@@ -535,7 +537,7 @@ export default function PersonalPage() {
         ) : loadError && users.length === 0 ? (
           <div style={{ padding: 16, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", flex: 1 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", paddingRight: 2, flex: 1, minHeight: 0 }}>
             {users.map((user) => {
               const isSelected = user.id === selectedId;
               return (
@@ -576,7 +578,7 @@ export default function PersonalPage() {
                     {roleIcon(user, 17)}
                   </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <b style={{ fontSize: 14, color: "#6B5540" }}>{user.name}</b>
                       <span
                         style={{
@@ -607,30 +609,13 @@ export default function PersonalPage() {
                         : permissionsSummary(user)}
                     </p>
                   </div>
-                  {!user.isProtected && user.role === "personal" && (user.accessSchedule == null || user.accessSchedule?.alwaysAllowed) && (
-                    <span
-                      title="Acceso 24/7 — sin restricción horaria"
-                      style={{
-                        padding: "3px 10px",
-                        borderRadius: 999,
-                        background: "rgba(201,168,118,0.28)",
-                        color: "#856330",
-                        border: "1px solid rgba(201,168,118,0.55)",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        flexShrink: 0,
-                      }}
-                    >
-                      Acceso 24/7
-                    </span>
-                  )}
                   {!user.isProtected && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleActive(user); }}
                         disabled={toggling === user.id}
                         title={user.active ? "Desactivar cuenta" : "Activar cuenta"}
+                        className="alma-pencil-button"
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -678,7 +663,7 @@ export default function PersonalPage() {
                           cursor: "pointer",
                         }}
                       >
-                        <Pencil size={13} />
+                        <Pencil className="alma-pencil-icon" size={13} />
                       </button>
                     </div>
                   )}
@@ -698,7 +683,10 @@ export default function PersonalPage() {
         style={{
           flex: 1,
           padding: isMobile ? 20 : 28,
-          minHeight: isMobile ? 0 : 580,
+          minHeight: 0,
+          height: isMobile ? "auto" : selected?.isProtected ? "auto" : "100%",
+          alignSelf: selected?.isProtected ? "flex-start" : "stretch",
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
         }}
@@ -754,6 +742,7 @@ export default function PersonalPage() {
               </div>
             </div>
 
+            <div style={{ flex: 1, minHeight: 0, overflowY: selected.isProtected ? "visible" : "auto", overscrollBehavior: "contain", paddingRight: selected.isProtected ? 0 : 4 }}>
             {selected.isProtected ? (
               <div
                 style={{
@@ -770,35 +759,23 @@ export default function PersonalPage() {
                 El backend bloquea edición, eliminación y cambios de permisos para esta cuenta. Este panel solo muestra el estado.
               </div>
             ) : selected.role !== "personal" ? (
-              <div
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(168,154,135,0.4)",
-                  background: "rgba(235,232,225,0.5)",
-                  padding: 24,
-                  fontSize: 14,
-                  color: "#A89A87",
-                }}
-              >
-                <b style={{ display: "block", color: "#6B5540" }}>Acceso completo</b>
-                Las cuentas Dueña/Super Admin no usan permisos por módulo; el backend les concede acceso completo.
-              </div>
+              <>
+                <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 16px" }}>
+                  Esta cuenta tiene acceso completo por su rol. Se muestra el alcance para que la dueña pueda revisarlo con la misma claridad que el personal.
+                </p>
+                <PermissionGroupList value={FULL_ACCESS_PERMISSIONS} onChange={() => {}} readOnly />
+              </>
             ) : (
               <>
                 <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 20px" }}>
                   Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
                 </p>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.25fr) minmax(320px, 0.75fr)", gap: 18, alignItems: "start" }}>
-                  <PermissionGroupList
-                    value={draft}
-                    onChange={updatePermission}
-                  />
-                  <AccessScheduleEditor
-                    compact
-                    user={selected}
-                    onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))}
-                  />
-                </div>
+                <PermissionGroupList value={draft} onChange={updatePermission} />
+                <AccessScheduleEditor
+                  compact
+                  user={selected}
+                  onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))}
+                />
 
                 {loadError && (
                   <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>
@@ -808,6 +785,7 @@ export default function PersonalPage() {
 
               </>
             )}
+            </div>
           </>
         ) : (
           <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", fontSize: 14, color: "#A89A87" }}>

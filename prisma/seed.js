@@ -4,7 +4,8 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-const SEED_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD || 'CambiarEnProduccion123!';
+const SEED_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD
+  || (process.env.NODE_ENV === 'production' ? null : 'CambiarEnProduccion123!');
 
 async function upsertUser({ email, name, role, tenantId, isProtected, canAttendAppointments = false }) {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
@@ -16,6 +17,9 @@ async function upsertUser({ email, name, role, tenantId, isProtected, canAttendA
 }
 
 async function main() {
+  if (!SEED_PASSWORD) {
+    throw new Error('SEED_SUPERADMIN_PASSWORD es obligatoria para ejecutar el seed en producción.');
+  }
   console.log('Seeding database...');
 
   const tenant = await prisma.tenant.upsert({
@@ -90,7 +94,7 @@ async function main() {
 
   console.log('\nSeed completado exitosamente.');
   console.log('\n--- Credenciales de prueba (misma password para todos) ---');
-  console.log(`Password: ${SEED_PASSWORD}`);
+  console.log('Contraseña configurada de forma segura (no se muestra en los registros).');
   console.log(`Superadmin:  ${superadmin.email}`);
   console.log(`Dueño:       ${owner.email}`);
   console.log(`Recepción:   ${recepcionista.email}`);

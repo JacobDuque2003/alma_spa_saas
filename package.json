@@ -14,6 +14,7 @@
     "db:seed": "node prisma/seed.js",
     "db:alma-catalog": "node scripts/apply-alma-spa-catalog.js",
     "db:verify-role": "node scripts/verify-db-role.js",
+    "db:provision-superadmin": "node scripts/provision-superadmin.js",
     "test": "node --test src/*.test.js src/middleware/*.test.js src/services/*.test.js src/utils/*.test.js src/routes/*.test.js src/routes/**/*.test.js"
   },
   "dependencies": {

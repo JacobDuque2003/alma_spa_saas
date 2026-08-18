@@ -442,8 +442,6 @@ export default function ClientesPage() {
     setIntake(null);
     setTreatments([]);
     setClientAppointments([]);
-    setPlans([]);
-    setBalance(null);
     setMobileShowDetail(false);
     setActiveTab("resumen");
   }, [isMobile, preselectedId]);
@@ -1044,7 +1042,6 @@ function IntakeCard({ intake, canEdit, onEdit }) {
 }
 
 // La interfaz de caja queda fuera de la ficha hasta construir Caja Alma como módulo propio.
-// eslint-disable-next-line no-unused-vars
 function AccountMovementsPanel({ plans, balance, canEditPayments, onPayment }) {
   const activePlan = (plans || []).find((p) => p.active) || plans?.[0];
   const balanceAmount = Number(balance?.balanceUsd || 0);
@@ -1152,7 +1149,6 @@ function AccountMovementsPanel({ plans, balance, canEditPayments, onPayment }) {
 const modalInputStyle = { width: "100%", padding: "10px 14px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 14, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
 const modalLabelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
 
-// eslint-disable-next-line no-unused-vars
 function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
   const [amountUsd, setAmountUsd] = useState("");
   const [method, setMethod] = useState("efectivo");
@@ -1542,7 +1538,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
                       <span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)} · Tratamiento registrado</span>
                     </div>
                     {canEdit && <div style={{ display: "flex", gap: 6 }}>
-                      <button type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil size={14} /></button>
+                      <button className="alma-pencil-button" type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil className="alma-pencil-icon" size={14} /></button>
                       <button type="button" onClick={() => setTreatmentToDelete(t)} aria-label="Eliminar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(194,84,80,0.28)", background: "rgba(194,84,80,0.06)", color: "#9A4E48", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={14} /></button>
                     </div>}
                   </div>
