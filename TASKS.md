@@ -8,6 +8,21 @@
 - [ ] Equipo: seguir simplificando permisos y horarios para reducir scroll y ruido visual.
 - [ ] Reportes: mejorar lectura con gráficos/jerarquía visual menos genérica.
 
+## Blindaje de seguridad — auditoría OWASP/NIST (2026-08-17)
+
+- [x] Dependencias de producción verificadas: `npm audit --omit=dev` sin vulnerabilidades conocidas.
+- [x] Sesiones: cookie `HttpOnly`/`Secure`/`SameSite` y token usado únicamente por el proxy del servidor (control existente, vuelto a verificar).
+- [x] Solicitudes mutables: el proxy rechaza intentos cross-site por origen no confiable.
+- [x] Respuestas de autenticación y proxy: `Cache-Control: no-store, private` para que información sensible no quede en cachés.
+- [x] Frontend: cabeceras contra clickjacking, MIME sniffing, fuga de referrer y permisos innecesarios del navegador.
+- [x] Rate limits: mapas en memoria acotados para impedir crecimiento ilimitado por IPs fabricadas.
+- [x] Cuentas deshabilitadas: una sesión existente queda bloqueada al siguiente request, incluso si es dueña/superadmin.
+- [ ] Invalidación global de sesión después de cambio/recuperación de clave (token versionado o tabla de sesiones).
+- [ ] Rate limiting distribuido (Redis) antes de escalar a varias instancias.
+- [ ] MFA y recuperación de cuenta endurecida para dueña/superadmin.
+- [ ] Revisión de infraestructura Railway: variables, CORS, roles de base de datos, backup/restore y alertas, sin exponer secretos.
+- [ ] Logging estructurado, monitoreo y procedimiento de respuesta ante incidentes.
+
 ## Fase 5C/5D - Panel admin Clientes/CRM/Reportes/Personal/Configuracion - COMPLETADA (2026-07-16)
 
 - [x] Revision bloqueante real con Backend Architect y Security/AppSec antes de implementar.

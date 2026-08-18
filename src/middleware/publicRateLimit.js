@@ -1,10 +1,28 @@
 const buckets = new Map();
+const MAX_RATE_BUCKETS = 10_000;
+
+function makeRoomForBucket(now) {
+  if (buckets.size < MAX_RATE_BUCKETS) return;
+
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
+
+  // Las rutas públicas generan llaves desde IP/tenant controlados por la
+  // request. Mantener este límite evita crecer sin tope ante un flood.
+  while (buckets.size >= MAX_RATE_BUCKETS) {
+    const oldest = buckets.keys().next().value;
+    if (!oldest) break;
+    buckets.delete(oldest);
+  }
+}
 
 function hit(key, limit, windowMs) {
   const now = Date.now();
   const bucket = buckets.get(key);
 
   if (!bucket || bucket.resetAt <= now) {
+    if (!bucket) makeRoomForBucket(now);
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return { allowed: true, remaining: limit - 1 };
   }

@@ -80,3 +80,37 @@ test('accessSchedule bloquea mutaciones fuera de horario con reason outOfSchedul
   assert.equal(res.statusCode, 403);
   assert.equal(res.body.reason, 'outOfSchedule');
 });
+
+test('accessSchedule invalida el token de una cuenta deshabilitada', async () => {
+  prisma.user = { findUnique: async () => ({ accessSchedule: null, active: false }) };
+  prisma.tenant = { findUnique: async () => ({ config: { timezone: 'America/Guayaquil' } }) };
+
+  const req = {
+    method: 'GET',
+    user: { id: 'u-disabled', email: 'disabled@alma.test', role: 'personal', tenantId: 't1' },
+  };
+  const res = mockResponse();
+  let nextCalled = false;
+
+  await accessSchedule(req, res, () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.error, 'Sesión inválida o cuenta inactiva');
+});
+
+test('accessSchedule también invalida una cuenta dueña deshabilitada', async () => {
+  prisma.user = { findUnique: async () => ({ active: false }) };
+
+  const req = {
+    method: 'GET',
+    user: { id: 'u-owner-disabled', email: 'owner@alma.test', role: 'dueno', tenantId: 't1' },
+  };
+  const res = mockResponse();
+  let nextCalled = false;
+
+  await accessSchedule(req, res, () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 401);
+});

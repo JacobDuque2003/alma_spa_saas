@@ -2,8 +2,37 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * La cookie de sesión ya usa SameSite=Lax, pero las mutaciones también deben
+ * comprobar su procedencia. Así una página de otro sitio no puede reutilizar
+ * la sesión del navegador para crear, editar o eliminar información.
+ *
+ * Algunos clientes no-browser no mandan Origin; se permiten porque no pueden
+ * leer la cookie HttpOnly de esta aplicación y sirven para soporte controlado.
+ */
+function isTrustedMutation(req) {
+  if (!MUTATING_METHODS.has(req.method)) return true;
+
+  const fetchSite = req.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") return false;
+
+  const origin = req.headers.get("origin");
+  if (!origin) return true;
+
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  const host = forwardedHost || req.headers.get("host");
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const protocol = forwardedProto || new URL(req.url).protocol.replace(":", "");
+  return origin === `${protocol}://${host}`;
+}
 
 async function proxyRequest(req, { params }) {
+  if (!isTrustedMutation(req)) {
+    return NextResponse.json({ error: "Origen de solicitud no permitido" }, { status: 403 });
+  }
+
   const { path } = await params;
   const target = `${API_URL}/${path.join("/")}`;
   const url = new URL(target);
@@ -37,7 +66,13 @@ async function proxyRequest(req, { params }) {
   }
   const data = await res.text();
 
-  const responseHeaders = { "Content-Type": res.headers.get("Content-Type") || "application/json" };
+  // Datos de clientes, reservas y permisos nunca deben guardarse en cachés del
+  // navegador ni de proxies intermedios.
+  const responseHeaders = {
+    "Content-Type": res.headers.get("Content-Type") || "application/json",
+    "Cache-Control": "no-store, private",
+    "X-Content-Type-Options": "nosniff",
+  };
   const outOfSchedule = res.headers.get("X-Alma-Out-Of-Schedule");
   const outOfScheduleNext = res.headers.get("X-Alma-Out-Of-Schedule-Next");
   if (outOfSchedule) responseHeaders["X-Alma-Out-Of-Schedule"] = outOfSchedule;

@@ -60,9 +60,23 @@ async function accessSchedule(req, res, next) {
 
     const roleAlwaysAllowed = req.user.role === 'superadmin' || req.user.role === 'dueno';
 
+    // El rol dueño/superadmin evita la RESTRICCIÓN DE HORARIO, pero nunca debe
+    // convertir un JWT emitido antes de una desactivación en acceso vigente.
+    // Sin este chequeo, una cuenta deshabilitada podía conservar acceso hasta
+    // que caducara su token.
+    if (roleAlwaysAllowed) {
+      const privilegedUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { active: true },
+      });
+      if (!privilegedUser || privilegedUser.active === false) {
+        return res.status(401).json({ error: 'Sesión inválida o cuenta inactiva' });
+      }
+      return next();
+    }
+
     // Cargar accessSchedule + timezone del tenant en un solo ida y vuelta
-    // (solo si el rol no bypassa; ahorra queries en el caso común de dueño).
-    if (roleAlwaysAllowed) return next();
+    // (solo si el rol no bypassa; para dueño ya verificamos active arriba).
 
     const [userRow, tenantRow] = await Promise.all([
       prisma.user.findUnique({ where: { id: req.user.id }, select: { accessSchedule: true, active: true } }),
@@ -71,9 +85,8 @@ async function accessSchedule(req, res, next) {
         : Promise.resolve(null),
     ]);
 
-    if (!userRow || !userRow.active) {
-      // Cuenta borrada o inactiva — el resto de la app ya rechazará; aquí solo pasamos.
-      return next();
+    if (!userRow || userRow.active === false) {
+      return res.status(401).json({ error: 'Sesión inválida o cuenta inactiva' });
     }
 
     const tz = getTenantTimezone(tenantRow?.config);

@@ -21,6 +21,25 @@ const MODULE_PERMISSIONS = [
 ];
 
 const rateBuckets = new Map();
+const MAX_RATE_BUCKETS = 10_000;
+
+function makeRoomForBucket(buckets, now) {
+  if (buckets.size < MAX_RATE_BUCKETS) return;
+
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
+
+  // La llave contiene datos controlados por visitantes (IP/correo). Si tras
+  // purgar expirados aún hay demasiadas, descartamos la más antigua para que
+  // un ataque de alta cardinalidad no consuma memoria del proceso.
+  while (buckets.size >= MAX_RATE_BUCKETS) {
+    const oldest = buckets.keys().next().value;
+    if (!oldest) break;
+    buckets.delete(oldest);
+  }
+}
+
 function bucketRateLimit(keyFn, limit, windowMs, message) {
   return function rateLimiter(req, res, next) {
     const key = keyFn(req);
@@ -28,6 +47,7 @@ function bucketRateLimit(keyFn, limit, windowMs, message) {
     const bucket = rateBuckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {
+      if (!bucket) makeRoomForBucket(rateBuckets, now);
       rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
       return next();
     }

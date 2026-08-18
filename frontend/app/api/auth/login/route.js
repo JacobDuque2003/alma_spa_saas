@@ -16,7 +16,10 @@ export async function POST(req) {
       maxAge: 60 * 60 * 8,
     });
 
-    return NextResponse.json({ user: data.user });
+    return NextResponse.json(
+      { user: data.user },
+      { headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" } }
+    );
   } catch (err) {
     return NextResponse.json(
       {
@@ -24,7 +27,10 @@ export async function POST(req) {
         ...(err.reason ? { reason: err.reason } : {}),
         ...(err.nextWindowOpensAt ? { nextWindowOpensAt: err.nextWindowOpensAt } : {}),
       },
-      { status: err.status || 500 }
+      {
+        status: err.status || 500,
+        headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" },
+      }
     );
   }
 }
