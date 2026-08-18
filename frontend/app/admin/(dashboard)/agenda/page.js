@@ -765,7 +765,9 @@ function buildSlotLanes(items) {
 
 function visibleScheduleEntries(items) {
   return groupAppointmentsBySlot(items).flatMap(({ key, appointments }) => {
-    if (appointments.length > 3) return [{ type: "group", key, appointments }];
+    // En la semana una hora representa un bloque, no una pila de tarjetas.
+    // Las reservas simultáneas se muestran juntas y se abren al hacer clic.
+    if (appointments.length > 1) return [{ type: "group", key, appointments }];
     return appointments.map((appt) => ({ type: "appointment", key: appt.id, appointment: appt }));
   });
 }
@@ -787,7 +789,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
   const HOUR_HEIGHT = 66;
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "0 32px 28px" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: "0 clamp(16px, 2vw, 28px) 28px" }}>
       <div
         style={{
           display: "grid",
@@ -921,7 +923,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       }}
                     >
                       <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {entry.appointments.length} citas · {formatTime(appt.startsAt)}
+                        {entry.appointments.length} reservas · {formatTime(appt.startsAt)}
                       </div>
                       <div style={{ fontSize: 10, opacity: 0.82, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
                         {names}{entry.appointments.length > 2 ? ` +${entry.appointments.length - 2} más` : ""}

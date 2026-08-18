@@ -17,6 +17,8 @@ function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
 }
 
+// Reservado para la futura Caja Alma. La ficha ya no muestra movimientos,
+// pero este formateador mantiene consistentes los componentes diferidos.
 function money(value) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
@@ -329,8 +331,6 @@ export default function ClientesPage() {
   const [intake, setIntake] = useState(null);
   const [treatments, setTreatments] = useState([]);
   const [clientAppointments, setClientAppointments] = useState([]);
-  const [plans, setPlans] = useState([]);
-  const [balance, setBalance] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -344,7 +344,6 @@ export default function ClientesPage() {
   const canEditIntake = hasClientPermission(user, "clientesAnamnesis");
   const canEditHistory = hasClientPermission(user, "clientesHistorial");
   const canToggleClientStatus = hasClientPermission(user, "clientesEstado");
-  const canEditPayments = hasClientPermission(user, "clientesPagos");
   const canExportClients = hasClientPermission(user, "clientesExportar") || hasClientPermission(user, "reportes") || hasClientPermission(user, "configuracion");
 
   const fetchClients = useCallback(async () => {
@@ -384,20 +383,16 @@ export default function ClientesPage() {
     if (!selectedId) return;
     setDetailLoading(true);
     try {
-      const [clientData, intakeData, treatmentsData, appointmentData, plansData, balanceData] = await Promise.all([
+      const [clientData, intakeData, treatmentsData, appointmentData] = await Promise.all([
         authFetch(`/clients/${selectedId}`),
         authFetch(`/clients/${selectedId}/intake`).catch((err) => (err.status === 404 ? null : Promise.reject(err))),
         authFetch(`/clients/${selectedId}/treatments`).catch(() => []),
         authFetch("/appointments", { query: { clientId: selectedId } }).catch(() => []),
-        authFetch(`/clients/${selectedId}/plans`).catch(() => []),
-        authFetch(`/clients/${selectedId}/balance`).catch(() => null),
       ]);
       setDetail(clientData);
       setIntake(intakeData);
       setTreatments(Array.isArray(treatmentsData) ? treatmentsData : []);
       setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
-      setPlans(Array.isArray(plansData) ? plansData : []);
-      setBalance(balanceData);
     } catch {
       setDetail(null);
     } finally {
@@ -407,22 +402,15 @@ export default function ClientesPage() {
 
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
-  const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showEditClient, setShowEditClient] = useState(false);
   const [showDeleteClient, setShowDeleteClient] = useState(false);
   const [showEditIntake, setShowEditIntake] = useState(false);
   const [showNewClient, setShowNewClient] = useState(false);
-  const paymentAnim = useAnimatedMount(showPaymentForm, 220);
   const editClientAnim = useAnimatedMount(showEditClient, 220);
   const deleteClientAnim = useAnimatedMount(showDeleteClient, 220);
   const editIntakeAnim = useAnimatedMount(showEditIntake, 220);
   const newClientAnim = useAnimatedMount(showNewClient, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
-
-  function registerPayment() {
-    if (!selectedId) return;
-    setShowPaymentForm(true);
-  }
 
   function openClientDetail(clientId) {
     setSelectedId(clientId);
@@ -438,8 +426,6 @@ export default function ClientesPage() {
     setIntake(null);
     setTreatments([]);
     setClientAppointments([]);
-    setPlans([]);
-    setBalance(null);
     setMobileShowDetail(false);
     setActiveTab("resumen");
   }
@@ -547,7 +533,7 @@ export default function ClientesPage() {
   const appointmentCount = clientAppointments.length;
   const treatmentCount = treatments.length;
   const tabItems = [
-    { key: "resumen", label: "Resumen", meta: Array.isArray(balance?.entries) ? balance.entries.length : 0 },
+    { key: "resumen", label: "Resumen", meta: appointmentCount },
     { key: "anamnesis", label: "Anamnesis", meta: intake?.consentSigned ? "Firmada" : "Sin firma" },
     { key: "historial", label: "Historial", meta: treatmentCount + appointmentCount },
   ];
@@ -760,15 +746,6 @@ export default function ClientesPage() {
           </div>
         ) : detail ? (
           <>
-            {paymentAnim.shouldRender && (
-              <PaymentFormModal
-                clientName={detail.fullName}
-                phase={paymentAnim.phase}
-                onClose={() => setShowPaymentForm(false)}
-                onSaved={() => { setShowPaymentForm(false); fetchDetail(); }}
-                clientId={selectedId}
-              />
-            )}
             {editClientAnim.shouldRender && (
               <EditClientModal
                 client={actionClient || detail}
@@ -937,7 +914,7 @@ export default function ClientesPage() {
             </div>
 
             <div style={{ flex: 1, minHeight: 0 }}>
-              {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} balance={balance} plans={plans} canEdit={canEditClients} canEditPayments={canEditPayments} onEdit={() => setShowEditClient(true)} onPayment={registerPayment} onCopyEmail={handleCopyEmail} />}
+              {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} appointments={clientAppointments} canEdit={canEditClients} onEdit={() => setShowEditClient(true)} onCopyEmail={handleCopyEmail} />}
               {activeTab === "anamnesis" && <IntakeCard intake={intake} canEdit={canEditIntake} onEdit={() => setShowEditIntake(true)} />}
               {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} canEdit={canEditHistory} onSaved={fetchDetail} />}
             </div>
@@ -953,23 +930,27 @@ export default function ClientesPage() {
   );
 }
 
-function ClientPersonalSummaryCard({ client, balance, plans, canEdit, canEditPayments, onEdit, onPayment, onCopyEmail }) {
+function ClientPersonalSummaryCard({ client, appointments, canEdit, onEdit, onCopyEmail }) {
   const birthday = client?.birthday ? birthdayDateLabel(client.birthday) : "Sin fecha";
   const age = client?.age != null ? `${client.age} años` : "Sin edad";
   const email = client?.email || "Sin correo";
+  const orderedAppointments = [...(appointments || [])].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  const nextAppointment = orderedAppointments.find((appointment) => new Date(appointment.startsAt) >= new Date() && appointment.status !== "cancelado");
+  const previousAppointments = orderedAppointments.filter((appointment) => new Date(appointment.startsAt) < new Date() && appointment.status !== "cancelado");
+  const lastAppointment = previousAppointments[previousAppointments.length - 1];
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 18, alignItems: "stretch" }}>
+    <div style={{ display: "flex", minWidth: 0 }}>
       <div
         className="alma-card"
         onClick={canEdit ? onEdit : undefined}
         title={canEdit ? "Editar información de la clienta" : undefined}
-        style={{ padding: 24, background: "linear-gradient(135deg, rgba(253,252,250,0.98), rgba(235,205,181,0.16))", border: "1px solid rgba(201,168,118,0.24)", boxShadow: "0 22px 55px rgba(107,85,64,0.08)", cursor: canEdit ? "pointer" : "default" }}
+        style={{ width: "100%", padding: 24, background: "linear-gradient(135deg, rgba(253,252,250,0.98), rgba(235,205,181,0.16))", border: "1px solid rgba(201,168,118,0.24)", boxShadow: "0 22px 55px rgba(107,85,64,0.08)", cursor: canEdit ? "pointer" : "default" }}
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
           <div>
-            <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>Información</h3>
-            <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 13 }}>Datos principales de la clienta.</p>
+            <h3 className="font-heading" style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: 0 }}>Perfil de la clienta</h3>
+            <p style={{ margin: "4px 0 0", color: "#A89A87", fontSize: 13 }}>Contacto, ficha y seguimiento de atención.</p>
           </div>
           <span style={{ borderRadius: 999, padding: "6px 11px", fontSize: 12, fontWeight: 800, color: client?.active === false ? "#9A4E48" : "#5C7A40", background: client?.active === false ? "rgba(194,84,80,0.08)" : "rgba(92,122,64,0.10)" }}>
             {client?.active === false ? "Deshabilitada" : "Activa"}
@@ -990,9 +971,10 @@ function ClientPersonalSummaryCard({ client, balance, plans, canEdit, canEditPay
           <PersonalInfoItem label="Cumpleaños" value={`${birthday} · ${age}`} />
           <PersonalInfoItem label="Clienta desde" value={shortDate(client?.createdAt)} />
           <PersonalInfoItem label="Dirección" value={client?.address || "Sin dirección"} />
+          <PersonalInfoItem label="Próxima reserva" value={nextAppointment ? `${shortDate(nextAppointment.startsAt)} · ${nextAppointment.service?.name || "Reserva"}` : "Sin reserva próxima"} />
+          <PersonalInfoItem label="Última atención" value={lastAppointment ? `${shortDate(lastAppointment.startsAt)} · ${lastAppointment.service?.name || "Reserva"}` : "Sin atenciones aún"} />
         </div>
       </div>
-      <AccountMovementsPanel plans={plans} balance={balance} canEditPayments={canEditPayments} onPayment={onPayment} />
     </div>
   );
 }
@@ -1061,6 +1043,8 @@ function IntakeCard({ intake, canEdit, onEdit }) {
   );
 }
 
+// La interfaz de caja queda fuera de la ficha hasta construir Caja Alma como módulo propio.
+// eslint-disable-next-line no-unused-vars
 function AccountMovementsPanel({ plans, balance, canEditPayments, onPayment }) {
   const activePlan = (plans || []).find((p) => p.active) || plans?.[0];
   const balanceAmount = Number(balance?.balanceUsd || 0);
@@ -1168,6 +1152,7 @@ function AccountMovementsPanel({ plans, balance, canEditPayments, onPayment }) {
 const modalInputStyle = { width: "100%", padding: "10px 14px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 14, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
 const modalLabelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
 
+// eslint-disable-next-line no-unused-vars
 function PaymentFormModal({ clientName, clientId, phase, onClose, onSaved }) {
   const [amountUsd, setAmountUsd] = useState("");
   const [method, setMethod] = useState("efectivo");

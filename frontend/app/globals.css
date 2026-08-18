@@ -113,6 +113,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html,
+  body {
+    min-height: 100%;
+    margin: 0;
+    background: #EBE8E1;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -127,6 +133,13 @@
     border: 1px solid #DDD6CC;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(107, 85, 64, 0.08);
+  }
+
+  .alma-nav-rail {
+    background:
+      radial-gradient(circle at 50% 8%, rgba(235,205,181,0.48), transparent 22%),
+      linear-gradient(180deg, #FDFCFA 0%, #F5F1EA 100%);
+    box-shadow: 12px 0 32px rgba(107,85,64,0.055);
   }
 
   button,

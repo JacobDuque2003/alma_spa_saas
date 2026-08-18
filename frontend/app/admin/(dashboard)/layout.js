@@ -385,12 +385,10 @@ function Shell({ children }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <aside
-        className="flex flex-col"
+        className="alma-nav-rail flex flex-col"
         style={{
           width: sidebarCollapsed ? 76 : 214,
           flex: `0 0 ${sidebarCollapsed ? 76 : 214}px`,
-          background: "linear-gradient(180deg, #FDFCFA 0%, #F2EFEA 100%)",
-          borderRight: "1px solid rgba(168,154,135,0.28)",
           padding: sidebarCollapsed ? "16px 10px" : "18px 14px 16px",
           transition: "width var(--motion-base) var(--ease-out-quart), flex-basis var(--motion-base) var(--ease-out-quart)",
         }}
@@ -542,14 +540,14 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
         href={item.href}
         style={{
           ...baseStyle,
-          background: "linear-gradient(135deg, #8C6E50 0%, #765A3F 100%)",
+          background: "linear-gradient(135deg, #9A7958 0%, #7B6045 100%)",
           color: "#F7F5F0",
           fontWeight: 700,
-          boxShadow: active ? "0 12px 28px rgba(107,85,64,0.18)" : "none",
+          boxShadow: active ? "0 10px 22px rgba(107,85,64,0.16)" : "none",
         }}
         title={collapsed ? item.label : undefined}
       >
-        {Icon && <Icon size={18} />}
+        {Icon && <Icon size={18} strokeWidth={2} />}
         {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
         {badge > 0 && <span className="alma-badge" style={collapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
       </Link>
@@ -568,7 +566,7 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
         e.currentTarget.style.background = "transparent";
       }}
     >
-      {Icon && <Icon size={18} />}
+      {Icon && <Icon size={18} strokeWidth={1.8} />}
       {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
       {badge > 0 && <span className="alma-badge" style={collapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
     </Link>
