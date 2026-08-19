@@ -11,6 +11,20 @@
 - **Fix aplicado:** `accessSchedule` corregido a `null` (fail-open, 24/7) vía script directo contra Railway usando el rol de runtime (`DATABASE_URL`, no el de migraciones). Se registró en `AdminAuditLog` (entity `user`, action `update`, actor Jacob, con el detalle before/after) para dejar rastro de la intervención manual.
 - **Verificación de login — evidencia real, sin manejar su contraseña:** se replicó exactamente el código de `authService.login()` (mismo `checkAccess`, mismo `accessSchedule` real ya corregido, mismo tenant/timezone reales de Railway, hora real) contra su fila real. Resultado: `{ accessScheduleInDb: null, roleAlwaysAllowed: false, loginGateResult: { allowed: true } }`. No se tocó ni se pidió su contraseña — verificar el login completo requeriría credenciales que no corresponde manejar.
 
+### P1 — 15 tests fallando: diagnóstico y resultado
+
+**Los 15 eran categoría (b) — mocks/fixtures desactualizados. Ninguno era regresión real de seguridad ni de aislamiento tenant.**
+
+**Causa raíz común:** el middleware `accessSchedule` (agregado por 9b, invocado dentro de `authenticate.js` en cada request autenticada) hace su propio `prisma.user.findUnique(...)`. Los archivos de test que ya existían antes de 9b (`clientUserRoutes.test.js`, `authenticate.test.js`) monkey-parchean modelos específicos sobre la instancia **real** de `PrismaClient` (`src/utils/prisma.js` no es un mock — es `new PrismaClient()` real), pero nunca mockearon `prisma.user`. Sin ese mock, la llamada cae en la base de datos real, no encuentra al usuario de prueba (`u1`), y `accessSchedule` responde `401 "Sesión inválida o cuenta inactiva"` **antes** de llegar a la ruta — de ahí que las 14 fallas de `/clients` y `/search` mostraran `401` donde se esperaba `403`/`200`. Otros archivos de rutas (`authLogin.test.js`, `auditLog.test.js`, `authMe.test.js`, `accessScheduleReadOnly.test.js`) **sí** tenían este mock — fueron actualizados junto con 9b; estos dos archivos quedaron atrás.
+
+- **`GET /clients/:id bloquea cross-tenant`** — confirmado que ejercita lógica real: la ruta delega en `clientService.getClient()`, que usa `assertTenantScope()` real (mismo patrón que `userService.js`). El mock solo sustituye `prisma.client.findUnique`, no la lógica de aislamiento. **Aislamiento tenant intacto, no hubo regresión.**
+- **`authenticate deriva req.user del JWT`** — mismo problema (401 en vez de que `next()` se llamara). Al agregar el mock apareció un SEGUNDO bug de mock (no de producción): el mismo `prisma.user.findUnique` mockeado también atiende el backfill de email en `authenticate.js:24`; sin `email:null` explícito en el mock, `req.user.email` quedaba `undefined` en vez de `null`. Corregido en el mock, no en el código de producción.
+- **Fix:** se agregó `prisma.user = { findUnique: async () => ({ active: true, accessSchedule: null }) }` (con `email: null` donde aplica) a cada test que lo necesitaba — [clientUserRoutes.test.js](src/routes/clientUserRoutes.test.js) (14 tests) y [authenticate.test.js](src/middleware/authenticate.test.js) (1 test). Mismo patrón que los archivos ya actualizados; no se tocó middleware de producción ni lógica de tenant — no ameritó GATE.
+
+**Resultado: backend 303/303 tests pasando.** Frontend: sin test runner configurado (`package.json` solo tiene `dev`/`build`/`start`) — ya documentado como pendiente en el plan de H6/Extended#2, no es parte de esta ronda.
+
+**Observación secundaria (no corregida, fuera de las 15, no autorizado tocarla):** en `authMe.test.js`, el mock de `prisma.user.findUnique` tiene asserts sobre `args.select` pensados para la llamada de la propia ruta `/auth/me`. La llamada de `accessSchedule` (que llega primero, con un `select` distinto) dispara esos asserts y los hace fallar — pero el error queda absorbido por el `catch` fail-open de `accessSchedule.js:112`, así que el test pasa igual, por la razón equivocada. No es uno de los 15, no se tocó.
+
 ### No tocado en esta ronda (por restricción explícita)
 
 Cabinas/Servicios, `Room.colorHex`, diseño GET-solo-lectura de 9b (`7774f2c`), arquitectura multi-tenant.

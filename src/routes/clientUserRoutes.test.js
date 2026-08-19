@@ -15,7 +15,17 @@ function token(payload = {}) {
   return signToken({ id: 'u1', tenantId: 't1', role: 'personal', ...payload });
 }
 
+// El middleware accessSchedule (post-authenticate) hace su propio
+// prisma.user.findUnique({ select: { accessSchedule, active } }) en cada
+// request autenticada, sea cual sea el rol. Sin este mock, cae en la
+// instancia real de Prisma y el usuario de prueba no existe en la base →
+// 401 "Sesión inválida o cuenta inactiva" antes de llegar a la ruta.
+function mockAccessScheduleUser() {
+  prisma.user = { findUnique: async () => ({ active: true, accessSchedule: null }) };
+}
+
 test('GET /clients exige permiso clientes', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: false }) };
   const res = await supertest(app).get('/clients').set('Authorization', `Bearer ${token()}`);
   assert.equal(res.status, 403);
@@ -23,6 +33,7 @@ test('GET /clients exige permiso clientes', async () => {
 
 test('GET /clients devuelve datos base sin ClientIntake aunque el cliente tenga ficha', async () => {
   let argsSeen = null;
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true }) };
   prisma.client = {
     findMany: async (args) => {
@@ -45,6 +56,7 @@ test('GET /clients devuelve datos base sin ClientIntake aunque el cliente tenga 
 
 test('GET /clients/export exige permiso extra reportes o configuracion y no exporta ClientIntake', async () => {
   let argsSeen = null;
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, reportes: true, configuracion: false }) };
   prisma.client = {
     findMany: async (args) => {
@@ -77,6 +89,7 @@ test('GET /clients/export exige permiso extra reportes o configuracion y no expo
 });
 
 test('GET /clients/export niega a personal con clientes pero sin reportes/configuracion', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesExportar: false, reportes: false, configuracion: false }) };
   prisma.client = { findMany: async () => [] };
 
@@ -85,6 +98,7 @@ test('GET /clients/export niega a personal con clientes pero sin reportes/config
 });
 
 test('GET /clients/export permite permiso fino clientesExportar sin reportes/configuracion', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesExportar: true, reportes: false, configuracion: false }) };
   prisma.client = { findMany: async () => [] };
 
@@ -94,6 +108,7 @@ test('GET /clients/export permite permiso fino clientesExportar sin reportes/con
 });
 
 test('PATCH /clients/:id exige permiso fino clientesEditar', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEditar: false }) };
   const res = await supertest(app)
     .patch('/clients/c1')
@@ -103,6 +118,7 @@ test('PATCH /clients/:id exige permiso fino clientesEditar', async () => {
 });
 
 test('PUT /clients/:id/intake exige permiso fino clientesAnamnesis', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesAnamnesis: false }) };
   const res = await supertest(app)
     .put('/clients/c1/intake')
@@ -112,6 +128,7 @@ test('PUT /clients/:id/intake exige permiso fino clientesAnamnesis', async () =>
 });
 
 test('PATCH /clients/:id/disable exige permiso fino clientesEstado', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEstado: false }) };
   const res = await supertest(app)
     .patch('/clients/c1/disable')
@@ -120,6 +137,7 @@ test('PATCH /clients/:id/disable exige permiso fino clientesEstado', async () =>
 });
 
 test('DELETE /clients/:id exige permiso fino clientesEliminar', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEliminar: false }) };
   const res = await supertest(app)
     .delete('/clients/c1')
@@ -128,6 +146,7 @@ test('DELETE /clients/:id exige permiso fino clientesEliminar', async () => {
 });
 
 test('POST /clients/:id/treatments exige permiso fino clientesHistorial', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesHistorial: false }) };
   const res = await supertest(app)
     .post('/clients/c1/treatments')
@@ -137,6 +156,7 @@ test('POST /clients/:id/treatments exige permiso fino clientesHistorial', async 
 });
 
 test('POST /clients/:id/payments exige permiso fino clientesPagos', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesPagos: false }) };
   const res = await supertest(app)
     .post('/clients/c1/payments')
@@ -146,6 +166,7 @@ test('POST /clients/:id/payments exige permiso fino clientesPagos', async () => 
 });
 
 test('GET /clients/:id bloquea cross-tenant', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: true }) };
   prisma.client = {
     findUnique: async () => ({ id: 'c-ajeno', tenantId: 'tenant-ajeno', fullName: 'Ajena', whatsapp: '+593', active: true }),
@@ -157,6 +178,7 @@ test('GET /clients/:id bloquea cross-tenant', async () => {
 
 test('GET /search exige permiso clientes y devuelve resultados mínimos tenant-scoped', async () => {
   let argsSeen = null;
+  mockAccessScheduleUser();
   prisma.client = {
     findMany: async (args) => {
       argsSeen = args;
@@ -175,6 +197,7 @@ test('GET /search exige permiso clientes y devuelve resultados mínimos tenant-s
 });
 
 test('GET /search niega a personal sin permiso clientes', async () => {
+  mockAccessScheduleUser();
   prisma.rolePermission = { findUnique: async () => ({ clientes: false }) };
 
   const res = await supertest(app)

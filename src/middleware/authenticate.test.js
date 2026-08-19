@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 
+const prisma = require('../utils/prisma');
 const { signToken } = require('../utils/jwt');
 const authenticate = require('./authenticate');
 
@@ -27,6 +28,14 @@ test('authenticate rechaza con 401 si el token es inválido', async () => {
 });
 
 test('authenticate deriva req.user del JWT (nunca de params/body/query)', async () => {
+  // accessSchedule (post-authenticate) hace su propio prisma.user.findUnique
+  // para el chequeo de cuenta activa del rol dueño; sin este mock cae en la
+  // instancia real de Prisma, no encuentra a 'u1' y responde 401 sin llamar
+  // a next(), aunque req.user ya se derivó correctamente del JWT. El mismo
+  // mock también atiende el backfill de email de authenticate.js (línea 24),
+  // por eso incluye email:null explícito — sin él, u.email sale undefined y
+  // pisa el default null que el JWT sin email ya había fijado en req.user.
+  prisma.user = { findUnique: async () => ({ active: true, email: null }) };
   const token = signToken({ id: 'u1', tenantId: 't1', role: 'dueno' });
   const req = { headers: { authorization: `Bearer ${token}` }, params: { tenantId: 'tenant-forjado' }, body: { tenantId: 'otro-forjado' } };
   const { nextCalled } = await callMiddleware(req);
