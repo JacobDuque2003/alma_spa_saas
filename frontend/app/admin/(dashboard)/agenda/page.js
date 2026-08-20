@@ -1883,7 +1883,10 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         setAvailableSlots(slots);
         setTime((prev) => (slots.includes(prev) ? prev : slots[0] || ""));
       })
-      .catch(() => setAvailableSlots([]))
+      .catch((err) => {
+        setAvailableSlots([]);
+        toast.error(err?.message || "No se pudieron cargar los horarios disponibles");
+      })
       .finally(() => setSlotsLoading(false));
   }, [serviceId, date]);
 
