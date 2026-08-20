@@ -12,7 +12,21 @@
 
 **Fix aplicado:** el catch ahora hace `toast.error(err?.message || "No se pudieron cargar los horarios disponibles")` antes de vaciar `availableSlots`. Cualquier falla futura del endpoint será visible en vez de indistinguible de "sin cupo".
 
-**Fix 2 (Cabina 7 fuera de horario) pendiente de aplicar — ver siguiente entrada de memoria una vez commiteado.**
+### Fix 2 — Cabina 7 (TERAPIAS) abría fuera de su horario (aplicado y verificado con evidencia real)
+
+**Causa raíz de primer nivel:** `roomBusinessHours()` en [appointmentService.js:43-54](src/services/appointmentService.js:43) — cuando una cabina con `schedule` propio (Cabina 7) no tiene entrada para el día actual, el código original caía al horario GENERAL del tenant en vez de tratarse como cerrada. Contradecía el punto 16 ya verificado ("solo miércoles 8-12 y 14-17"). Se corrigió para devolver `{morning:null, afternoon:null}` cuando el día no está en el `schedule` de la cabina.
+
+**Causa raíz real (de segundo nivel, encontrada al verificar el fix):** ese `{morning:null, afternoon:null}` se re-normalizaba dentro de `generateSlotsForService()`/`isRangeInsideBusinessHours()` vía `normalize()` en [businessHours.js](src/utils/businessHours.js:26) — y `normalize()` tenía un fallback que, ante ambas franjas `null`, devolvía el default hardcodeado (09-12/15-20) en vez de respetar "cerrado". El fix de `appointmentService.js` solo no alcanzaba; hubo que corregir `normalize()` para que respete `{morning:null, afternoon:null}` explícito como "cerrado" en vez de reinterpretarlo como "sin configurar". Verificado que esto no afecta el guardado real de `Tenant.config.businessHours`: `validateBusinessHours()` en `tenantConfig.js:66` ya rechaza con 400 cualquier config con ambas franjas vacías **antes** de llegar a `normalize()`, así que ese caso nunca ocurre para un tenant real — solo lo usa ahora el nuevo camino de "cabina cerrada este día".
+
+**Verificado con el mismo test usado en el diagnóstico, contra datos reales de Railway:**
+- Hoy (jueves 2026-08-20): "Terapias energéticas" → 0 slots ✅ (antes: 22, mal)
+- Viernes a martes (todos los no-miércoles): 0 slots ✅
+- Próximo miércoles 2026-08-26: 18 slots, todos dentro de 08-12/14-17 ✅
+- Control — "Masaje relajante" (cabina normal sin `schedule` propio) hoy: sigue en 16 slots, sin cambio ✅
+
+**Backend: 303/303 tests, sin regresiones.**
+
+Ninguno de los dos fixes requirió GATE — funcionales, no tocan auth/tenant/cifrado.
 
 ## 2026-08-19 (madrugada) — Auditoría /cyber-neo completa (backend + frontend, solo diagnóstico)
 

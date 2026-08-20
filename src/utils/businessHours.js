@@ -22,7 +22,13 @@ function isValidWindow(w) {
 
 // Devuelve { morning, afternoon } — siempre. Cualquiera puede ser null.
 // Si el input es el shape antiguo { start, end }, la ventana única va a morning.
-// Si el input es inválido/ausente, devuelve el default.
+// Si el input es inválido/ausente (no es un objeto, o no trae morning/afternoon
+// en absoluto), devuelve el default. Si el input SÍ trae explícitamente el
+// shape nuevo pero ambas ventanas resuelven a null, se respeta como "cerrado"
+// — no se reinterpreta como "sin configurar". validateShape() ya impide que
+// un Tenant.config.businessHours real se guarde así (exige al menos una
+// franja), así que este caso solo se da hoy en el uso por-cabina de
+// appointmentService.js (Room.schedule con un día explícitamente cerrado).
 function normalize(bh) {
   if (!bh || typeof bh !== 'object') return { ...DEFAULT_BUSINESS_HOURS_NEW };
 
@@ -30,7 +36,6 @@ function normalize(bh) {
   if ('morning' in bh || 'afternoon' in bh) {
     const morning = isValidWindow(bh.morning) ? { start: bh.morning.start, end: bh.morning.end } : null;
     const afternoon = isValidWindow(bh.afternoon) ? { start: bh.afternoon.start, end: bh.afternoon.end } : null;
-    if (!morning && !afternoon) return { ...DEFAULT_BUSINESS_HOURS_NEW };
     return { morning, afternoon };
   }
 

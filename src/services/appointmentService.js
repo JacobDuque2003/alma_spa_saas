@@ -41,8 +41,16 @@ function dayKeyFromDateStr(dateStr) {
 }
 
 function roomBusinessHours(room, tenantConfig, dateStr) {
-  const special = room?.schedule?.[dayKeyFromDateStr(dateStr)];
-  return normalizeBusinessHours(special || tenantConfig?.businessHours);
+  // Una cabina con schedule propio (ej. Cabina 7 - TERAPIAS, solo miércoles)
+  // opera EXCLUSIVAMENTE los días listados ahí. Un día ausente de ese
+  // schedule significa cerrada ese día, no "usa el horario general del
+  // tenant" — normalizeBusinessHours(undefined) devolvería el default
+  // hardcodeado, que no es lo que queremos aquí.
+  if (room?.schedule && typeof room.schedule === 'object') {
+    const special = room.schedule[dayKeyFromDateStr(dateStr)];
+    return special ? normalizeBusinessHours(special) : { morning: null, afternoon: null };
+  }
+  return normalizeBusinessHours(tenantConfig?.businessHours);
 }
 
 function generateSlotsForService(dateStr, businessHours, timezone, service) {
