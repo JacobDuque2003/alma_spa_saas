@@ -97,6 +97,10 @@ model Service {
   priceUsd          Decimal  @db.Decimal(10, 2)
   offersHomeService Boolean  @default(false)
   active            Boolean  @default(true)
+  description       String?
+  imageData         Bytes?
+  imageMimeType     String?
+  imageUpdatedAt    DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

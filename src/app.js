@@ -47,6 +47,16 @@ app.use(helmet({
   xXssProtection: false,
 }));
 
+// Límite más generoso solo para /services: la descripción+imagen de un
+// servicio viaja como data URL base64 (~400KB para una imagen de 300KB
+// cruda). Montado ANTES del parser global — body-parser marca el body como
+// ya parseado, así que el límite de 256kb de abajo no vuelve a aplicar aquí,
+// y el resto de la API queda intacto con el límite estricto.
+app.use('/services', express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; },
+  limit: '1mb',
+}));
+
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
   limit: '256kb',

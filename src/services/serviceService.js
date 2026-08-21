@@ -2,8 +2,31 @@ const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
 const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
+const { decodeImageDataUrl, normalizeDescription } = require('../utils/serviceImage');
 
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+// select explícito (no `omit`: no soportado en esta versión de @prisma/client)
+// que deja fuera imageData a propósito — el binario nunca viaja en listados
+// ni en respuestas de create/update, solo por /services/:id/image.
+const SERVICE_SELECT_WITHOUT_IMAGE = {
+  id: true,
+  tenantId: true,
+  name: true,
+  category: true,
+  durationMins: true,
+  bufferMins: true,
+  colorHex: true,
+  priceUsd: true,
+  offersHomeService: true,
+  active: true,
+  description: true,
+  imageMimeType: true,
+  imageUpdatedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } },
+};
 
 function normalizeDuration(value, field = 'durationMins') {
   const n = Number(value);
@@ -55,18 +78,54 @@ async function listServices(actor, query) {
   return prisma.service.findMany({
     where,
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
-    include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+    select: SERVICE_SELECT_WITHOUT_IMAGE,
   });
 }
 
 async function getService(actor, id) {
   const service = await prisma.service.findUnique({
     where: { id },
-    include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+    select: SERVICE_SELECT_WITHOUT_IMAGE,
   });
   if (!service) return null;
   assertTenantScope(actor, service.tenantId);
   return service;
+}
+
+// Select separado del binario: listServices/getService nunca cargan
+// imageData (evita inflar cada respuesta de listado con el binario de las
+// ~20 imágenes). El panel pinta la miniatura pidiéndola aparte a este
+// endpoint, cacheable de forma independiente por el navegador.
+async function getServiceImage(actor, id) {
+  const service = await prisma.service.findUnique({
+    where: { id },
+    select: { tenantId: true, imageData: true, imageMimeType: true, imageUpdatedAt: true },
+  });
+  if (!service) return null;
+  assertTenantScope(actor, service.tenantId);
+  if (!service.imageData || !service.imageMimeType) return { image: null };
+  return {
+    image: {
+      data: service.imageData,
+      mimeType: service.imageMimeType,
+      updatedAt: service.imageUpdatedAt,
+    },
+  };
+}
+
+// changes.image: undefined = no tocar, null = borrar imagen, string data URL = reemplazar.
+function applyImageChange(data, changes) {
+  if (changes.image === undefined) return;
+  if (changes.image === null) {
+    data.imageData = null;
+    data.imageMimeType = null;
+    data.imageUpdatedAt = null;
+    return;
+  }
+  const { buffer, mimeType } = decodeImageDataUrl(changes.image);
+  data.imageData = buffer;
+  data.imageMimeType = mimeType;
+  data.imageUpdatedAt = new Date();
 }
 
 async function createService(actor, data) {
@@ -80,20 +139,23 @@ async function createService(actor, data) {
 
   return prisma.$transaction(async (tx) => {
     const rooms = await resolveRoomConnections(tx, tenantId, data.roomIds);
+    const createData = {
+      tenantId,
+      name: String(data.name).trim(),
+      category: String(data.category).trim(),
+      durationMins: data.durationMins === undefined ? 60 : normalizeDuration(data.durationMins),
+      bufferMins: normalizeBuffer(data.bufferMins),
+      colorHex: normalizeColor(data.colorHex),
+      priceUsd: data.priceUsd,
+      offersHomeService: false,
+      active: true,
+      description: normalizeDescription(data.description) ?? null,
+      ...(rooms !== undefined ? { rooms } : {}),
+    };
+    applyImageChange(createData, data);
     const service = await tx.service.create({
-      data: {
-        tenantId,
-        name: String(data.name).trim(),
-        category: String(data.category).trim(),
-        durationMins: data.durationMins === undefined ? 60 : normalizeDuration(data.durationMins),
-        bufferMins: normalizeBuffer(data.bufferMins),
-        colorHex: normalizeColor(data.colorHex),
-        priceUsd: data.priceUsd,
-        offersHomeService: false,
-        active: true,
-        ...(rooms !== undefined ? { rooms } : {}),
-      },
-      include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+      data: createData,
+      select: SERVICE_SELECT_WITHOUT_IMAGE,
     });
     await writeAuditLog(tx, {
       actor,
@@ -107,7 +169,7 @@ async function createService(actor, data) {
 }
 
 async function updateService(actor, id, changes) {
-  const target = await prisma.service.findUnique({ where: { id } });
+  const target = await prisma.service.findUnique({ where: { id }, select: SERVICE_SELECT_WITHOUT_IMAGE });
   if (!target) return null;
   assertTenantScope(actor, target.tenantId);
 
@@ -120,6 +182,8 @@ async function updateService(actor, id, changes) {
   if (changes.colorHex !== undefined) data.colorHex = normalizeColor(changes.colorHex);
   if (changes.offersHomeService !== undefined) data.offersHomeService = false;
   if (changes.active !== undefined) data.active = !!changes.active;
+  if (changes.description !== undefined) data.description = normalizeDescription(changes.description);
+  applyImageChange(data, changes);
 
   const hasRoomChanges = changes.roomIds !== undefined;
   if (Object.keys(data).length === 0 && !hasRoomChanges) return target;
@@ -148,7 +212,7 @@ async function updateService(actor, id, changes) {
         ...data,
         ...(rooms !== undefined ? { rooms } : {}),
       },
-      include: { rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } } },
+      select: SERVICE_SELECT_WITHOUT_IMAGE,
     });
     const action = resolveAction('service', data, target);
     await writeAuditLog(tx, {
@@ -166,4 +230,4 @@ async function deleteService(actor, id) {
   return updateService(actor, id, { active: false, roomIds: [] });
 }
 
-module.exports = { listServices, getService, createService, updateService, deleteService };
+module.exports = { listServices, getService, getServiceImage, createService, updateService, deleteService };

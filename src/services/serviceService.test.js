@@ -67,6 +67,101 @@ test('createService por defecto offersHomeService=false si no se manda', async (
   assert.equal(result.offersHomeService, false);
 });
 
+test('createService guarda description recortada', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+
+  const result = await serviceService.createService(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Facial', category: 'faciales', priceUsd: 30, description: '  Limpieza profunda con extracción y mascarilla.  ' }
+  );
+
+  assert.equal(result.description, 'Limpieza profunda con extracción y mascarilla.');
+});
+
+test('createService rechaza description de más de 500 caracteres', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+
+  await assert.rejects(
+    () => serviceService.createService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      { name: 'Facial', category: 'faciales', priceUsd: 30, description: 'x'.repeat(501) }
+    ),
+    (err) => err.status === 400 && /description/.test(err.message)
+  );
+});
+
+test('createService acepta una imagen JPEG válida (detectada por magic bytes) y la guarda como Buffer', async () => {
+  let captured = null;
+  mockPrisma({ service: { create: async (args) => { captured = args.data; return { id: 'nuevo', ...args.data }; } } });
+  const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString('base64');
+
+  await serviceService.createService(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Facial', category: 'faciales', priceUsd: 30, image: `data:image/jpeg;base64,${jpegBytes}` }
+  );
+
+  assert.equal(Buffer.isBuffer(captured.imageData), true);
+  assert.equal(captured.imageMimeType, 'image/jpeg');
+  assert.equal(captured.imageUpdatedAt instanceof Date, true);
+});
+
+test('createService rechaza un archivo que no es JPEG/PNG aunque el data URL diga que sí', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+  const fakeBytes = Buffer.from('esto no es una imagen real').toString('base64');
+
+  await assert.rejects(
+    () => serviceService.createService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      { name: 'Facial', category: 'faciales', priceUsd: 30, image: `data:image/jpeg;base64,${fakeBytes}` }
+    ),
+    (err) => err.status === 400 && /JPEG o PNG/.test(err.message)
+  );
+});
+
+test('createService rechaza una imagen que supera el límite de 300KB', async () => {
+  mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
+  const bigBuffer = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(310 * 1024, 0)]);
+  const dataUrl = `data:image/jpeg;base64,${bigBuffer.toString('base64')}`;
+
+  await assert.rejects(
+    () => serviceService.createService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      { name: 'Facial', category: 'faciales', priceUsd: 30, image: dataUrl }
+    ),
+    (err) => err.status === 400 && /máximo permitido/.test(err.message)
+  );
+});
+
+test('updateService con image:null borra la imagen existente', async () => {
+  mockPrisma({
+    service: {
+      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes', active: true, imageData: Buffer.from([1]), imageMimeType: 'image/jpeg' }),
+      update: async (args) => ({ id: 's1', ...args.data }),
+    },
+  });
+
+  const result = await serviceService.updateService({ role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' }, 's1', { image: null });
+  assert.equal(result.imageData, null);
+  assert.equal(result.imageMimeType, null);
+  assert.equal(result.imageUpdatedAt, null);
+});
+
+test('getServiceImage devuelve { image: null } cuando el servicio no tiene imagen', async () => {
+  mockPrisma({ service: { findUnique: async () => ({ tenantId: 't1', imageData: null, imageMimeType: null, imageUpdatedAt: null }) } });
+
+  const result = await serviceService.getServiceImage({ role: 'dueno', tenantId: 't1' }, 's1');
+  assert.deepEqual(result, { image: null });
+});
+
+test('getServiceImage rechaza con 403 cross-tenant', async () => {
+  mockPrisma({ service: { findUnique: async () => ({ tenantId: 'tenant-otro', imageData: Buffer.from([1]), imageMimeType: 'image/jpeg' }) } });
+
+  await assert.rejects(
+    () => serviceService.getServiceImage({ role: 'dueno', tenantId: 'tenant-propio' }, 's1'),
+    (err) => err.status === 403
+  );
+});
+
 test('updateService rechaza con 403 si el actor intenta tocar un servicio de otro tenant', async () => {
   mockPrisma({
     service: { findUnique: async () => ({ id: 's1', tenantId: 'tenant-otro' }) },

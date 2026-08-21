@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Download, Loader2, Plus, Upload, X, Sparkles, Trash2 } from "lucide-react";
+import { Download, Loader2, Plus, Upload, X, Sparkles, Trash2, ImageIcon, ImageOff } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
+import { compressImageToDataUrl } from "@/lib/image-compress";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
@@ -138,6 +139,7 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
   const [durationMins, setDurationMins] = useState("60");
   const [bufferMins, setBufferMins] = useState("15");
   const [colorHex, setColorHex] = useState("#8C6E50");
+  const [description, setDescription] = useState("");
   const [selectedRoomIds, setSelectedRoomIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
@@ -170,6 +172,7 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
           durationMins: Number(durationMins),
           bufferMins: Number(bufferMins || 15),
           colorHex,
+          description: description.trim() || undefined,
           roomIds: selectedRoomIds,
           offersHomeService: false,
         },
@@ -225,12 +228,172 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
           <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" min="0" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
           <div><label style={labelStyle}>Color</label><input type="color" style={{ ...inputStyle, padding: 5, height: 40 }} value={colorHex} onChange={(e) => setColorHex(e.target.value)} /></div>
         </div>
+        <div>
+          <label className="mb-1.5 block text-xs text-muted-foreground">Descripción para clientas (opcional — se puede agregar después)</label>
+          <textarea
+            className="min-h-20 w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            maxLength={500}
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Ej: Limpieza facial profunda con extracción e hidratación."
+          />
+          <p className="mt-1 text-right text-xs text-muted-foreground">{description.length}/500</p>
+        </div>
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando..." : "Crear servicio"}</button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+// Único lugar para ver/agregar/editar/quitar descripción e imagen de un
+// servicio ya creado. GET /services no trae imageData (se sirve aparte por
+// /services/:id/image), así que "tiene imagen" se infiere de imageMimeType.
+function ServiceMediaModal({ service, phase, onClose, onSaved }) {
+  const [description, setDescription] = useState(service?.description || "");
+  const [newImagePreview, setNewImagePreview] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [compressedInfo, setCompressedInfo] = useState(null);
+  const [compressing, setCompressing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const toast = useToast();
+
+  const hadImage = !!service?.imageMimeType;
+  const showExistingImage = hadImage && !removeImage && !newImagePreview;
+  const showRemoveButton = (hadImage && !removeImage) || !!newImagePreview;
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setCompressing(true);
+    try {
+      const { dataUrl, bytes, width, height } = await compressImageToDataUrl(file);
+      setNewImagePreview(dataUrl);
+      setRemoveImage(false);
+      setCompressedInfo({ bytes, width, height });
+    } catch (err) {
+      setError(err.message || "No se pudo procesar la imagen");
+    } finally {
+      setCompressing(false);
+      e.target.value = "";
+    }
+  }
+
+  function handleRemoveImage() {
+    setNewImagePreview(null);
+    setCompressedInfo(null);
+    setRemoveImage(true);
+  }
+
+  async function handleSave() {
+    if (description.trim().length > 500) {
+      setError("La descripción no puede superar 500 caracteres");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      const body = { description: description.trim() || null };
+      if (newImagePreview) body.image = newImagePreview;
+      else if (removeImage) body.image = null;
+      const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body });
+      toast.success("Descripción y foto actualizadas");
+      onSaved(updated);
+    } catch (err) {
+      setError(err.message || "No se pudo guardar");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Descripción y foto — ${service?.name || ""}`} phase={phase} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <div>
+          <label className="mb-1.5 block text-xs text-muted-foreground">Descripción para clientas</label>
+          <textarea
+            className="min-h-24 w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            maxLength={500}
+            rows={4}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Ej: Limpieza facial profunda con extracción e hidratación."
+            disabled={saving}
+          />
+          <p className="mt-1 text-right text-xs text-muted-foreground">{description.length}/500</p>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs text-muted-foreground">Foto del servicio</label>
+          <div className="flex items-center gap-3">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
+              {newImagePreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={newImagePreview} alt="Vista previa" className="h-full w-full object-cover" />
+              ) : showExistingImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`/api/proxy/services/${service.id}/image`} alt={service.name} className="h-full w-full object-cover" />
+              ) : (
+                <ImageOff size={20} className="text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex flex-col items-start gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 text-sm font-medium text-primary">
+                <Upload size={14} />
+                {compressing ? "Comprimiendo…" : "Elegir foto"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFile}
+                  disabled={compressing || saving}
+                />
+              </label>
+              {showRemoveButton && (
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  disabled={saving}
+                  className="text-sm text-destructive"
+                >
+                  Quitar foto
+                </button>
+              )}
+            </div>
+          </div>
+          {compressedInfo && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Comprimida a {(compressedInfo.bytes / 1024).toFixed(0)}KB ({compressedInfo.width}×{compressedInfo.height}px)
+            </p>
+          )}
+        </div>
+
+        {error && <p className="text-center text-sm text-destructive">{error}</p>}
+
+        <div className="mt-1 flex gap-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 rounded-full border border-primary bg-transparent py-2.5 text-sm font-medium text-primary"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || compressing}
+            className="flex-1 rounded-full bg-primary py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
+          >
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -441,8 +604,10 @@ export default function ConfiguracionPage() {
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [deleteServiceTarget, setDeleteServiceTarget] = useState(null);
   const [deletingService, setDeletingService] = useState(false);
+  const [mediaTarget, setMediaTarget] = useState(null);
   const serviceAnim = useAnimatedMount(showServiceForm, 220);
   const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
+  const mediaAnim = useAnimatedMount(!!mediaTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
   const visibleServices = activeServices;
   const averagePrice = activeServices.length
@@ -535,6 +700,14 @@ export default function ConfiguracionPage() {
                   return (
                     <div key={s.id} style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5, flexDirection: isMobile ? "column" : "row" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, width: "100%" }}>
+                        <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted flex items-center justify-center">
+                          {s.imageMimeType ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={`/api/proxy/services/${s.id}/image`} alt={s.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <ImageOff size={14} className="text-muted-foreground" />
+                          )}
+                        </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                             <span style={{ width: 9, height: 9, borderRadius: "50%", background: s.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)" }} />
@@ -547,6 +720,9 @@ export default function ConfiguracionPage() {
                           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#8C6E50", opacity: 0.82 }}>
                             Cabinas permitidas: {Array.isArray(s.rooms) && s.rooms.length > 0 ? s.rooms.map((room) => room.name).join(", ") : "sin cabina asignada"}
                           </p>
+                          {s.description && (
+                            <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{s.description}</p>
+                          )}
                         </div>
                         {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
@@ -565,6 +741,14 @@ export default function ConfiguracionPage() {
                           onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
                           style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
                         />
+                        <button
+                          type="button"
+                          title="Descripción y foto"
+                          onClick={() => setMediaTarget(s)}
+                          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary"
+                        >
+                          <ImageIcon size={15} />
+                        </button>
                         <button
                           type="button"
                           title="Eliminar servicio"
@@ -645,6 +829,17 @@ export default function ConfiguracionPage() {
           saving={deletingService}
           onClose={() => setDeleteServiceTarget(null)}
           onConfirm={() => deleteService(deleteServiceTarget)}
+        />
+      )}
+      {mediaAnim.shouldRender && mediaTarget && (
+        <ServiceMediaModal
+          service={mediaTarget}
+          phase={mediaAnim.phase}
+          onClose={() => setMediaTarget(null)}
+          onSaved={(updated) => {
+            setMediaTarget(null);
+            setServices((prev) => prev.map((svc) => (svc.id === updated.id ? { ...svc, ...updated } : svc)));
+          }}
         />
       )}
     </div>

@@ -1,5 +1,30 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-21 — Descripción + imagen de servicios (GATE aprobado, implementado y verificado en Railway)
+
+**Schema (GATE aprobado):** `Service.description String?`, `imageData Bytes?`, `imageMimeType String?`, `imageUpdatedAt DateTime?` — migración `20260821011105_service_description_image`, aplicada a Railway. Cero impacto en filas existentes ni en el flujo de reservas/disponibilidad.
+
+**Almacenamiento de imágenes: opción D aprobada (bytes en Postgres, compresión en el navegador).** Sin dependencia nueva, sin costo nuevo, sobrevive redeploys. Formato de salida: **JPEG** (no WebP) — confirmado por búsqueda que WhatsApp Cloud API solo acepta JPEG/PNG en mensajes de imagen normales, WebP queda reservado a stickers ([Meta for Developers](https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/image-messages)) — importa porque estas fotos las enviará un bot de WhatsApp más adelante.
+
+**Compresión real medida con un ejemplo real** (imagen sintética de complejidad fotográfica — gradiente+ruido+formas, 1600×1200, ~694KB, generada y comprimida en un navegador real vía Canvas, mismo código que corre en producción): **resultado 800×600px, ~22KB, calidad 0.75, sin necesitar bajar de calidad** — reducción del 97%. Límite duro del navegador: 800px de lado más largo, calidad inicial 0.75 con caída automática hasta 0.35 si hiciera falta.
+
+**Backend:**
+- `src/utils/serviceImage.js` (nuevo) — `decodeImageDataUrl()` valida por **magic bytes reales** (no por el `Content-Type` que declare el cliente) que sea JPEG o PNG, tope de 300KB (defensa de servidor, no el objetivo normal de peso). `normalizeDescription()` — máx. 500 caracteres.
+- `GET /services/:id/image` — sirve el binario con `ETag` fuerte (`"<id>-<imageUpdatedAt>"`) + `Cache-Control: public, max-age=86400, must-revalidate`; responde 304 en `If-None-Match` — verificado en vivo, evita re-descargar la misma foto (importa para cuando el bot de WhatsApp la pida repetido).
+- `listServices`/`getService`/`createService`/`updateService` nunca devuelven `imageData` en el JSON (usan `select` explícito, no `imageData`) — el binario solo viaja por la ruta de imagen dedicada, evita inflar el listado de ~20 servicios.
+- **Nota técnica:** `omit` de Prisma (para excluir un campo del `select` por defecto) **no funcionó en `@prisma/client@5.22.0`** pese a estar documentado como estable desde 5.16 — tira `Unknown argument omit`. Se usó `select` explícito en su lugar (funciona en cualquier versión). Si se actualiza Prisma más adelante, vale la pena revisar si `omit` ya funciona y simplificar.
+- Límite de body subido a 1MB **solo** en `/services` (montado antes del parser global de 256kb — body-parser no re-parsea un body ya leído, así que el resto de la API queda intacto con el límite estricto).
+- `GET /public/:slug/services` ahora incluye `description` — **no** expone la imagen públicamente en esta ronda, como se acordó.
+- `description` agregado a la whitelist de auditoría (`AdminAuditLog`) — los cambios quedan visibles en Registros.
+
+**Frontend (`configuracion/page.js`):** nuevo modal `ServiceMediaModal` (ver/agregar/editar/quitar descripción y foto de un servicio ya creado, con preview + contador de caracteres) + descripción opcional en el formulario de creación + miniatura en la fila de cada servicio. Todo el código nuevo se escribió con clases Tailwind (confirmé que los tokens de Tailwind de este proyecto —`--primary`, `--muted-foreground`, `--destructive`, `--border`— ya son exactamente la paleta bronce existente, así que no hay discordancia visual) — **no se agregó código con el patrón inline viejo**, ni se tocó el resto del archivo. `frontend/lib/image-compress.js` (nuevo) hace la compresión client-side.
+
+**Frontend (`reservar/[tenantSlug]/page.js`):** descripción visible bajo cada servicio en la selección de reserva pública (Tailwind, `line-clamp-2`).
+
+**Sin permisos nuevos:** todo bajo el mismo `requirePermission('configuracion')` que ya existía — solo dueño/admin, como se pidió.
+
+**Verificado en vivo contra Railway** (servicio real "Aero yoga", cuenta real jacob@almaspa.com): subir imagen+descripción → 200; listado nunca trae `imageData`; `GET /services/:id/image` → 200 con ETag/Cache-Control correctos; segunda petición con `If-None-Match` → 304; imagen de 310KB rechazada con 400 en el servidor (no solo en el navegador); editar solo descripción deja la imagen intacta; `image:null` la borra (`GET` de la imagen → 404 después); página pública recibe `description` sin `imageData`; flujo de disponibilidad del mismo servicio sin cambios (24 slots, igual que antes). Backend **313/313 tests** (8 nuevos). Frontend build limpio.
+
 ## 2026-08-20 — GATE cerrado: login ya no bloquea la entrada fuera de horario + sign-off final de la variante GET-solo-lectura
 
 **Bug reportado por Jacob con captura real:** `prueba@almaspa.com` fuera de horario no podía ni siquiera entrar — el form de login quedaba bloqueado con "Próxima apertura: viernes 04:00 a.m.".

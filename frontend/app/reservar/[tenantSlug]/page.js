@@ -97,11 +97,14 @@ function ServiceStep({ services, selected, onSelect, loading }) {
                 }`}
               >
                 <div className="flex justify-between items-start">
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-medium text-foreground">{svc.name}</div>
                     <div className="text-sm text-muted-foreground mt-1">{svc.durationMins} min</div>
+                    {svc.description && (
+                      <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">{svc.description}</p>
+                    )}
                   </div>
-                  <div className="text-primary font-semibold">{formatPrice(svc.priceUsd)}</div>
+                  <div className="text-primary font-semibold shrink-0 ml-3">{formatPrice(svc.priceUsd)}</div>
                 </div>
               </button>
             ))}

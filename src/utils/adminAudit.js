@@ -1,6 +1,6 @@
 const SUMMARY_WHITELIST = {
   user: ['name', 'email', 'role', 'active', 'canAttendAppointments', 'isProtected'],
-  service: ['name', 'category', 'durationMins', 'bufferMins', 'colorHex', 'priceUsd', 'offersHomeService', 'active'],
+  service: ['name', 'category', 'durationMins', 'bufferMins', 'colorHex', 'priceUsd', 'offersHomeService', 'active', 'description'],
   room: ['name', 'specialty', 'sortOrder', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
   category: ['name', 'active'],
 };
