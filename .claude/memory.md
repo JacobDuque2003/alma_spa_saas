@@ -1,5 +1,18 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-20 — Fix hallazgo Low de /cyber-neo: phoneNumberId/wabaId sin validar formato (aplicado y verificado)
+
+**Hallazgo original (auditoría 2026-08-19):** [whatsappConnectionService.js:64](src/services/whatsappConnectionService.js:64) — `phoneNumberId`/`wabaId` solo se validaban como "string no vacío" antes de interpolarse directo en la URL de la Meta Graph API. No escalaba a SSRF real (host fijo `graph.facebook.com`), pero permitía manipular el segmento de ruta.
+
+**Fix aplicado:** nuevo helper `requireMetaId()` — exige `/^\d{1,20}$/` (solo dígitos, hasta 20 caracteres) antes de `requireStringField`. Sin mínimo de longitud estricto a propósito, para no romper fixtures de test cortos (`'111'`/`'222'`) ni IDs de sandbox — la propiedad de seguridad real es "solo dígitos", no la longitud exacta. Cambio acotado a `whatsappConnectionService.js`, no toca `whatsappTransport.js` ni el resto del flujo.
+
+**Verificado:**
+- 2 tests nuevos: `phoneNumberId` con `'111/../messages'` → 400 "solo dígitos"; `wabaId` con `'abc123'` → 400.
+- Los 4 tests existentes de este archivo siguen pasando sin modificarlos, incluido el que usa `phoneNumberId:'111'` como fixture válido (regex lo acepta).
+- Suite completo: **305/305** (303 previos + 2 nuevos), sin regresiones.
+
+Sin GATE — fix funcional/hardening, no toca auth/tenant/cifrado.
+
 ## 2026-08-20 — Selector de horario no responde al crear cita — diagnóstico + 2 fixes aplicados y verificados
 
 **Reportado por Jacob (dueño) en vivo.** Descartado `accessSchedule` con evidencia directa: JWT real minteado para su cuenta (sin tocar su password), pegado a `GET /appointments/availability` pasando por `authenticate`→`accessSchedule`→`requirePermission('agenda')` completo → 200 OK, sin header `X-Alma-Out-Of-Schedule`, 16 slots. `requirePermission.js:3` bypasea rol `dueno` sin tocar DB.

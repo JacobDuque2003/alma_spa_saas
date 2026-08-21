@@ -13,6 +13,20 @@ function requireStringField(data, field) {
   }
 }
 
+// phoneNumberId y wabaId se interpolan directamente como segmento de ruta en
+// la URL de la Meta Graph API (ver validateAgainstMeta y whatsappTransport.js).
+// Los IDs reales de Meta son siempre numéricos — exigirlo cierra cualquier
+// manipulación de ruta/query vía caracteres como "/", "?" o espacios, sin
+// imponer un mínimo de longitud que rompa fixtures de test o sandboxes.
+const META_ID_REGEX = /^\d{1,20}$/;
+
+function requireMetaId(data, field) {
+  requireStringField(data, field);
+  if (!META_ID_REGEX.test(data[field])) {
+    throw new BadRequestError(`${field} debe contener solo dígitos (formato de ID de Meta Graph API)`);
+  }
+}
+
 /**
  * Ping a Meta para confirmar que el par (phoneNumberId, accessToken) funciona
  * ANTES de marcar la conexión como activa. Si Meta rechaza (401/403/404 =
@@ -61,8 +75,8 @@ async function replaceConnection(actor, data) {
   if (!tenantId) {
     throw new BadRequestError('tenantId es requerido');
   }
-  requireStringField(data, 'phoneNumberId');
-  requireStringField(data, 'wabaId');
+  requireMetaId(data, 'phoneNumberId');
+  requireMetaId(data, 'wabaId');
   requireStringField(data, 'accessToken');
   requireStringField(data, 'appSecret');
   requireStringField(data, 'verifyToken');

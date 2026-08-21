@@ -43,6 +43,28 @@ test('replaceConnection: valida los 5 campos requeridos', async () => {
   );
 });
 
+test('replaceConnection: phoneNumberId con formato inválido → 400 (no llega a construir la URL de Meta)', async () => {
+  prisma.whatsAppConnection = { findUnique: async () => null };
+  await assert.rejects(
+    () => connectionService.replaceConnection(
+      { tenantId: 't1', role: 'dueno' },
+      { phoneNumberId: '111/../messages', wabaId: '222', accessToken: 'tok', appSecret: 'sec', verifyToken: 'v' }
+    ),
+    (err) => err.status === 400 && /solo dígitos/.test(err.message)
+  );
+});
+
+test('replaceConnection: wabaId con formato inválido → 400', async () => {
+  prisma.whatsAppConnection = { findUnique: async () => null };
+  await assert.rejects(
+    () => connectionService.replaceConnection(
+      { tenantId: 't1', role: 'dueno' },
+      { phoneNumberId: '111', wabaId: 'abc123', accessToken: 'tok', appSecret: 'sec', verifyToken: 'v' }
+    ),
+    (err) => err.status === 400 && /solo dígitos/.test(err.message)
+  );
+});
+
 test('replaceConnection: phoneNumberId ya tomado por otro tenant → 400 amable (no P2002 crudo)', async () => {
   prisma.whatsAppConnection = {
     findUnique: async () => ({ tenantId: 'otro-tenant', phoneNumberId: '111' }),
