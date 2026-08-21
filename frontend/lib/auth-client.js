@@ -1,7 +1,12 @@
-function publishOutOfSchedule(active, nextWindowOpensAt = null) {
+// kind distingue dos señales que antes se confundían:
+//  - "readOnly": informativa, viene del header en CUALQUIER GET fuera de
+//    horario (incluido el polling del CRM cada 30s). Solo debe avisar una vez.
+//  - "blocked": el usuario intentó una mutación y el servidor la rechazó.
+//    Siempre debe volver a mostrarse, para no perder el porqué del fallo.
+function publishOutOfSchedule(active, nextWindowOpensAt = null, kind = "readOnly") {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("alma:out-of-schedule", {
-    detail: { active, nextWindowOpensAt },
+    detail: { active, nextWindowOpensAt, kind },
   }));
 }
 
@@ -39,7 +44,7 @@ export async function authFetch(path, { method = "GET", body, query } = {}) {
   // En sesión ya iniciada no cerramos sesión: activamos el banner de modo
   // solo lectura y dejamos que la mutación falle con un mensaje claro.
   if (res.status === 403 && data?.reason === "outOfSchedule") {
-    publishOutOfSchedule(true, data.nextWindowOpensAt || null);
+    publishOutOfSchedule(true, data.nextWindowOpensAt || null, "blocked");
     const err = new Error(data?.error || "Fuera del horario de acceso permitido");
     err.status = res.status;
     err.reason = data.reason;

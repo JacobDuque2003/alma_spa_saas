@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,22 +18,42 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { authFetch } from "@/lib/auth-client";
 import { BirthdayToast } from "@/components/birthday-toast";
 import { ToastProvider } from "@/components/toast-provider";
 
+// `permission` / `roles` reflejan EXACTAMENTE el guard que ya aplica el
+// backend en la ruta correspondiente. Ocultar un ítem aquí es solo UX: el
+// servidor sigue bloqueando por su cuenta si alguien navega directo a la URL.
+//   agenda        -> requirePermission('agenda')        en /appointments
+//   clientes      -> requirePermission('clientes')      en /clients
+//   crm           -> requirePermission('crm')           en /crm
+//   reportes      -> requirePermission('reportes')      en /reports
+//   personal      -> requireRole('superadmin','dueno')  en /users (no delegable)
+//   configuracion -> requirePermission('configuracion') en /services, /rooms, /tenant/config
+//   logs          -> requireRole('superadmin','dueno')  en /audit-log
 const NAV_ITEMS = [
-  { href: "/admin/agenda", label: "Agenda", enabled: true, icon: CalendarDays },
-  { href: "/admin/clientes", label: "Clientes", enabled: true, icon: Users },
-  { href: "/admin/crm", label: "Bandeja", enabled: true, icon: Inbox },
-  { href: "/admin/reportes", label: "Reportes", enabled: true, icon: BarChart3 },
-  { href: "/admin/personal", label: "Equipo", enabled: true, icon: UserCog },
-  { href: "/admin/configuracion", label: "Configuración", enabled: true, icon: Settings },
+  { href: "/admin/agenda", label: "Agenda", enabled: true, permission: "agenda", icon: CalendarDays },
+  { href: "/admin/clientes", label: "Clientes", enabled: true, permission: "clientes", icon: Users },
+  { href: "/admin/crm", label: "Bandeja", enabled: true, permission: "crm", icon: Inbox },
+  { href: "/admin/reportes", label: "Reportes", enabled: true, permission: "reportes", icon: BarChart3 },
+  { href: "/admin/personal", label: "Equipo", enabled: true, roles: ["superadmin", "dueno"], icon: UserCog },
+  { href: "/admin/configuracion", label: "Configuración", enabled: true, permission: "configuracion", icon: Settings },
   { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"], icon: ClipboardList },
 ];
+
+function canSeeNavItem(item, user) {
+  if (!user) return false;
+  if (item.roles && !item.roles.includes(user.role)) return false;
+  if (item.permission && !user.permissions?.[item.permission]) return false;
+  return true;
+}
+
+// Tiempo suficiente para leer el aviso completo sin que quede fijo en pantalla.
+const OUT_OF_SCHEDULE_BANNER_MS = 8000;
 
 const ROLE_LABELS = {
   superadmin: "Super Admin",
@@ -94,28 +114,10 @@ function DrawerOverlay({ drawerOpen, onClose, navContent }) {
 }
 
 function OutOfScheduleBanner({ active }) {
-  if (!active) return null;
+  const { shouldRender, phase } = useAnimatedMount(active, 260);
+  if (!shouldRender) return null;
   return (
-    <div
-      role="status"
-      style={{
-        position: "fixed",
-        top: 14,
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 65,
-        maxWidth: "calc(100vw - 28px)",
-        borderRadius: 999,
-        border: "1px solid rgba(201,168,118,0.45)",
-        background: "#FFF8E8",
-        color: "#6B5540",
-        boxShadow: "0 14px 32px rgba(107,85,64,0.16)",
-        padding: "10px 16px",
-        fontSize: 13,
-        fontWeight: 600,
-        textAlign: "center",
-      }}
-    >
+    <div role="status" className={`alma-schedule-banner alma-anim-${phase}`}>
       {"Fuera de tu horario de acceso — puedes ver todo, pero no editar, crear ni eliminar hasta la próxima apertura."}
     </div>
   );
@@ -123,6 +125,7 @@ function OutOfScheduleBanner({ active }) {
 
 function Shell({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, loading, logout } = useAuth();
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -130,6 +133,7 @@ function Shell({ children }) {
   const [introDone, setIntroDone] = useState(false);
   const [outOfSchedule, setOutOfSchedule] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const readOnlyNotifiedRef = useRef(false);
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -152,12 +156,29 @@ function Shell({ children }) {
     }
   }, [isMobile, pathname]);
 
+  // El banner es un aviso temporal, no un elemento fijo: se muestra unos
+  // segundos y se va. Un intento de escritura bloqueado (kind "blocked")
+  // siempre lo vuelve a mostrar, para que el usuario no se quede sin saber
+  // por qué falló la acción. Las señales informativas de solo-lectura
+  // (cualquier GET fuera de horario, incluido el polling del CRM) solo
+  // avisan la primera vez de la sesión — si no, reaparecería cada 30s.
   useEffect(() => {
+    let hideTimer;
     function onOutOfSchedule(event) {
-      setOutOfSchedule(!!event.detail?.active);
+      const { active, kind } = event.detail || {};
+      if (!active) return;
+      if (kind === "readOnly" && readOnlyNotifiedRef.current) return;
+      if (kind === "readOnly") readOnlyNotifiedRef.current = true;
+
+      setOutOfSchedule(true);
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => setOutOfSchedule(false), OUT_OF_SCHEDULE_BANNER_MS);
     }
     window.addEventListener("alma:out-of-schedule", onOutOfSchedule);
-    return () => window.removeEventListener("alma:out-of-schedule", onOutOfSchedule);
+    return () => {
+      window.clearTimeout(hideTimer);
+      window.removeEventListener("alma:out-of-schedule", onOutOfSchedule);
+    };
   }, []);
 
   // Cumpleaños próximos (7 días): alimenta el badge en Clientes y el toast diario.
@@ -170,6 +191,21 @@ function Shell({ children }) {
       .catch(() => { /* sin permiso o error transitorio */ });
     return () => { cancelled = true; };
   }, [user, pathname]);
+
+  const navItems = useMemo(() => NAV_ITEMS.filter((item) => canSeeNavItem(item, user)), [user]);
+
+  // Si el usuario aterriza en una sección para la que no tiene permiso
+  // (típicamente /admin/agenda, el destino por defecto tras el login), lo
+  // llevamos a la primera que sí puede ver — evita dejarlo mirando el error
+  // del backend sin salida. /admin/perfil no está en NAV_ITEMS a propósito:
+  // no es una sección del menú y siempre debe seguir accesible.
+  useEffect(() => {
+    if (!user || navItems.length === 0) return;
+    const current = NAV_ITEMS.find((item) => pathname.startsWith(item.href));
+    if (current && !canSeeNavItem(current, user)) {
+      router.replace(navItems[0].href);
+    }
+  }, [user, pathname, navItems, router]);
 
   const badgeCount = upcomingBirthdays.length;
   const nearBirthdays = upcomingBirthdays.filter((b) => b.daysUntil <= 1);
@@ -194,7 +230,18 @@ function Shell({ children }) {
     );
   }
 
-  const navItems = NAV_ITEMS.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
+  // Cuenta sin permiso para ninguna sección: mostramos un mensaje claro en
+  // vez del error crudo del backend de la sección que le haya tocado cargar.
+  const mainContent = navItems.length === 0
+    ? (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-base font-medium text-foreground">Tu cuenta todavía no tiene secciones asignadas</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Pídele a la administración del spa que te habilite los permisos que necesitas para trabajar.
+        </p>
+      </div>
+    )
+    : children;
 
   const navContent = (
     <>
@@ -375,7 +422,7 @@ function Shell({ children }) {
         <DrawerOverlay drawerOpen={drawerOpen} onClose={() => setDrawerOpen(false)} navContent={navContent} />
 
         {/* Main content */}
-        <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{children}</main>
+        <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{mainContent}</main>
         <OutOfScheduleBanner active={outOfSchedule} />
         <BirthdayToast nearBirthdays={nearBirthdays} />
       </div>
@@ -502,7 +549,7 @@ function Shell({ children }) {
         {navContent}
       </aside>
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background">{children}</main>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background">{mainContent}</main>
       <OutOfScheduleBanner active={outOfSchedule} />
       <BirthdayToast nearBirthdays={nearBirthdays} />
     </div>
