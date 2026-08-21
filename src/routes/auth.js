@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { login, hashPassword } = require('../services/authService');
+const { login, hashPassword, auditAuthEvent } = require('../services/authService');
 const authenticate = require('../middleware/authenticate');
 const prisma = require('../utils/prisma');
 
@@ -92,6 +92,24 @@ router.post('/login', loginRateLimit, async (req, res, next) => {
     }
 
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// El cierre real de sesión (borrado de la cookie) lo hace el BFF de Next.
+// Esta ruta solo existe para dejar constancia del logout en AdminAuditLog;
+// va autenticada para que el JWT nos diga quién es. Si falla el audit, no
+// pasa nada — la cookie igual se va del lado del BFF.
+router.post('/logout', authenticate, async (req, res, next) => {
+  try {
+    await auditAuthEvent({
+      userId: req.user.id,
+      email: req.user.email,
+      tenantId: req.user.tenantId,
+      action: 'logout',
+    });
+    res.status(204).send();
   } catch (err) {
     next(err);
   }

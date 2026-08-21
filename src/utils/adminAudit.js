@@ -3,6 +3,7 @@ const SUMMARY_WHITELIST = {
   service: ['name', 'category', 'durationMins', 'bufferMins', 'colorHex', 'priceUsd', 'offersHomeService', 'active', 'description'],
   room: ['name', 'specialty', 'sortOrder', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
   category: ['name', 'active'],
+  auth: [],
 };
 
 function pickSafe(entity, obj) {

@@ -1,5 +1,37 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-21 (noche) — 3 ajustes de UX+auditoría: banner temporal, menú filtrado por permisos, login/logout en Registros
+
+**Roles invocados por nombre** (sin `agents/`): Backend Architect + Application Security Engineer.
+
+### Puntos 1 y 2 — ya estaban implementados en local, faltaba llegar a `main`
+
+La captura del PM mostraba el bug (banner permanente + Terapeuta ve "Equipo") pero el código local ya lo tenía resuelto en `frontend/app/admin/(dashboard)/layout.js`, `frontend/lib/auth-client.js` y `frontend/app/globals.css` — sin commit. Se verificó contra Railway:
+- `/auth/me` para `prueba@almaspa.com` devuelve `role:personal` + permissions correctos (todos activos salvo lo que aplica).
+- Simulación del filtro con esos datos reales: **Agenda/Clientes/Bandeja/Reportes/Configuración → visibles; Equipo/Registros → ocultos.** Coincide exactamente con lo pedido.
+- Banner: constante `OUT_OF_SCHEDULE_BANNER_MS = 8000ms`, `useAnimatedMount` para fade, distinción `kind:"readOnly"` (solo la 1ª vez de la sesión — evita reaparecer con cada polling del CRM cada 30s) vs `kind:"blocked"` (siempre se re-muestra para que el usuario no pierda contexto de por qué la acción falló).
+- Backend intacto: cada `router.use(authenticate, requirePermission('X'))` sigue en su lugar — el filtrado de sidebar es solo UX. Anotado en el propio archivo: "Ocultar un ítem aquí es solo UX: el servidor sigue bloqueando por su cuenta si alguien navega directo a la URL".
+
+### Punto 3 — login/logout en AdminAuditLog (GATE aprobado, implementado y verificado)
+
+**Migración necesaria (consecuencia técnica del diseño ya aprobado, no ampliación de alcance):** `AuditEntity` gana `auth`, `AuditAction` gana `login` y `logout` — sin ellos no se puede insertar en `AdminAuditLog` con esas etiquetas (`AuditEntity` es enum). Migración `20260821172900_audit_auth_events`, aplicada a Railway.
+
+- `src/services/authService.js` — nuevo `auditAuthEvent()` best-effort (try/catch, si falla no impide login/logout); `login()` lo llama tras emitir el token; **superadmin queda excluido** (su `tenantId` es null y `AdminAuditLog` es por-tenant — un evento sin tenant no tiene dónde vivir).
+- `src/routes/auth.js` — nueva ruta `POST /auth/logout` autenticada que registra el evento y responde 204.
+- `frontend/app/api/auth/logout/route.js` — llama primero al backend (best-effort) y luego borra la cookie.
+- `src/utils/adminAudit.js` — `SUMMARY_WHITELIST` gana `auth: []` (sin detalles: actor+action ya cuentan la historia).
+- `frontend/app/admin/(dashboard)/logs/page.js` — labels "Inicio de sesión"/"Cierre de sesión", verbos "inició sesión"/"cerró sesión", filtro nuevo "Sesiones", `formatActivity` sin entidad afectada cuando `entity==='auth'`.
+- **Logins fallidos NO se auditan** — recomendación aprobada: rate limiting (5/15min) ya frena credential stuffing, agregar al AdminAuditLog inflaría con typos legítimos, y expone info de enumeración de emails a quien vea el log. Los intentos fallidos siguen registrados en `console.warn` (logs de Railway) desde una ronda anterior.
+
+**Verificado en vivo contra Railway** (con cuenta real jacob@almaspa.com y superadmin admin@nuvio.tech, sin usar sus passwords reales — solo su registro real + hash sintético contra el mismo singleton de Prisma):
+- Login de jacob → 200 con token; **fila insertada** en `AdminAuditLog`: `{entity:'auth', action:'login', actorEmail:'jacob@almaspa.com'}` ✅
+- Logout de jacob → 204; **segunda fila** con `action:'logout'` ✅
+- Login de superadmin → 200; **cero filas** creadas (contador antes/después idéntico) ✅
+- Logout de superadmin → 204; cero filas ✅
+- `GET /audit-log?entity=auth` como jacob → 200 con las 2 filas nuevas visibles ✅
+
+**Filas de test borradas al final** (excepción documentada: el diseño append-only del audit log se rompió puntualmente aquí porque eran filas creadas por mí en la ronda de verificación, no eventos reales — próxima vez las dejo para respetar el diseño). Backend: **313/313 tests**.
+
 ## 2026-08-21 — Descripción + imagen de servicios (GATE aprobado, implementado y verificado en Railway)
 
 **Schema (GATE aprobado):** `Service.description String?`, `imageData Bytes?`, `imageMimeType String?`, `imageUpdatedAt DateTime?` — migración `20260821011105_service_description_image`, aplicada a Railway. Cero impacto en filas existentes ni en el flujo de reservas/disponibilidad.

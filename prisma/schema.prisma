@@ -490,6 +490,7 @@ enum AuditEntity {
   service
   room
   category
+  auth
 }
 
 enum AuditAction {
@@ -500,6 +501,8 @@ enum AuditAction {
   purge
   permissionsChanged
   accessDeniedSchedule
+  login
+  logout
 }
 
 model AdminAuditLog {

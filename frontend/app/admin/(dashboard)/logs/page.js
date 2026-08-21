@@ -7,6 +7,7 @@ import { useIsMobile } from "@/lib/use-mobile";
 
 const ENTITY_OPTIONS = [
   { value: "", label: "Todas" },
+  { value: "auth", label: "Sesiones" },
   { value: "user", label: "Usuarios" },
   { value: "service", label: "Servicios" },
   { value: "room", label: "Cabinas" },
@@ -20,6 +21,8 @@ const ACTION_LABELS = {
   deactivate: "Desactivado",
   purge: "Eliminado",
   permissionsChanged: "Permisos",
+  login: "Inicio de sesión",
+  logout: "Cierre de sesión",
 };
 
 const ACTION_COLORS = {
@@ -29,6 +32,8 @@ const ACTION_COLORS = {
   deactivate: { bg: "rgba(154,78,72,0.10)", color: "#9A4E48" },
   purge: { bg: "rgba(154,78,72,0.12)", color: "#9A4E48" },
   permissionsChanged: { bg: "rgba(168,154,135,0.18)", color: "#6B5540" },
+  login: { bg: "rgba(121,134,203,0.14)", color: "#4A5397" },
+  logout: { bg: "rgba(168,154,135,0.18)", color: "#6B5540" },
 };
 
 // Verbos en pasado, coherentes con AuditAction del backend.
@@ -39,6 +44,8 @@ const ACTION_VERBS = {
   deactivate: "desactivó",
   purge: "eliminó",
   permissionsChanged: "cambió los permisos de",
+  login: "inició sesión",
+  logout: "cerró sesión",
 };
 
 // Sustantivo entity + artículo con género correcto en español.
@@ -68,6 +75,9 @@ function entityLabel(row) {
 function formatActivity(row) {
   const who = actorName(row.actorEmail);
   const verb = ACTION_VERBS[row.action] || row.action;
+  // auth (login/logout) es un evento sobre el propio actor — no hay entidad
+  // afectada; sujeto + verbo cuentan la historia entera.
+  if (row.entity === "auth") return `${who} ${verb}`;
   const entity = ENTITY_LABELS[row.entity] || { article: "el", noun: row.entity };
   const name = entityLabel(row);
   return `${who} ${verb} ${entity.article} ${entity.noun} "${name}"`;
