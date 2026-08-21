@@ -116,7 +116,7 @@ function OutOfScheduleBanner({ active }) {
         textAlign: "center",
       }}
     >
-      {"Fuera de horario de acceso: modo solo lectura"}
+      {"Fuera de tu horario de acceso — puedes ver todo, pero no editar, crear ni eliminar hasta la próxima apertura."}
     </div>
   );
 }

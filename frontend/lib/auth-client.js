@@ -67,10 +67,6 @@ export async function login(email, password) {
   if (!res.ok) {
     const err = new Error(data?.error || "Credenciales inválidas");
     err.status = res.status;
-    // Propaga reason/nextWindowOpensAt para que el formulario diferencie
-    // "credenciales inválidas" de "fuera de horario".
-    if (data?.reason) err.reason = data.reason;
-    if (data?.nextWindowOpensAt) err.nextWindowOpensAt = data.nextWindowOpensAt;
     throw err;
   }
   return data.user;

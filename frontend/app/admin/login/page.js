@@ -1,68 +1,29 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { login } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-function formatNextWindow(iso) {
-  if (!iso) return null;
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("es-EC", { weekday: "long", hour: "2-digit", minute: "2-digit", timeZone: "America/Guayaquil" });
-  } catch {
-    return null;
-  }
-}
-
-// useSearchParams() requiere Suspense boundary durante prerender en Next 16.
 export default function LoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginPageContent />
-    </Suspense>
-  );
-}
-
-function LoginPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
-  const [scheduleMessage, setScheduleMessage] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // Si autoFetch redirigió aquí por 403 outOfSchedule, mostrar el mensaje.
-  useEffect(() => {
-    if (searchParams.get("outOfSchedule") === "1") {
-      const opens = formatNextWindow(searchParams.get("nextOpens"));
-      setScheduleMessage(opens
-        ? `Fuera de tu horario de acceso. Próxima apertura: ${opens}.`
-        : "Fuera de tu horario de acceso. Consulta con la administración del spa.");
-    }
-  }, [searchParams]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
-    setScheduleMessage(null);
     setLoading(true);
     try {
       await login(email, password);
       router.push("/admin/agenda");
     } catch (err) {
-      if (err.reason === "outOfSchedule") {
-        const opens = formatNextWindow(err.nextWindowOpensAt);
-        setScheduleMessage(opens
-          ? `Tu cuenta está fuera del horario de acceso. Próxima apertura: ${opens}.`
-          : "Tu cuenta está fuera del horario de acceso permitido.");
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -106,11 +67,6 @@ function LoginPageContent() {
             </div>
             {error && (
               <p className="text-sm text-destructive text-center">{error}</p>
-            )}
-            {scheduleMessage && (
-              <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(201,168,118,0.15)", border: "1px solid rgba(201,168,118,0.4)", color: "#856330", fontSize: 13, textAlign: "center" }}>
-                {scheduleMessage}
-              </div>
             )}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Ingresando…" : "Ingresar"}

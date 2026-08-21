@@ -1,5 +1,32 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-20 — GATE cerrado: login ya no bloquea la entrada fuera de horario + sign-off final de la variante GET-solo-lectura
+
+**Bug reportado por Jacob con captura real:** `prueba@almaspa.com` fuera de horario no podía ni siquiera entrar — el form de login quedaba bloqueado con "Próxima apertura: viernes 04:00 a.m.".
+
+**Causa raíz:** [authService.js:32-49](src/services/authService.js) (versión anterior) tenía su PROPIO gate de horario, separado y anterior al middleware `accessSchedule` — lanzaba `OutOfScheduleError` antes de emitir el JWT. Era un remanente del diseño original (bloqueo total) que nunca se actualizó cuando se aprobó la variante de solo-lectura; los dos mecanismos quedaron contradiciéndose.
+
+**Fix aplicado (GATE aprobado antes de tocar código):**
+1. `authService.js` — eliminado el gate de horario y la clase `OutOfScheduleError` completa. `login()` depende solo de credenciales + `active`.
+2. `routes/auth.js` — quitado el import y el catch especial de `OutOfScheduleError`; el handler de `/auth/login` vuelve a ser simple (200 con token, o 401 credenciales inválidas).
+3. `frontend/lib/auth-client.js` — `login()` ya no propaga `reason`/`nextWindowOpensAt` (nunca volverán a aparecer en la respuesta de login). El manejo de `outOfSchedule` en `authFetch()` para MUTACIONES post-login queda intacto — es el correcto.
+4. `frontend/app/admin/login/page.js` — quitado `scheduleMessage` y sus dos disparadores (el del catch de login, y la rama ya-muerta de `?outOfSchedule=1` que nunca se disparaba). Como ya no usa `useSearchParams()`, también se quitó el wrapper `Suspense`/split `LoginPageContent` que existía solo por ese hook (confirmado contra la doc de Next 16: el requisito de Suspense es específico de `useSearchParams`, no de `useRouter`).
+5. Banner post-login mejorado: *"Fuera de tu horario de acceso — puedes ver todo, pero no editar, crear ni eliminar hasta la próxima apertura."*
+
+**Cero código huérfano confirmado:** grep de `OutOfScheduleError`, `scheduleMessage`, `formatNextWindow`, `outOfSchedule=1` en todo `src/` y `frontend/` → cero coincidencias.
+
+**Verificado con evidencia real contra Railway** (cuenta real `prueba@almaspa.com`, confirmada fuera de horario ahora mismo — `checkAccess` real: `allowed:false, nextWindowOpensAt: viernes 09:00`; su password real nunca se usó ni se conoció, se probó con su registro real + un hash sintético vía el mismo singleton de Prisma que usa la app):
+- **(a) Login funciona:** `POST /auth/login` con credenciales válidas → **200**, token emitido, `user.email` correcto.
+- **(b) Puede ver todo:** `GET /clients` con ese token → **200**, 4 clientes reales devueltos, header `X-Alma-Out-Of-Schedule: 1` presente (dispara el banner en el frontend).
+- **(c) No puede escribir:** `POST /clients` con el mismo token → **403**, `reason: outOfSchedule`.
+- **(d) Banner:** mecanismo header→evento→banner ya verificado end-to-end en la ronda de los 18 puntos (2026-08-19); texto nuevo confirmado en `layout.js:119`.
+
+**Backend: 305/305 tests** (se reescribió el test de login-fuera-de-horario para reflejar el nuevo comportamiento correcto en vez de eliminarlo).
+
+### Sign-off formal de seguridad — variante GET-solo-lectura: CERRADO
+
+Como Security Architect + Application Security Engineer: **aprobada como diseño final**, reemplaza el diseño original de bloqueo total de request completo. Verificación exhaustiva: los 33 handlers `router.get(` de todo `src/routes/` no ejecutan ninguna escritura (`.create/.update/.upsert/.delete`) — la propiedad "GET = sin efectos secundarios" se sostiene estructuralmente en toda la API, no es una suposición. Restringir por horario solo las mutaciones (no la lectura) no amplía qué datos puede ver una cuenta, solo cuándo — coincide con el requisito literal de la dueña ("que vean todo, que no editen nada"). **No queda ningún punto abierto de este tema.**
+
 ## 2026-08-20 — Fix hallazgo Low de /cyber-neo: phoneNumberId/wabaId sin validar formato (aplicado y verificado)
 
 **Hallazgo original (auditoría 2026-08-19):** [whatsappConnectionService.js:64](src/services/whatsappConnectionService.js:64) — `phoneNumberId`/`wabaId` solo se validaban como "string no vacío" antes de interpolarse directo en la URL de la Meta Graph API. No escalaba a SSRF real (host fijo `graph.facebook.com`), pero permitía manipular el segmento de ruta.

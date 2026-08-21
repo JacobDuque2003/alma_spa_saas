@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { login, hashPassword, OutOfScheduleError } = require('../services/authService');
+const { login, hashPassword } = require('../services/authService');
 const authenticate = require('../middleware/authenticate');
 const prisma = require('../utils/prisma');
 
@@ -86,23 +86,7 @@ router.post('/login', loginRateLimit, async (req, res, next) => {
       return res.status(400).json({ error: 'email y password son requeridos' });
     }
 
-    let result;
-    try {
-      result = await login(email, password);
-    } catch (err) {
-      if (err instanceof OutOfScheduleError) {
-        // Credenciales OK pero fuera de ventana. Se responde 403 (no 401)
-        // porque el password sí fue válido — la denegación es de autorización
-        // horaria, no de identidad. El frontend lee `reason` para mostrar el
-        // mensaje "fuera de horario" en vez de "credenciales inválidas".
-        return res.status(403).json({
-          error: err.message,
-          reason: 'outOfSchedule',
-          nextWindowOpensAt: err.nextWindowOpensAt ? err.nextWindowOpensAt.toISOString() : null,
-        });
-      }
-      throw err;
-    }
+    const result = await login(email, password);
     if (!result) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }

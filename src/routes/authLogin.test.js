@@ -48,7 +48,7 @@ test('POST /auth/login rate limit is per email+ip (different email not blocked)'
   assert.equal(res.status, 401, 'different email should not be blocked');
 });
 
-test('POST /auth/login rechaza credenciales válidas fuera de horario sin emitir token', async () => {
+test('POST /auth/login emite token aunque la cuenta esté fuera de horario (autenticación no depende de accessSchedule)', async () => {
   const email = `schedule-${Date.now()}@alma.test`;
   prisma.user = {
     findUnique: async () => ({
@@ -75,7 +75,7 @@ test('POST /auth/login rechaza credenciales válidas fuera de horario sin emitir
 
   const res = await supertest(app).post('/auth/login').send({ email, password: 'ValidPass123!' });
 
-  assert.equal(res.status, 403);
-  assert.equal(res.body.reason, 'outOfSchedule');
-  assert.equal('token' in res.body, false);
+  assert.equal(res.status, 200);
+  assert.equal(typeof res.body.token, 'string');
+  assert.equal(res.body.user.email, email);
 });
