@@ -253,6 +253,16 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
 // Único lugar para ver/agregar/editar/quitar descripción e imagen de un
 // servicio ya creado. GET /services no trae imageData (se sirve aparte por
 // /services/:id/image), así que "tiene imagen" se infiere de imageMimeType.
+// El sufijo ?v=<imageUpdatedAt> es solo un cache-buster para el navegador:
+// cuando se reemplaza la imagen de un servicio, la URL cambia y el <img>
+// dispara un fresh GET en vez de servir la cacheada (max-age=86400). El
+// backend NO necesita interpretar ?v — solo el navegador lo usa como cache key.
+function imageUrl(svc) {
+  const v = svc?.imageUpdatedAt ? new Date(svc.imageUpdatedAt).getTime() : 0;
+  return `/api/proxy/services/${svc.id}/image?v=${v}`;
+}
+
+
 function ServiceMediaModal({ service, phase, onClose, onSaved }) {
   const [description, setDescription] = useState(service?.description || "");
   const [newImagePreview, setNewImagePreview] = useState(null);
@@ -337,7 +347,7 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
                 <img src={newImagePreview} alt="Vista previa" className="h-full w-full object-cover" />
               ) : showExistingImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/api/proxy/services/${service.id}/image`} alt={service.name} className="h-full w-full object-cover" />
+                <img src={imageUrl(service)} alt={service.name} className="h-full w-full object-cover" />
               ) : (
                 <ImageOff size={20} className="text-muted-foreground" />
               )}
@@ -703,7 +713,7 @@ export default function ConfiguracionPage() {
                         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted flex items-center justify-center">
                           {s.imageMimeType ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={`/api/proxy/services/${s.id}/image`} alt={s.name} className="h-full w-full object-cover" />
+                            <img src={imageUrl(s)} alt={s.name} className="h-full w-full object-cover" />
                           ) : (
                             <ImageOff size={14} className="text-muted-foreground" />
                           )}

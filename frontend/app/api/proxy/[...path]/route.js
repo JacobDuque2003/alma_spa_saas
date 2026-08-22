@@ -4,6 +4,23 @@ import { NextResponse } from "next/server";
 const API_URL = process.env.API_URL || "http://localhost:3001";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+// Los content-types que trata este proxy como BINARIOS: los reenvía como
+// bytes crudos (arrayBuffer, no text) y NO les pisa el Cache-Control del
+// backend. Necesario para /services/:id/image y equivalentes que sirvan
+// archivos. res.text() sobre un JPEG corrompe los bytes al reinterpretarlos
+// como UTF-8; ese era el bug real del bug 2 (imagen "subió" pero no se ve).
+function isBinaryContentType(ct) {
+  if (!ct) return false;
+  const lower = String(ct).toLowerCase();
+  return (
+    lower.startsWith("image/") ||
+    lower.startsWith("audio/") ||
+    lower.startsWith("video/") ||
+    lower.startsWith("application/pdf") ||
+    lower.startsWith("application/octet-stream")
+  );
+}
+
 /**
  * La cookie de sesión ya usa SameSite=Lax, pero las mutaciones también deben
  * comprobar su procedencia. Así una página de otro sitio no puede reutilizar
@@ -64,21 +81,34 @@ async function proxyRequest(req, { params }) {
   } catch (err) {
     return NextResponse.json({ error: "Backend no disponible" }, { status: 502 });
   }
-  const data = await res.text();
 
-  // Datos de clientes, reservas y permisos nunca deben guardarse en cachés del
-  // navegador ni de proxies intermedios.
+  const contentType = res.headers.get("Content-Type") || "application/json";
+  const binary = isBinaryContentType(contentType);
+
   const responseHeaders = {
-    "Content-Type": res.headers.get("Content-Type") || "application/json",
-    "Cache-Control": "no-store, private",
+    "Content-Type": contentType,
     "X-Content-Type-Options": "nosniff",
   };
+  if (binary) {
+    // Respuesta binaria: respetamos el Cache-Control que el backend puso
+    // (ej. imagen de servicio con ETag + max-age=86400). Sin esto, el
+    // navegador re-descarga la imagen en cada render y el bot de WhatsApp
+    // futuro pierde el beneficio del cache.
+    const backendCC = res.headers.get("Cache-Control");
+    if (backendCC) responseHeaders["Cache-Control"] = backendCC;
+    const etag = res.headers.get("ETag");
+    if (etag) responseHeaders["ETag"] = etag;
+  } else {
+    // JSON/texto: datos de clientes, reservas y permisos nunca deben
+    // guardarse en cachés del navegador ni de proxies intermedios.
+    responseHeaders["Cache-Control"] = "no-store, private";
+  }
   const outOfSchedule = res.headers.get("X-Alma-Out-Of-Schedule");
   const outOfScheduleNext = res.headers.get("X-Alma-Out-Of-Schedule-Next");
   if (outOfSchedule) responseHeaders["X-Alma-Out-Of-Schedule"] = outOfSchedule;
   if (outOfScheduleNext) responseHeaders["X-Alma-Out-Of-Schedule-Next"] = outOfScheduleNext;
 
-  if (res.status === 204 || res.status === 205) {
+  if (res.status === 204 || res.status === 205 || res.status === 304) {
     delete responseHeaders["Content-Type"];
     return new NextResponse(null, {
       status: res.status,
@@ -86,6 +116,8 @@ async function proxyRequest(req, { params }) {
     });
   }
 
+  // Binarios: arrayBuffer preserva los bytes. Todo lo demás: text() está bien.
+  const data = binary ? await res.arrayBuffer() : await res.text();
   return new NextResponse(data, {
     status: res.status,
     headers: responseHeaders,
