@@ -1,5 +1,23 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-22 — 2 bugs: agenda no marcaba horas cerradas + imagen de servicio "subía" pero no se veía
+
+**Bug 1 — Agenda día por cabina:** [`CabinDayGrid`](frontend/app/admin/(dashboard)/agenda/page.js:981) renderizaba sobre un `HOURS = [8..19]` hardcodeado ([línea 14](frontend/app/admin/(dashboard)/agenda/page.js:14)) sin leer `businessHours` del tenant ni el `room.schedule` propio de Cabina 7. Fix visual puro (autónomo, sin GATE): fetch a `/tenant/config` desde el shell, se pasa a `CabinDayGrid`, cada fila de hora por cabina evalúa `isHourOpenForRoom(hour, room, tenantConfig, dateStr)` respetando el schedule por cabina si lo tiene (Cabina 7 solo miércoles). Las filas cerradas se marcan con clase `.alma-agenda-closed-cell` (rayado diagonal suave sobre fondo apagado en `globals.css`), y las labels del eje se atenúan si ninguna cabina está abierta en esa hora. **Cero cambio a lógica de disponibilidad** — solo render. Verificado en navegador real: sábado 22-ago con businessHours 09-12/15-20, filas 8:00/12:00/14:00 con rayado, 9-11 y 15-18 limpias.
+
+**Bug 2 — Imagen "subía" pero no se veía. Bug de infraestructura, no de la vista:** el proxy BFF [`route.js`](frontend/app/api/proxy/[...path]/route.js) tenía **DOS problemas** compuestos:
+1. **Línea 67 original:** `await res.text()` — lee la respuesta como UTF-8. Para un JPEG binario, cada byte fuera del rango UTF-8 válido se sustituye por `U+FFFD` → el navegador recibía una imagen corrupta. **Este era el bug real.**
+2. **Línea 73 original:** `Cache-Control: no-store, private` sobrescribía cualquier header del backend, incluyendo el `public, max-age=86400` de la imagen — el ETag/cache diseñado para el bot de WhatsApp futuro no funcionaba.
+
+Fix quirúrgico (aprobado por GATE): helper `isBinaryContentType()` detecta `image/*`, `audio/*`, `video/*`, `application/pdf`, `application/octet-stream`; para esos content-types el proxy usa `arrayBuffer()` en vez de `text()` **y respeta el `Cache-Control`/`ETag` del backend** (incluidos 304 pass-through). Para JSON/texto **nada cambia** — sigue con `res.text()` y `Cache-Control: no-store, private`, verificado explícitamente end-to-end. Además, la vista de servicios ahora agrega `?v=<imageUpdatedAt>` como cache-buster a la URL de la miniatura (así reemplazar una imagen invalida el cache del navegador — el backend NO interpreta `?v`, es puro cache key del navegador).
+
+### Verificación end-to-end en navegador real (lección de esta ronda)
+
+La ronda anterior (commit 93cc529) había verificado el endpoint aislado con `supertest`, pero el bug vivía en el tramo proxy→navegador que nunca se probó. **De ahora en adelante, cuando el cambio involucre binarios o el navegador (proxy, headers, cache, decodificación de archivos), la verificación TIENE que incluir un GET real desde el browser con `fetch` + comparación de bytes + `<img>` que decodifique de verdad.**
+
+Esta ronda sí lo hice: seedié un JPEG de 332 bytes con magic `ff d8 ff e0`, obtuve el JWT, lo inyecté como cookie `alma_token`, hice `fetch('/api/proxy/services/{id}/image?v=...')` desde el navegador → **332 bytes exactos, header JPEG intacto, EOI `ff d9` intacto, decodificación `naturalWidth=8, naturalHeight=8` ✅**. Además probé con una imagen preexistente de Camilla Ceragem (`naturalWidth=477, naturalHeight=800`) y se ve visualmente en la miniatura de la lista. Los endpoints JSON (`/clients`, `/rooms`, `/users`, `/tenant/config`) siguen con `Cache-Control: no-store, private` — cero regresión.
+
+**Backend: 313/313 tests.** Frontend build limpio.
+
 ## 2026-08-21 (noche) — 3 ajustes de UX+auditoría: banner temporal, menú filtrado por permisos, login/logout en Registros
 
 **Roles invocados por nombre** (sin `agents/`): Backend Architect + Application Security Engineer.

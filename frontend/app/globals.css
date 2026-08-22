@@ -269,6 +269,21 @@
   .alma-schedule-banner.alma-anim-entered { opacity: 1; transform: translateX(-50%) translateY(0); }
   .alma-schedule-banner.alma-anim-exiting { opacity: 0; transform: translateX(-50%) translateY(-10px); }
 
+  /* Agenda día por cabina: filas de horas fuera de horario (antes de abrir,
+     durante el receso mediodía, después de cerrar). Se distinguen del resto
+     con un rayado diagonal muy suave sobre fondo apagado — se percibe como
+     "cerrado" sin gritar. No se ocultan para preservar la continuidad del
+     eje temporal. */
+  .alma-agenda-closed-cell {
+    background-color: rgba(168, 154, 135, 0.08);
+    background-image: repeating-linear-gradient(
+      135deg,
+      rgba(168, 154, 135, 0.10) 0 6px,
+      transparent 6px 12px
+    );
+    pointer-events: none;
+  }
+
   /* Toast — cumpleaños diario */
   .alma-toast {
     opacity: 0;

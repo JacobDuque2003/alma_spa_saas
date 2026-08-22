@@ -222,6 +222,7 @@ export default function AgendaPage() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [appointments, setAppointments] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [tenantConfig, setTenantConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [slotGroup, setSlotGroup] = useState(null);
@@ -278,6 +279,18 @@ export default function AgendaPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // La configuración del tenant (businessHours) casi no cambia — se pide una
+  // sola vez al montar. Si el /tenant/config falla o el usuario no tiene
+  // permiso 'configuracion', queda null y la grilla usa el default de la
+  // memoria del proyecto (09-12 / 15-20) — nunca deja al usuario sin agenda.
+  useEffect(() => {
+    let cancelled = false;
+    authFetch("/tenant/config")
+      .then((cfg) => { if (!cancelled) setTenantConfig(cfg); })
+      .catch(() => { /* usuario sin permiso o backend caído — la grilla usa el default */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const query = agendaQuery.trim();
@@ -609,6 +622,7 @@ export default function AgendaPage() {
             date={selectedDate}
             today={today}
             roomColorMap={roomColorMap}
+            tenantConfig={tenantConfig}
             onSelect={setSelected}
             onSelectGroup={setSlotGroup}
           />
@@ -978,7 +992,43 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
   );
 }
 
-function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect }) {
+// Devuelve la ventana [start,end) horaria efectiva para una cabina en una
+// fecha dada, respetando el schedule propio si lo tiene (Cabina 7 solo
+// miércoles). Puede devolver morning + afternoon separadas. Si no hay
+// businessHours del tenant, cae en el default histórico 09-12/15-20.
+const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+function windowsForRoomOnDate(room, tenantConfig, dateStr) {
+  const fallback = { morning: { start: "09:00", end: "12:00" }, afternoon: { start: "15:00", end: "20:00" } };
+  if (room?.schedule && typeof room.schedule === "object") {
+    // Cabina con schedule propio: SOLO opera los días listados. Un día
+    // ausente = cerrada todo el día (coherente con roomBusinessHours del
+    // backend, ronda 2026-08-20).
+    const dayKey = DAY_KEYS[new Date(`${dateStr}T12:00:00`).getDay()];
+    const special = room.schedule[dayKey];
+    if (!special) return { morning: null, afternoon: null };
+    return { morning: special.morning || null, afternoon: special.afternoon || null };
+  }
+  const bh = tenantConfig?.businessHours;
+  if (!bh) return fallback;
+  return { morning: bh.morning || null, afternoon: bh.afternoon || null };
+}
+
+function hourInWindow(hour, win) {
+  if (!win) return false;
+  const start = parseInt(String(win.start).split(":")[0], 10);
+  const end = parseInt(String(win.end).split(":")[0], 10);
+  // Una fila de la grilla ocupa [hour, hour+1). Está abierta si al menos
+  // una parte cae dentro de la ventana — visualmente marcamos la fila
+  // entera como abierta aunque solo esté parcialmente adentro.
+  return hour < end && hour + 1 > start;
+}
+
+function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
+  const { morning, afternoon } = windowsForRoomOnDate(room, tenantConfig, dateStr);
+  return hourInWindow(hour, morning) || hourInWindow(hour, afternoon);
+}
+
+function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect }) {
   const HOUR_HEIGHT = 66;
   const active = (appointments || [])
     .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
@@ -1048,11 +1098,25 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
         })}
 
         <div style={{ position: "relative", height: HOURS.length * HOUR_HEIGHT }}>
-          {HOURS.map((h, i) => (
-            <div key={h} style={{ position: "absolute", top: i * HOUR_HEIGHT, right: 8, fontSize: 11, color: "#A89A87" }}>
-              {h}:00
-            </div>
-          ))}
+          {HOURS.map((h, i) => {
+            // El label de la columna de horas se atenúa si NINGUNA cabina
+            // está abierta en esa hora — mantiene el eje temporal sin gritar.
+            const openInAnyRoom = visibleColumns.some((room) => isHourOpenForRoom(h, room, tenantConfig, date));
+            return (
+              <div
+                key={h}
+                style={{
+                  position: "absolute",
+                  top: i * HOUR_HEIGHT,
+                  right: 8,
+                  fontSize: 11,
+                  color: openInAnyRoom ? "#A89A87" : "#C9BFB0",
+                }}
+              >
+                {h}:00
+              </div>
+            );
+          })}
         </div>
 
         {visibleColumns.map((room) => {
@@ -1067,19 +1131,23 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, onSelect
                 background: date === today ? "rgba(235,205,181,0.07)" : "transparent",
               }}
             >
-              {HOURS.map((h, i) => (
-                <div
-                  key={h}
-                  style={{
-                    position: "absolute",
-                    top: i * HOUR_HEIGHT,
-                    left: 0,
-                    right: 0,
-                    height: HOUR_HEIGHT,
-                    borderTop: i > 0 ? "1px solid rgba(168,154,135,0.14)" : "none",
-                  }}
-                />
-              ))}
+              {HOURS.map((h, i) => {
+                const isOpen = isHourOpenForRoom(h, room, tenantConfig, date);
+                return (
+                  <div
+                    key={h}
+                    className={isOpen ? undefined : "alma-agenda-closed-cell"}
+                    style={{
+                      position: "absolute",
+                      top: i * HOUR_HEIGHT,
+                      left: 0,
+                      right: 0,
+                      height: HOUR_HEIGHT,
+                      borderTop: i > 0 ? "1px solid rgba(168,154,135,0.14)" : "none",
+                    }}
+                  />
+                );
+              })}
               {roomAppointments.map((appt) => {
                 const h = getEcuadorHour(appt.startsAt);
                 const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
