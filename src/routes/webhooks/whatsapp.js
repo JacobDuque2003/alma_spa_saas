@@ -4,6 +4,7 @@ const prisma = require('../../utils/prisma');
 const transport = require('../../services/whatsappTransport');
 const { previewOf } = require('../../services/whatsappInboxService');
 const { waIdToPhone } = require('../../utils/phone');
+const bot = require('../../services/whatsappBot');
 
 const router = express.Router({ mergeParams: true });
 
@@ -170,7 +171,7 @@ async function processInboundMessage(tenant, message, contacts) {
     return; // duplicado — no actualizar la conversación
   }
 
-  await prisma.whatsAppConversation.update({
+  const updatedConv = await prisma.whatsAppConversation.update({
     where: { id: conv.id },
     data: {
       lastInboundAt: waTs,
@@ -179,6 +180,17 @@ async function processInboundMessage(tenant, message, contacts) {
       unreadCount: { increment: 1 },
     },
   });
+
+  // Bot Fase 1: intenta responder si aplica. Best-effort — un fallo aquí no
+  // debe romper el flujo del webhook (Meta ya recibió 200 arriba).
+  try {
+    const connection = await prisma.whatsAppConnection.findUnique({ where: { tenantId: tenant.id } });
+    if (connection && connection.status === 'activo') {
+      await bot.handleInboundMessage({ tenant, connection, conv: updatedConv, incoming: message });
+    }
+  } catch (err) {
+    console.warn('[BOT] handleInboundMessage falló:', transport.sanitizeError(err));
+  }
 }
 
 async function processDeliveryStatus(tenant, status) {

@@ -116,6 +116,66 @@ async function sendText(conn, toWaId, text) {
   });
 }
 
+// Interactive: usado por el bot para enviar menús con botones o listas.
+// Ver docs Meta: /messages con type:'interactive'. El payload viene armado
+// desde whatsappBot/menus.js para no acoplar el bot al transporte.
+async function sendInteractive(conn, toWaId, interactivePayload) {
+  return postToMeta(conn, `${conn.phoneNumberId}/messages`, {
+    messaging_product: 'whatsapp',
+    to: toWaId,
+    type: 'interactive',
+    interactive: interactivePayload,
+  });
+}
+
+// Envía una imagen por media_id (obtenido previamente con uploadMedia), con
+// caption opcional. WhatsApp Cloud NO acepta multipart en /messages: hay que
+// subir primero y referenciar por id.
+async function sendImageByMediaId(conn, toWaId, mediaId, caption) {
+  return postToMeta(conn, `${conn.phoneNumberId}/messages`, {
+    messaging_product: 'whatsapp',
+    to: toWaId,
+    type: 'image',
+    image: {
+      id: mediaId,
+      ...(caption ? { caption } : {}),
+    },
+  });
+}
+
+// Sube un buffer binario a /media de Meta y devuelve el media_id.
+// El media_id vive ~30 días; para Fase 1 subimos cada vez el binario (simple
+// y correcto); optimización con cache queda para fase posterior si el volumen
+// lo justifica.
+async function uploadMedia(conn, buffer, mimeType) {
+  const token = getAccessTokenForSend(conn);
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimeType);
+  form.append('file', new Blob([buffer], { type: mimeType }), `image.${mimeType.split('/')[1] || 'jpg'}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${META_GRAPH_URL}/${conn.phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }, // no Content-Type — el navegador/undici lo genera con boundary
+      body: form,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      let detail; try { detail = (await res.json())?.error?.message; } catch (_) { detail = undefined; }
+      return { ok: false, status: res.status, errorTitle: detail || `Meta media upload ${res.status}` };
+    }
+    const data = await res.json();
+    return { ok: true, mediaId: data.id };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, status: err.status || 0, errorTitle: sanitizeError(err).message };
+  }
+}
+
 async function sendTemplate(conn, toWaId, { name, language, components }) {
   return postToMeta(conn, `${conn.phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
@@ -136,5 +196,8 @@ module.exports = {
   verifyWebhookChallenge,
   sendText,
   sendTemplate,
+  sendInteractive,
+  sendImageByMediaId,
+  uploadMedia,
   sanitizeError,
 };

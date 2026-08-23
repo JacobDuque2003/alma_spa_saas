@@ -2,6 +2,7 @@ const prisma = require('../utils/prisma');
 const { BadRequestError } = require('../utils/errors');
 const { assertTenantScope } = require('../utils/tenantScope');
 const transport = require('./whatsappTransport');
+const botState = require('./whatsappBot/state');
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TZ_OFFSET_MINUTES = -5 * 60; // America/Guayaquil (UTC-5, sin DST). Fallback si Tenant.config no lo trae.
@@ -87,17 +88,38 @@ async function listConversations(actor, query) {
     take: limit,
     include: { client: { select: { id: true, fullName: true } } },
   });
-  const items = rows.map((c) => ({
-    id: c.id,
-    customerWaId: c.customerWaId,
-    customerName: c.customerName,
-    clientId: c.clientId,
-    clientName: c.client?.fullName ?? null,
-    lastMessagePreview: c.lastMessagePreview,
-    lastMessageAt: c.lastMessageAt,
-    unreadCount: c.unreadCount,
-    withinWindow: isWithinWindow(c.lastInboundAt),
-  }));
+
+  // Determinar, en una sola query, qué conversaciones ya tuvieron algún
+  // outbound de recepción — esas quedan fuera del bot para siempre. Se agrupa
+  // por conversationId para no hacer N+1.
+  const convIds = rows.map((c) => c.id);
+  let handedOffSet = new Set();
+  if (convIds.length) {
+    const groups = await prisma.whatsAppMessage.groupBy({
+      by: ['conversationId'],
+      where: { tenantId, conversationId: { in: convIds }, direction: 'outbound', sentByUserId: { not: null } },
+      _count: { _all: true },
+    });
+    handedOffSet = new Set(groups.map((g) => g.conversationId));
+  }
+
+  const items = rows.map((c) => {
+    let botStatus = 'active';
+    if (handedOffSet.has(c.id)) botStatus = 'handedOff';
+    else if (botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
+    return {
+      id: c.id,
+      customerWaId: c.customerWaId,
+      customerName: c.customerName,
+      clientId: c.clientId,
+      clientName: c.client?.fullName ?? null,
+      lastMessagePreview: c.lastMessagePreview,
+      lastMessageAt: c.lastMessageAt,
+      unreadCount: c.unreadCount,
+      withinWindow: isWithinWindow(c.lastInboundAt),
+      botStatus, // 'active' | 'escalated' | 'handedOff'
+    };
+  });
   const last = rows[rows.length - 1];
   const nextCursor = rows.length === limit ? `${last.lastMessageAt.toISOString()}|${last.id}` : null;
   return { items, nextCursor };

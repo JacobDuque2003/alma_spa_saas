@@ -252,10 +252,27 @@ export default function CRMPage() {
                     {initials(name)}
                   </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: "#6B5540" }}>{name}</span>
-                      <span style={{ fontSize: 11, color: "#A89A87" }}>{time(c.lastMessageAt)}</span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                      <span style={{ fontSize: 11, color: "#A89A87", flexShrink: 0 }}>{time(c.lastMessageAt)}</span>
                     </div>
+                    {c.botStatus === "escalated" && (
+                      <span
+                        title="La clienta pidió hablar con recepción"
+                        style={{
+                          display: "inline-block",
+                          marginTop: 4,
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          background: "rgba(201,168,118,0.18)",
+                          color: "#856330",
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Escalado a recepción
+                      </span>
+                    )}
                     <div
                       style={{
                         fontSize: 12,

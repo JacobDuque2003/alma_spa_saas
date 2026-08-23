@@ -1,5 +1,72 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-23 (noche) — Bot WhatsApp Fase 1 IMPLEMENTADA en código (esperando token para verificación end-to-end)
+
+**Código completo y testeado (325/325 tests), sin migración de schema, sin variable de entorno nueva, sin dependencia nueva.** Cero cambio a la lógica de reservas o disponibilidad — el bot solo lee. Pendiente: el PM me pasa el Access Token rotado en el momento de la verificación (no antes, para no vivir en el prompt), lo guardo con `replaceConnection` que ya cifra AES-256-GCM, y hago la prueba desde su WhatsApp real como destinatario.
+
+### Arquitectura de Fase 1
+
+**Archivos nuevos:**
+- `src/services/whatsappTransport.js` — extendido con `sendInteractive`, `sendImageByMediaId`, `uploadMedia` (multipart a `/media` de Meta con timeout+backoff+sanitize consistentes con `postToMeta`).
+- `src/services/whatsappBot/state.js` — dos `Map`s en memoria: `flowState` (sub-flujo por conversación, TTL 1h) y `escalated` (números que pidieron hablar con recepción, TTL 24h). Sweep perezoso a partir de 1000/5000 entradas para no crecer sin fin.
+- `src/services/whatsappBot/rateLimit.js` — dos ventanas apiladas: 20/5min y 100/1h por `customerWaId`. Excedido → aviso UNA vez, luego silencio 15min.
+- `src/services/whatsappBot/menus.js` — construye payloads `interactive` de Meta (list para el menú principal y para el catálogo agrupado por categoría; reply button para "Volver al menú").
+- `src/services/whatsappBot/index.js` — orquestador. `handleInboundMessage({tenant, connection, conv, incoming})`.
+- `src/services/whatsappBot.test.js` — 12 tests con mocks del transport y de Prisma.
+
+**Archivos modificados:**
+- `src/routes/webhooks/whatsapp.js` — invoca `bot.handleInboundMessage` best-effort después del `WhatsAppConversation.update` del inbound. Un fallo del bot NO rompe el webhook (Meta ya recibió 200 arriba).
+- `src/services/whatsappInboxService.js` — `listConversations` ahora devuelve `botStatus: 'active'|'escalated'|'handedOff'` por conversación. `handedOff` sale de un solo `groupBy` (no N+1) sobre `WhatsAppMessage` para las conversaciones donde algún outbound tiene `sentByUserId != null`.
+- `frontend/app/admin/(dashboard)/crm/page.js` — pill amarillo suave "Escalado a recepción" bajo el nombre cuando `botStatus === 'escalated'`.
+
+### Reglas de "el bot no responde"
+1. Rate limit excedido → aviso 1×, luego silencio (in-memory por número).
+2. Conversación escalada por la clienta (Map, TTL 24h).
+3. **Regla natural más fuerte**: existe algún `WhatsAppMessage.outbound.sentByUserId != null` en la conversación → recepción ya intervino, cesión permanente. Esto es cero-migración y se auto-mantiene: cada vez que Gianella responde manual desde la Bandeja, la conversación queda fuera del bot para siempre.
+
+### Sub-flujos implementados (según 6 respuestas del PM)
+- Menú principal automático (cualquier inbound lo dispara, sin palabras clave) — list interactivo con 4 opciones.
+- **Ver servicios**: catálogo agrupado por categoría (list, hasta 10 secciones × 10 rows).
+- Detalle de servicio: si tiene imagen → `uploadMedia`+`sendImageByMediaId` con caption `nombre / precio · duración / descripción`; si no tiene imagen → solo texto, sin mencionar la falta. Botón "Ver menú" al final.
+- **Reservar** (temporal): link a `${PUBLIC_BASE_URL}/reservar/${tenant.slug}`.
+- **Mi cita**: match por `waIdToPhone(customerWaId)` contra `Client.whatsapp`. Sin match → "No encuentro citas a su nombre" + menú. Con match → próxima cita activa (pendiente/confirmado, desde ahora) con servicio, fecha en `America/Guayaquil`, cabina y estado.
+- **Hablar con recepción**: marca `state.markEscalated` (24h), envía "Aviso a la recepción para que le contacte por acá lo antes posible", limpia estado. En Bandeja aparece pill "Escalado a recepción".
+- Tono: `usted` por defecto; cambia a `tu` cuando la clienta usa "tú/tus/tienes/puedes/quieres/...". Persistente en el estado de la conversación.
+
+### Verificación en tests (12/12) — cubre
+Bot silencioso si recepción ya respondió; bot silencioso en conversación escalada; primer inbound dispara menú principal con los 4 rows exactos; "Ver servicios" agrupa por categoría; servicio CON foto → uploadMedia + image + botón; servicio SIN foto → solo texto sin mencionar falta; "Mi cita" sin match → texto+menú; "Mi cita" con match → detalles fecha+cabina+estado; "Reservar" → link con slug; "Escalar" → marca escalado + confirmación; tono "tú" detectado por primer mensaje; rate limit al 21° aviso, del 22° en adelante silencio total.
+
+### Restricciones del webhook y transporte respetadas
+- HMAC del webhook, `timingSafeEqual`, cifrado AES-256-GCM del token — **cero cambio**.
+- El bot no modifica el flujo del webhook; solo se engancha después del `WhatsAppConversation.update` y con try/catch alrededor.
+- `sanitizeError` se usa en cualquier log del bot para no filtrar el Bearer.
+
+### Verificación end-to-end pendiente (bloqueada por token)
+Cuando el PM me pase el Access Token rotado:
+1. Guardar con `replaceConnection` (ya cifra AES-256-GCM en `WhatsAppConnection.accessTokenEnc`).
+2. Probar desde el WhatsApp del PM: (a) primer mensaje → llega menú, (b) "Ver servicios" → llega lista, (c) elegir uno → llega foto+descripción o solo descripción, (d) "Hablar con recepción" → llega confirmación y aparece badge en Bandeja.
+
+## 2026-08-23 — Bot WhatsApp Fase 1 APROBADA; esperando rotación de Access Token para arrancar
+
+**Diseño completo aprobado** (ver entrada 2026-08-22 (noche) más abajo). Respuestas del PM a las 6 preguntas pendientes que bloqueaban el arranque:
+
+1. **"Mi cita" en Fase 1**: incluir. Match por número de WhatsApp contra `Client.whatsapp`. Si no matchea → responder "No encuentro citas a tu nombre" y mostrar menú principal (para que igual pueda reservar).
+2. **Trigger del menú**: automático. Cualquier mensaje inbound dispara el menú, sin palabras clave.
+3. **Escalado a recepción**: solo badge en Bandeja por ahora. Notificaciones push se evalúan después si Gianella las pide.
+4. **Tono**: "usted" por defecto, cambia a "tú" si la clienta usa "tú" primero. Confirmado.
+5. **Servicios sin foto**: bot envía solo descripción, sin mencionar la falta de foto (más limpio).
+6. **Plantillas WhatsApp**: Fase 1 asume que la clienta inicia siempre (ventana de 24h). Plantillas para mensajes proactivos quedan para fase posterior si aplica.
+
+**Prerequisito activo**: el PM está rotando el Access Token en Meta (el actual quedó quemado en captura). **NO empezar código hasta que el PM confirme rotación hecha.** El token nuevo se guardará con `whatsappConnectionService.replaceConnection()` que ya cifra con AES-256-GCM en `WhatsAppConnection.accessTokenEnc` — nunca en env vars del código.
+
+### Alcance exacto de Fase 1 (para no perderlo entre sesiones)
+
+Sub-flujos incluidos: menú principal + ver servicios (foto+descripción) + "Mi cita" (match por número) + "Hablar con recepción" (marca conversación no-bot + badge en Bandeja). Sub-flujo "Reservar" en Fase 1 solo responde con link a `/reservar/alma-spa`.
+
+**Sin IA en Fase 1** — todo por botones/listas nativas de WhatsApp, determinístico al 100%. Sin migración, sin variable de env nueva, sin dependencia nueva. Todo reusa la infraestructura existente (`WhatsAppConnection`, webhook con HMAC blindado, `whatsappTransport`, `bookingNotifier` como referencia).
+
+**Verificación end-to-end obligatoria al terminar**: WhatsApp real desde el número de prueba con Jacob como destinatario, ejercitando (a) menú inicial automático al primer mensaje, (b) ver servicios → llegan foto + descripción, (c) "hablar con recepción" → aparece badge en Bandeja.
+
 ## 2026-08-23 — 2 ajustes a la vista de servicios: catálogo completo + mensajes en lenguaje de dueña
 
 ### Bug 1: los inactivos desaparecían de la vista de Configuración

@@ -125,6 +125,10 @@ test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status p
       return [{ id: 'conv1', customerWaId: '593999', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), client: { id: 'cli1', fullName: 'A' } }];
     },
   };
+  // El nuevo lookup de "conversaciones donde recepción ya respondió" (para
+  // marcar botStatus='handedOff' en la Bandeja) usa whatsAppMessage.groupBy —
+  // devolvemos vacío para este test: ninguna conversación cedió al humano.
+  prisma.whatsAppMessage = { groupBy: async () => [] };
   const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { filter: 'sin_confirmar_hoy' });
   assert.equal(apptQuery.status, 'pendiente', 'debe filtrar por status pendiente en Appointment');
   assert.deepEqual(apptQuery.client, { is: { active: true } }, 'debe excluir clientas deshabilitadas de recordatorios');
