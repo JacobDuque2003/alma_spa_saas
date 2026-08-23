@@ -103,12 +103,69 @@ const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid
 const cardPaddingDesktop = { padding: 28 };
 const cardPaddingMobile = { padding: 18 };
 
+// Traducción de los mensajes técnicos del backend a lenguaje de dueña de spa.
+// El backend sigue devolviendo su texto original (útil para tests y otros
+// consumidores de la API), y aquí lo re-escribimos justo antes de mostrárselo
+// a la persona en pantalla. Cero cambio de lógica ni de protecciones.
 function friendlyConfigError(message, fallback) {
-  const text = String(message || fallback || "");
-  const dependentRoom = text.match(/No se puede desactivar: el gabinete "([^"]+)" depende de la categoría "([^"]+)"/);
-  if (dependentRoom) {
-    return `No se pudo desactivar. La cabina "${dependentRoom[1]}" usa la categoría "${dependentRoom[2]}" y necesita al menos un servicio activo.`;
+  const text = String(message || "");
+
+  // Servicio: bloqueo por ser el único activo de una cabina.
+  const depRoom = text.match(/No se puede desactivar: el gabinete "([^"]+)" depende de la categoría "([^"]+)"/);
+  if (depRoom) {
+    return `No puedes desactivar este servicio porque es el único disponible en la cabina "${depRoom[1]}". Activa otro servicio para esa cabina primero, o cambia sus cabinas permitidas.`;
   }
+
+  // Eliminación de categoría: la usa una cabina.
+  const catRoom = text.match(/No se puede eliminar esta categoría porque hay gabinetes activos que la usan \(ej: "([^"]+)"\)/);
+  if (catRoom) {
+    return `No puedes eliminar esta categoría todavía. La cabina "${catRoom[1]}" la está usando; cambia la especialidad de esa cabina primero.`;
+  }
+
+  // Eliminación de categoría: la usa un servicio.
+  const catSvc = text.match(/No se puede eliminar esta categoría porque hay servicios activos que la usan \(ej: "([^"]+)"\)/);
+  if (catSvc) {
+    return `No puedes eliminar esta categoría todavía. El servicio "${catSvc[1]}" pertenece a ella; cámbialo de categoría o desactívalo primero.`;
+  }
+
+  // Categoría duplicada.
+  if (/Ya existe una categoría con ese nombre/.test(text)) {
+    return "Ya tienes una categoría con ese nombre. Elige otro.";
+  }
+
+  // Validaciones de servicio (duración, pausa, color, cabinas).
+  if (/durationMins.*15 y 480/.test(text)) return "La duración debe estar entre 15 y 480 minutos.";
+  if (/bufferMins.*0 y 90/.test(text)) return "La pausa entre citas debe estar entre 0 y 90 minutos.";
+  if (/colorHex.*hexadecimal/.test(text)) return "El color no está en un formato válido. Elígelo del selector de color.";
+  if (/roomIds debe ser una lista de cabinas/.test(text)) return "Selecciona al menos una cabina para el servicio.";
+  if (/cabinas no pertenecen al tenant o están inactivas/.test(text)) {
+    return "Una o más cabinas ya no están disponibles. Recarga la página e inténtalo de nuevo.";
+  }
+  if (/name y category son requeridos/.test(text)) {
+    return "Faltan datos: escribe el nombre y elige una categoría.";
+  }
+
+  // Validaciones de cabina.
+  if (/name y specialty son requeridos/.test(text)) {
+    return "Faltan datos: escribe el nombre y elige la especialidad de la cabina.";
+  }
+  if (/sortOrder debe ser un entero entre 0 y 999/.test(text)) return "El orden de la cabina debe estar entre 0 y 999.";
+  if (/opensAt debe tener formato HH:MM/.test(text)) return "La hora de apertura no tiene un formato válido (ejemplo: 09:00).";
+  if (/closesAt debe tener formato HH:MM/.test(text)) return "La hora de cierre no tiene un formato válido (ejemplo: 20:00).";
+
+  // Validaciones de descripción/imagen (ya en lenguaje claro desde el
+  // backend, se dejan pasar tal cual).
+  if (/description no puede superar 500 caracteres/.test(text)) {
+    return "La descripción no puede tener más de 500 caracteres.";
+  }
+  if (/máximo permitido es \d+KB/.test(text)) return text; // ya usa lenguaje de tamaño en KB, claro.
+  if (/imagen debe ser JPEG o PNG/.test(text)) return "La imagen debe estar en formato JPEG o PNG.";
+
+  // "name es requerido" en categorías.
+  if (/^name es requerido$/.test(text)) return "El nombre es obligatorio.";
+
+  // Cualquier otro texto: lo devolvemos tal cual si trae contenido útil, o
+  // el fallback si viene vacío.
   return text || fallback;
 }
 
@@ -156,7 +213,7 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim() || selectedRoomIds.length === 0 || priceUsd === "" || Number(priceUsd) < 0 || !Number(durationMins)) {
-      setValidation("Nombre, precio, duración y al menos una cabina son requeridos");
+      setValidation("Faltan datos: nombre, precio, duración y al menos una cabina.");
       return;
     }
     setValidation(null);
@@ -177,10 +234,10 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
           offersHomeService: false,
         },
       });
-      toast.success(`Servicio "${created.name}" creado`);
+      toast.success(`Servicio "${created.name}" creado.`);
       onSaved(created);
     } catch (err) {
-      toast.error(err.message || "Error al crear servicio");
+      toast.error(friendlyConfigError(err.message, "No se pudo crear el servicio."));
       setSaving(false);
     }
   }
@@ -288,7 +345,7 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
       setRemoveImage(false);
       setCompressedInfo({ bytes, width, height });
     } catch (err) {
-      setError(err.message || "No se pudo procesar la imagen");
+      setError(friendlyConfigError(err.message, "No se pudo procesar la imagen. Prueba con otra foto."));
     } finally {
       setCompressing(false);
       e.target.value = "";
@@ -303,7 +360,7 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
 
   async function handleSave() {
     if (description.trim().length > 500) {
-      setError("La descripción no puede superar 500 caracteres");
+      setError("La descripción no puede tener más de 500 caracteres.");
       return;
     }
     setError(null);
@@ -313,10 +370,10 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
       if (newImagePreview) body.image = newImagePreview;
       else if (removeImage) body.image = null;
       const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body });
-      toast.success("Descripción y foto actualizadas");
+      toast.success("Descripción y foto guardadas.");
       onSaved(updated);
     } catch (err) {
-      setError(err.message || "No se pudo guardar");
+      setError(friendlyConfigError(err.message, "No se pudieron guardar los cambios."));
       setSaving(false);
     }
   }
@@ -495,19 +552,19 @@ function BusinessHoursPanel({ onRefresh }) {
   async function save() {
     // Validación local mínima antes de enviar (evita round-trip).
     if (!morningOpen && !afternoonOpen) {
-      setValidationMsg("Al menos una franja (mañana o tarde) debe estar abierta.");
+      setValidationMsg("Necesitas tener al menos una franja abierta (mañana o tarde).");
       return;
     }
     if (morningOpen && morningStart >= morningEnd) {
-      setValidationMsg("La apertura de la mañana debe ser antes del cierre.");
+      setValidationMsg("La mañana debe abrir antes de cerrar.");
       return;
     }
     if (afternoonOpen && afternoonStart >= afternoonEnd) {
-      setValidationMsg("La apertura de la tarde debe ser antes del cierre.");
+      setValidationMsg("La tarde debe abrir antes de cerrar.");
       return;
     }
     if (morningOpen && afternoonOpen && morningEnd > afternoonStart) {
-      setValidationMsg("La mañana debe cerrar antes (o al mismo tiempo) que abra la tarde.");
+      setValidationMsg("La mañana debe cerrar antes de que abra la tarde.");
       return;
     }
     setValidationMsg(null);
@@ -523,10 +580,10 @@ function BusinessHoursPanel({ onRefresh }) {
       };
       await authFetch("/tenant/config", { method: "PATCH", body });
       setSaved(true);
-      toast.success("Horario guardado");
+      toast.success("Horario del spa guardado.");
       if (onRefresh) onRefresh();
     } catch (err) {
-      toast.error(err.message || "No se pudo guardar el horario");
+      toast.error(friendlyConfigError(err.message, "No se pudo guardar el horario. Inténtalo de nuevo."));
     } finally {
       setSaving(false);
     }
@@ -648,8 +705,9 @@ export default function ConfiguracionPage() {
       setServices(s);
       setRooms(r);
     } catch (err) {
-      setLoadError(err.message);
-      toast.error(err.message);
+      const friendly = friendlyConfigError(err.message, "No se pudo cargar la configuración. Recarga la página.");
+      setLoadError(friendly);
+      toast.error(friendly);
     } finally {
       setLoading(false);
     }
@@ -663,11 +721,11 @@ export default function ConfiguracionPage() {
     try {
       const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
       setServices((prev) => prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s)));
-      if (changes.active === true) toast.success("Servicio habilitado");
-      else if (changes.active === false) toast.warning("Servicio deshabilitado");
-      else toast.info("Servicio actualizado");
+      if (changes.active === true) toast.success("Servicio activado.");
+      else if (changes.active === false) toast.warning("Servicio desactivado.");
+      else toast.info("Cambios guardados.");
     } catch (err) {
-      toast.error(friendlyConfigError(err.message, "Error al actualizar servicio"));
+      toast.error(friendlyConfigError(err.message, "No se pudo guardar el cambio."));
     }
   }
 
@@ -677,10 +735,10 @@ export default function ConfiguracionPage() {
     try {
       await authFetch(`/services/${service.id}`, { method: "DELETE" });
       setServices((prev) => prev.filter((s) => s.id !== service.id));
-      toast.warning(`Servicio "${service.name}" eliminado de la oferta`);
+      toast.warning(`Servicio "${service.name}" quitado de la oferta.`);
       setDeleteServiceTarget(null);
     } catch (err) {
-      toast.error(friendlyConfigError(err.message, "No se pudo eliminar el servicio"));
+      toast.error(friendlyConfigError(err.message, "No se pudo eliminar el servicio."));
     } finally {
       setDeletingService(false);
     }
