@@ -1,5 +1,90 @@
 # Alma Spa SaaS — memoria operativa
 
+## 2026-08-23 — 2 ajustes a la vista de servicios: catálogo completo + mensajes en lenguaje de dueña
+
+### Bug 1: los inactivos desaparecían de la vista de Configuración
+
+Confirmado con query real a Railway: los 6 servicios inactivos existen (14 activos + 6 inactivos = 20 totales), ninguno borrado. El filtro estaba solo en el frontend, `configuracion/page.js:621-622`: `visibleServices = activeServices`. Fix: `visibleServices` ahora incluye TODOS los servicios, ordenados con activos primero (alfabético) y luego inactivos (alfabético). Los inactivos ya se pintaban con `opacity: 0.5` cuando alcanzaban el render — solo faltaba dejar de filtrarlos. La lista pública `/public/:slug/services` sigue filtrando por `active:true` en el backend, sin cambios.
+
+**Verificado end-to-end**: 20/20 servicios visibles con 6 badges "Inactivo", API pública sigue con 14, activos ordenados antes de inactivos.
+
+### Bug 2: mensajes técnicos reescritos a lenguaje de dueña
+
+Solución sin tocar backend: extendí `friendlyConfigError()` en el frontend para traducir los mensajes técnicos del backend a lenguaje claro justo antes de mostrarlos. **El backend sigue devolviendo su texto original** (útil para tests y otros consumidores de la API); solo cambia lo que ve la persona en pantalla.
+
+Todos los mensajes reescritos en la pantalla de Configuración (para revisión del PM):
+
+| Contexto | Antes | Después |
+|---|---|---|
+| Bloqueo de desactivación | *"No se pudo desactivar. La cabina 'X' usa la categoría 'Y' y necesita al menos un servicio activo."* | *"No puedes desactivar este servicio porque es el único disponible en la cabina 'X'. Activa otro servicio para esa cabina primero, o cambia sus cabinas permitidas."* |
+| Eliminar categoría con cabinas | *"No se puede eliminar esta categoría porque hay gabinetes activos que la usan (ej: 'X')"* | *"No puedes eliminar esta categoría todavía. La cabina 'X' la está usando; cambia la especialidad de esa cabina primero."* |
+| Eliminar categoría con servicios | *"...hay servicios activos que la usan (ej: 'X')"* | *"...El servicio 'X' pertenece a ella; cámbialo de categoría o desactívalo primero."* |
+| Categoría duplicada | *"Ya existe una categoría con ese nombre en este tenant"* | *"Ya tienes una categoría con ese nombre. Elige otro."* |
+| Duración inválida | *"durationMins debe ser un entero entre 15 y 480 minutos"* | *"La duración debe estar entre 15 y 480 minutos."* |
+| Pausa inválida | *"bufferMins debe ser un entero entre 0 y 90 minutos"* | *"La pausa entre citas debe estar entre 0 y 90 minutos."* |
+| Color inválido | *"colorHex debe tener formato hexadecimal..."* | *"El color no está en un formato válido. Elígelo del selector de color."* |
+| Sin cabinas | *"roomIds debe ser una lista de cabinas"* | *"Selecciona al menos una cabina para el servicio."* |
+| Cabinas obsoletas | *"...cabinas no pertenecen al tenant o están inactivas"* | *"Una o más cabinas ya no están disponibles. Recarga la página e inténtalo de nuevo."* |
+| Formulario incompleto (crear servicio) | *"name y category son requeridos"* / *"Nombre, precio, duración y al menos una cabina son requeridos"* | *"Faltan datos: escribe el nombre y elige una categoría."* / *"Faltan datos: nombre, precio, duración y al menos una cabina."* |
+| Cabina incompleta | *"name y specialty son requeridos"* | *"Faltan datos: escribe el nombre y elige la especialidad de la cabina."* |
+| Orden inválido | *"sortOrder debe ser un entero entre 0 y 999"* | *"El orden de la cabina debe estar entre 0 y 999."* |
+| Formato hora | *"opensAt/closesAt debe tener formato HH:MM"* | *"La hora de apertura/cierre no tiene un formato válido (ejemplo: 09:00)."* |
+| Descripción larga | *"description no puede superar 500 caracteres"* | *"La descripción no puede tener más de 500 caracteres."* |
+| Imagen inválida | *"La imagen debe ser JPEG o PNG"* | *"La imagen debe estar en formato JPEG o PNG."* |
+| Franjas de horario | *"Al menos una franja debe estar abierta"* | *"Necesitas tener al menos una franja abierta (mañana o tarde)."* |
+| Franja mañana inválida | *"La apertura de la mañana debe ser antes del cierre"* | *"La mañana debe abrir antes de cerrar."* |
+| Franja tarde inválida | *"La apertura de la tarde debe ser antes del cierre"* | *"La tarde debe abrir antes de cerrar."* |
+| Solapamiento mañana/tarde | *"La mañana debe cerrar antes (o al mismo tiempo) que abra la tarde"* | *"La mañana debe cerrar antes de que abra la tarde."* |
+| Éxito guardar horario | *"Horario guardado"* | *"Horario del spa guardado."* |
+| Fallo guardar horario | *"No se pudo guardar el horario"* | *"No se pudo guardar el horario. Inténtalo de nuevo."* |
+| Éxito toggle activar | *"Servicio habilitado"* | *"Servicio activado."* |
+| Éxito toggle desactivar | *"Servicio deshabilitado"* | *"Servicio desactivado."* |
+| Éxito editar servicio | *"Servicio actualizado"* | *"Cambios guardados."* |
+| Fallo actualizar | *"Error al actualizar servicio"* | *"No se pudo guardar el cambio."* |
+| Éxito eliminar | *"Servicio 'X' eliminado de la oferta"* | *"Servicio 'X' quitado de la oferta."* |
+| Fallo eliminar | *"No se pudo eliminar el servicio"* | *"No se pudo eliminar el servicio."* |
+| Éxito crear | *"Servicio 'X' creado"* | *"Servicio 'X' creado."* |
+| Fallo crear | *"Error al crear servicio"* | *"No se pudo crear el servicio."* |
+| Éxito guardar foto/desc | *"Descripción y foto actualizadas"* | *"Descripción y foto guardadas."* |
+| Fallo procesar imagen | *"No se pudo procesar la imagen"* | *"No se pudo procesar la imagen. Prueba con otra foto."* |
+| Fallo cargar página | (mensaje crudo del backend) | *"No se pudo cargar la configuración. Recarga la página."* |
+| Fallo guardar foto/desc | *"No se pudo guardar"* | *"No se pudieron guardar los cambios."* |
+
+**Verificado end-to-end**: intento real de desactivar Camilla Ceragem (único servicio activo de la categoría "ceragem" que respalda a Cabina 6 - CERAGEM) → backend responde **400** con el mensaje técnico intacto (protección funciona), frontend lo re-escribe con el texto exacto que el PM pidió como ejemplo. Backend: **313/313 tests, sin regresión** (no se tocó ni una línea de backend).
+
+## 2026-08-22 (noche) — Diseño del bot de WhatsApp con IA (solo diseño, GATE pendiente)
+
+**Nada implementado todavía.** Documento de diseño presentado al PM con 10 secciones + alcance concreto de Fase 1 + 6 preguntas pendientes. Backend Architect + AppSec por nombre.
+
+### Decisiones clave del diseño
+
+- **Reuso máximo**: webhook actual (`src/routes/webhooks/whatsapp.js`), `WhatsAppConnection`/`WhatsAppConversation`/`WhatsAppMessage` ya existentes, cifrado AES-256-GCM del token, HMAC blindado con `timingSafeEqual`, `getAvailability()`/`createManualAppointment()` de `appointmentService`. **Cero infraestructura nueva** en Fase 1.
+- **Sin modelo "reserva pendiente" separado**: reuso `Appointment` con nuevo valor de enum `pendiente_bot` (Fase 2). Los `@@unique([roomId,startsAt])` y `@@unique([staffId,startsAt])` previenen doble-booking a nivel de DB — dos clientas confirmando el mismo slot es imposible, la segunda recibe `SlotUnavailableError` y el bot le ofrece 3 slots alternativos sin volver al inicio.
+- **IA elegida**: Gemini Flash 2.5. Costo real proyectado con 300 conv/mes ≈ **$0.12/mes de IA** (mucho menor que la estimación original de $3-8) — costo no es factor de decisión. WhatsApp Cloud API gratis los primeros 1000 mensajes/mes en categoría "service".
+- **Guardrail anti-invención + anti-prompt-injection**: IA solo devuelve JSON con `intent` (enum cerrado) + `params` + `reply_text`. **El backend nunca ejecuta acciones desde `reply_text`, solo desde `intent`** — el peor caso de prompt injection produce `unclear` o `escalate`, jamás una acción fuera del enum.
+- **Aislamiento por tenant**: webhook ya recibe `:tenantSlug`, todas las queries van con `where:{tenantId}` — cero cruce entre tenants (aunque hoy solo hay uno).
+- **Rate limit por número**: 20/5min, 100/hora por `from_wa_id`. Mismo patrón que `publicRateLimit.js`.
+- **Cost cap por conversación** (Fase 2+): >$0.50/día en una conversación → corta el bot para ese número, alerta a recepción.
+
+### Fase 1 (MVP mínimo viable, SIN IA)
+
+Alcance concreto: menú principal + "Ver servicios" completo (foto+descripción) + "Reservar" temporal (solo link a la web) + "Hablar con recepción" + rate limit. **Cero migración, cero variable de env nueva, cero dependencia nueva, cero costo variable, cero riesgo de invención** — todo por botones/listas nativas de WhatsApp, determinístico al 100%. Fases 2 y 3 documentadas pero fuera de alcance.
+
+### Prerequisito antes de Fase 1
+
+**Rotar el Access Token en Meta** — el actual quedó quemado (expuesto en captura). Se rota en Meta Developer Console y se guarda con `replaceConnection` que ya cifra con AES-256-GCM en `WhatsAppConnection.accessTokenEnc`. Nunca en env vars del código.
+
+### 6 preguntas pendientes al PM (bloquean el arranque de Fase 1)
+
+1. Sub-flujo "Mi cita" en Fase 1 o diferido a Fase 2
+2. Trigger del menú (automático 1ª vez del día vs. palabra clave)
+3. Notificación push al escalar a recepción o solo badge en Bandeja
+4. Confirmación de "usted" por defecto, "tú" si la clienta empieza así
+5. Comportamiento cuando el servicio no tiene imagen aún
+6. Categoría de plantilla WhatsApp — asumir clienta siempre inicia (dentro de 24h) o preparar plantilla `bot_welcome_v1` aprobada
+
+**Cuando el PM responda las 6 (o al menos las que apliquen a Fase 1) + apruebe el alcance, sigue GATE de tocar código.**
+
 ## 2026-08-22 — 2 bugs: agenda no marcaba horas cerradas + imagen de servicio "subía" pero no se veía
 
 **Bug 1 — Agenda día por cabina:** [`CabinDayGrid`](frontend/app/admin/(dashboard)/agenda/page.js:981) renderizaba sobre un `HOURS = [8..19]` hardcodeado ([línea 14](frontend/app/admin/(dashboard)/agenda/page.js:14)) sin leer `businessHours` del tenant ni el `room.schedule` propio de Cabina 7. Fix visual puro (autónomo, sin GATE): fetch a `/tenant/config` desde el shell, se pasa a `CabinDayGrid`, cada fila de hora por cabina evalúa `isHourOpenForRoom(hour, room, tenantConfig, dateStr)` respetando el schedule por cabina si lo tiene (Cabina 7 solo miércoles). Las filas cerradas se marcan con clase `.alma-agenda-closed-cell` (rayado diagonal suave sobre fondo apagado en `globals.css`), y las labels del eje se atenúan si ninguna cabina está abierta en esa hora. **Cero cambio a lógica de disponibilidad** — solo render. Verificado en navegador real: sábado 22-ago con businessHours 09-12/15-20, filas 8:00/12:00/14:00 con rayado, 9-11 y 15-18 limpias.

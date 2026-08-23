@@ -619,7 +619,20 @@ export default function ConfiguracionPage() {
   const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
   const mediaAnim = useAnimatedMount(!!mediaTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
-  const visibleServices = activeServices;
+  // La lista muestra el catálogo completo (activos + inactivos) para que la
+  // dueña pueda ver todo y reactivar cualquier cosa desde el mismo lugar.
+  // Los inactivos se pintan con opacidad reducida (ver `opacity` en la fila)
+  // y quedan al final para no romper el flujo visual de la oferta activa.
+  // La lista pública de reservas — /public/:slug/services — sigue filtrando
+  // por active:true en el backend, sin cambios.
+  const visibleServices = useMemo(() => {
+    return [...services].sort((a, b) => {
+      const aActive = a.active !== false;
+      const bActive = b.active !== false;
+      if (aActive !== bActive) return aActive ? -1 : 1;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  }, [services]);
   const averagePrice = activeServices.length
     ? activeServices.reduce((sum, s) => sum + Number(s.priceUsd || 0), 0) / activeServices.length
     : 0;
