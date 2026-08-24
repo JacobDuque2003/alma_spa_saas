@@ -100,11 +100,22 @@ function assertKeysDifferOrExit() {
   }
 }
 
+function warnMissingWhatsappEnv() {
+  const required = ['WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN'];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length) {
+    console.warn(`[WARN] Variables de WhatsApp no configuradas: ${missing.join(', ')}. El bot y webhook no funcionarán.`);
+  }
+}
+
 if (require.main === module) {
   assertJwtSecretOrExit();
   assertEncryptionKeyOrExit();
-  assertWhatsappKeyOrExit();
-  assertKeysDifferOrExit();
+  if (process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY) {
+    assertWhatsappKeyOrExit();
+    assertKeysDifferOrExit();
+  }
+  warnMissingWhatsappEnv();
 
   process.on('unhandledRejection', (reason) => {
     console.error('[FATAL] unhandledRejection — el proceso seguirá pero esto debe corregirse:', reason);

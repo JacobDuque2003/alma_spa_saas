@@ -8,7 +8,7 @@ const { getTenantTimezone, localDayBoundsUTC, localTimeToUTC } = require('../uti
 const { normalize: normalizeBusinessHours, isRangeInsideBusinessHours } = require('../utils/businessHours');
 
 const STAFF_ROLES = ['personal', 'dueno'];
-const OPEN_STATUSES = ['pendiente', 'confirmado'];
+const OPEN_STATUSES = ['pendiente', 'pendiente_bot', 'confirmado'];
 
 function getBusinessHours(tenantConfig) {
   return normalizeBusinessHours(tenantConfig?.businessHours);
@@ -543,7 +543,7 @@ async function updateAppointment(actor, id, changes) {
 }
 
 async function updateStatus(actor, id, status) {
-  const validStatuses = ['pendiente', 'confirmado', 'cancelado', 'no_show'];
+  const validStatuses = ['pendiente', 'pendiente_bot', 'confirmado', 'cancelado', 'no_show'];
   if (!validStatuses.includes(status)) {
     throw new BadRequestError(`status debe ser uno de: ${validStatuses.join(', ')}`);
   }

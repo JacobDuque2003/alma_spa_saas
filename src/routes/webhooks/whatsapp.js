@@ -8,25 +8,12 @@ const bot = require('../../services/whatsappBot');
 
 const router = express.Router({ mergeParams: true });
 
-// Regex de la firma X-Hub-Signature-256: hash SHA-256 en hex minúsculas.
 const SIG_RE = /^sha256=[0-9a-f]{64}$/;
 
-/**
- * Verificación en el orden fail-closed que exige AppSec:
- * 1. Cargar Tenant por slug de la URL (fuente confiable, no del body).
- * 2. Cargar WhatsAppConnection activa. Sin conexión → DROP.
- * 3. Descifrar appSecret. Si es nulo/no resoluble → DROP (NUNCA HMAC con "" — H1).
- * 4. Validar el header (existencia + formato) ANTES de comparar.
- * 5. HMAC sobre req.rawBody (bytes crudos exactos — NO re-serializar).
- * 6. timingSafeEqual sobre buffers de igual longitud.
- * Recién con firma válida se responde 200 y se procesa async.
- */
-async function loadConnectionOrDrop(req, res) {
+async function loadTenantOrDrop(req, res) {
   const tenant = await prisma.tenant.findUnique({ where: { slug: req.params.tenantSlug } });
   if (!tenant || !tenant.active) { res.sendStatus(404); return null; }
-  const connection = await prisma.whatsAppConnection.findUnique({ where: { tenantId: tenant.id } });
-  if (!connection || connection.status !== 'activo') { res.sendStatus(404); return null; }
-  return { tenant, connection };
+  return tenant;
 }
 
 router.get('/', async (req, res) => {
@@ -35,27 +22,20 @@ router.get('/', async (req, res) => {
   const challenge = req.query['hub.challenge'];
   if (mode !== 'subscribe' || typeof token !== 'string') return res.sendStatus(403);
 
-  const ctx = await loadConnectionOrDrop(req, res);
-  if (!ctx) return;
+  const tenant = await loadTenantOrDrop(req, res);
+  if (!tenant) return;
 
-  if (!transport.verifyWebhookChallenge(ctx.connection, token)) return res.sendStatus(403);
+  if (!transport.verifyWebhookChallenge(token)) return res.sendStatus(403);
   res.type('text/plain').status(200).send(String(challenge ?? ''));
 });
 
 router.post('/', async (req, res) => {
-  const ctx = await loadConnectionOrDrop(req, res);
-  if (!ctx) return;
+  const tenant = await loadTenantOrDrop(req, res);
+  if (!tenant) return;
 
-  let appSecret;
-  try {
-    appSecret = transport.getAppSecretForVerify(ctx.connection);
-  } catch (err) {
-    console.warn('[WA-WEBHOOK] falla al descifrar appSecret del tenant', ctx.tenant.slug, transport.sanitizeError(err));
-    return res.sendStatus(500);
-  }
+  const appSecret = transport.getAppSecretForVerify();
   if (typeof appSecret !== 'string' || appSecret === '') {
-    // H1: secreto vacío/no resoluble → RECHAZAR, nunca HMAC con clave vacía.
-    return res.sendStatus(401);
+    return res.sendStatus(500);
   }
 
   const header = req.get('x-hub-signature-256');
@@ -71,23 +51,18 @@ router.post('/', async (req, res) => {
   try { valid = crypto.timingSafeEqual(providedBuf, expectedBuf); } catch (_) { valid = false; }
   if (!valid) return res.sendStatus(401);
 
-  // Firma válida. Reconocer INMEDIATAMENTE — procesar async.
   res.sendStatus(200);
+
+  const connection = transport.loadActiveConnection(tenant.id);
   setImmediate(() => {
-    processWebhookPayload(ctx.tenant, ctx.connection, req.body).catch((err) => {
+    processWebhookPayload(tenant, connection, req.body).catch((err) => {
       console.error('[WA-WEBHOOK] fallo procesando payload:', transport.sanitizeError(err));
     });
   });
 });
 
-/**
- * Procesamiento async del payload. Iterar TODOS los entry[].changes[] (no solo
- * [0]) porque Meta puede batchear. Cross-check que cada change corresponda al
- * phoneNumberId de la conexión (defense-in-depth: la firma ya garantiza que
- * el body no fue alterado, pero un tenant no debería recibir datos de otro
- * incluso si por error apuntara su webhook a nuestra URL).
- */
 async function processWebhookPayload(tenant, connection, body) {
+  const envPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
     const changes = Array.isArray(entry?.changes) ? entry.changes : [];
@@ -95,7 +70,7 @@ async function processWebhookPayload(tenant, connection, body) {
       const value = change?.value;
       if (!value) continue;
       const phoneId = value?.metadata?.phone_number_id;
-      if (phoneId && phoneId !== connection.phoneNumberId) continue;
+      if (phoneId && envPhoneId && phoneId !== envPhoneId) continue;
 
       if (Array.isArray(value.messages)) {
         for (const message of value.messages) {
@@ -118,7 +93,7 @@ const RANK = { queued: 1, sent: 2, delivered: 3, read: 4, failed: 5 };
 async function processInboundMessage(tenant, message, contacts) {
   const waMessageId = message?.id;
   if (!waMessageId) return;
-  if (await prisma.whatsAppMessage.findUnique({ where: { waMessageId } })) return; // idempotencia
+  if (await prisma.whatsAppMessage.findUnique({ where: { waMessageId } })) return;
   const fromWaId = message.from;
   if (!fromWaId) return;
 
@@ -126,14 +101,10 @@ async function processInboundMessage(tenant, message, contacts) {
   const bodyText = message.type === 'text' ? message.text?.body ?? null : null;
   const waTs = message.timestamp ? new Date(Number(message.timestamp) * 1000) : new Date();
 
-  // Auto-link best-effort al Client existente por whatsapp (NO se auto-crea Client).
   const client = await prisma.client.findFirst({
     where: { tenantId: tenant.id, whatsapp: waIdToPhone(fromWaId) },
   });
 
-  // Asegurar que la conversación exista (upsert sin incrementar unreadCount
-  // todavía — eso se hace DESPUÉS del insert del mensaje para evitar inflar
-  // el contador en entregas duplicadas concurrentes).
   const conv = await prisma.whatsAppConversation.upsert({
     where: { tenantId_customerWaId: { tenantId: tenant.id, customerWaId: fromWaId } },
     update: {
@@ -168,7 +139,7 @@ async function processInboundMessage(tenant, message, contacts) {
     });
   } catch (err) {
     if (err.code !== 'P2002') throw err;
-    return; // duplicado — no actualizar la conversación
+    return;
   }
 
   const updatedConv = await prisma.whatsAppConversation.update({
@@ -181,11 +152,9 @@ async function processInboundMessage(tenant, message, contacts) {
     },
   });
 
-  // Bot Fase 1: intenta responder si aplica. Best-effort — un fallo aquí no
-  // debe romper el flujo del webhook (Meta ya recibió 200 arriba).
   try {
-    const connection = await prisma.whatsAppConnection.findUnique({ where: { tenantId: tenant.id } });
-    if (connection && connection.status === 'activo') {
+    const connection = transport.loadActiveConnection(tenant.id);
+    if (connection) {
       await bot.handleInboundMessage({ tenant, connection, conv: updatedConv, incoming: message });
     }
   } catch (err) {
@@ -227,4 +196,4 @@ function mapType(t) {
 }
 
 module.exports = router;
-module.exports.processWebhookPayload = processWebhookPayload; // exportado para tests
+module.exports.processWebhookPayload = processWebhookPayload;

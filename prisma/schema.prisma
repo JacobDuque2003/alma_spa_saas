@@ -38,6 +38,7 @@ model Tenant {
   whatsappConnection    WhatsAppConnection?
   whatsappConversations WhatsAppConversation[]
   whatsappMessages      WhatsAppMessage[]
+  botInteractionLogs    BotInteractionLog[]
 }
 
 model User {
@@ -226,6 +227,7 @@ model ClientIntake {
 
 enum AppointmentStatus {
   pendiente
+  pendiente_bot
   confirmado
   cancelado
   no_show
@@ -446,12 +448,15 @@ model WhatsAppConversation {
   unreadCount        Int       @default(0)
   lastReadAt         DateTime?
   archived           Boolean   @default(false)
+  botActive          Boolean   @default(true)
+  botState           Json?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id])
-  client   Client?           @relation(fields: [clientId], references: [id])
-  messages WhatsAppMessage[]
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  client             Client?             @relation(fields: [clientId], references: [id])
+  messages           WhatsAppMessage[]
+  botInteractionLogs BotInteractionLog[]
 
   @@unique([tenantId, customerWaId])
   @@index([tenantId, lastMessageAt(sort: Desc)])
@@ -519,4 +524,29 @@ model AdminAuditLog {
   @@index([tenantId, createdAt])
   @@index([tenantId, entity, createdAt])
   @@index([tenantId, actorId, createdAt])
+}
+
+// ---- Bot Interaction Log ----------------------------------------------------
+
+model BotInteractionLog {
+  id               String   @id @default(cuid())
+  tenantId         String
+  conversationId   String
+  customerWaId     String
+  userMessage      String?
+  detectedIntent   String?
+  botReplyText     String?
+  model            String?
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  costUsd          Decimal  @default(0) @db.Decimal(10, 6)
+  latencyMs        Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id])
+
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, createdAt])
 }
