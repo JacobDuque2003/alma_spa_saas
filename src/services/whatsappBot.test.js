@@ -59,7 +59,7 @@ test('Fase 1: bot no responde a conversaciones escaladas (dentro del TTL)', asyn
   assert.equal(sent.length, 0);
 });
 
-test('Fase 1: primer mensaje inbound texto dispara menú principal (list interactivo)', async () => {
+test('Fase 1: primer mensaje inbound texto dispara menú principal con nombre Almita', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -67,6 +67,7 @@ test('Fase 1: primer mensaje inbound texto dispara menú principal (list interac
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
   assert.equal(sent[0].payload.type, 'list');
+  assert.match(sent[0].payload.body.text, /Almita/);
   const rows = sent[0].payload.action.sections[0].rows.map((r) => r.id);
   assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_my_appointment', 'menu_escalate']);
 });
@@ -117,7 +118,7 @@ test('Fase 1: seleccionar un servicio con imagen → sube a Meta y envía type:i
   });
   const kinds = sent.map((s) => s.kind);
   assert.deepEqual(kinds, ['uploadMedia', 'image', 'interactive']);
-  assert.match(sent[1].caption, /Aero yoga/);
+  assert.match(sent[1].caption, /🌟.*Aero yoga/);
   assert.match(sent[1].caption, /Yoga en telas\./);
 });
 
@@ -153,7 +154,7 @@ test('Fase 1: "Mi cita" con número que NO matchea → responde "No encuentro...
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_my_appointment' } } },
   });
-  assert.match(sent[0].body, /No encuentro citas a su nombre/);
+  assert.match(sent[0].body, /No encontré citas a su nombre/);
   assert.equal(sent[1].kind, 'interactive'); // menú principal
 });
 
@@ -180,7 +181,7 @@ test('Fase 1: "Mi cita" con número que matchea + hay cita próxima → devuelve
   assert.match(body, /confirmada/);
 });
 
-test('Fase 1: "Reservar" → responde con link a /reservar/<slug>', async () => {
+test('Fase 1: "Reservar" → responde con link a /reservar/<slug> y emoji 📅', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -189,6 +190,7 @@ test('Fase 1: "Reservar" → responde con link a /reservar/<slug>', async () => 
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book' } } },
   });
   assert.match(sent[0].body, /\/reservar\/alma-spa/);
+  assert.match(sent[0].body, /📅/);
 });
 
 test('Fase 1: "Hablar con recepción" marca conversación como escalada + envía confirmación', async () => {
@@ -226,10 +228,78 @@ test('Fase 1: rate limit — al mensaje 21 en 5 min responde con aviso; del 22 e
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'hola 21' } } });
   const warned = sent.slice(countBefore);
   assert.equal(warned.length, 1);
-  assert.match(warned[0].body, /muchos mensajes/);
+  assert.match(warned[0].body, /muchos mensajes seguidos/);
   const countAfterWarn = sent.length;
   for (let i = 0; i < 5; i += 1) {
     await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'x' } } });
   }
   assert.equal(sent.length, countAfterWarn, 'debe estar en silencio total durante cool-down');
+});
+
+test('Fase 2: >10 servicios → envía lista de categorías en vez de lista plana', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const manyServices = [];
+  for (let i = 0; i < 14; i += 1) {
+    const cat = i < 5 ? 'Masajes' : i < 10 ? 'Faciales' : 'Corporales';
+    manyServices.push({ id: `s${i}`, name: `Servicio ${i}`, category: cat, priceUsd: 25, durationMins: 60, active: true });
+  }
+  installPrismaMocks({ services: manyServices });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_list_services' } } },
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.type, 'list');
+  const rows = sent[0].payload.action.sections[0].rows;
+  assert.ok(rows.length <= 10, 'no debe exceder 10 rows');
+  assert.ok(rows.some((r) => r.id.startsWith('cat_')), 'rows deben ser categorías');
+});
+
+test('Fase 2: seleccionar categoría → muestra servicios de esa categoría', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje Relajante', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+      { id: 's2', name: 'Masaje Piedras', category: 'Masajes', priceUsd: 35, durationMins: 90, active: true },
+    ],
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'cat_Masajes' } } },
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.type, 'list');
+  const rows = sent[0].payload.action.sections[0].rows;
+  assert.ok(rows.every((r) => r.id.startsWith('svc_')));
+  assert.match(sent[0].payload.body.text, /Masajes/);
+});
+
+test('Fase 2: texto libre sin IA y con state previo → "no logré entender" + menú', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  // First message sets flow state
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'hola' } } });
+  const afterFirst = sent.length;
+  // Second message should trigger "no entendí" hint
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'quiero algo raro' } } });
+  const newMessages = sent.slice(afterFirst);
+  assert.equal(newMessages.length, 2, 'debe enviar hint + menú');
+  assert.match(newMessages[0].body, /No logré entender/);
+  assert.equal(newMessages[1].kind, 'interactive');
+});
+
+test('Fase 2: escalate incluye "recepción" y emojis en el mensaje', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_escalate' } } },
+  });
+  assert.match(sent[0].body, /recepción/);
+  assert.match(sent[0].body, /👋/);
+  assert.match(sent[0].body, /🌿/);
 });

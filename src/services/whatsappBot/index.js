@@ -52,10 +52,9 @@ async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', bod
       conversationId: conv?.id ?? null,
       type,
       status: sendResult?.status ?? null,
-      errorCode: sendResult?.data?.error?.code ?? null,
-      errorType: sendResult?.data?.error?.type ?? null,
-      errorMessage: sendResult?.data?.error?.message
-        ? String(sendResult.data.error.message).slice(0, 180)
+      errorCode: sendResult?.errorCode ?? null,
+      errorTitle: sendResult?.errorTitle
+        ? String(sendResult.errorTitle).slice(0, 180)
         : null,
     });
     return;
@@ -166,7 +165,7 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
       warn: Boolean(gate.warn),
     });
     if (gate.warn) {
-      const warn = 'Recibí muchos mensajes seguidos, dame un momento y vuelvo a responder.';
+      const warn = 'Recibí muchos mensajes seguidos 😅 Dame un momento y te respondo pronto 💛';
       const r = await transport.sendText(connection, waId, warn);
       await recordBotMessage(tenant.id, conv, r, { body: warn });
     }
@@ -232,6 +231,14 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
       tenant: tenant.slug,
       conversationId: conv.id,
     });
+    const flowState = state.getFlowState(waId);
+    if (flowState?.flow) {
+      const hint = tone === 'tu'
+        ? 'No logré entender tu mensaje 🤔 Estas son las opciones:'
+        : 'No logré entender su mensaje 🤔 Estas son las opciones:';
+      const r = await transport.sendText(connection, waId, hint);
+      await recordBotMessage(tenant.id, conv, r, { body: hint });
+    }
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
@@ -313,8 +320,8 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
 
   if (unclearCount >= MAX_UNCLEAR_BEFORE_ESCALATE) {
     const msg = tone === 'tu'
-      ? 'Parece que no logro entender tu consulta. Te paso con recepción para ayudarte mejor.'
-      : 'Parece que no logro entender su consulta. Le paso con recepción para ayudarle mejor.';
+      ? 'Parece que no logro entender 😅 Te paso con recepción para ayudarte mejor 💛'
+      : 'Parece que no logro entender 😅 Le paso con recepción para ayudarle mejor 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return handleEscalate({ tenant, connection, conv, waId, tone });
@@ -360,6 +367,10 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   if (selectionId === menus.MAIN_MENU_IDS.ESCALATE) {
     return handleEscalate({ tenant, connection, conv, waId, tone });
   }
+  if (selectionId.startsWith(menus.CATEGORY_PREFIX)) {
+    const categoryName = selectionId.slice(menus.CATEGORY_PREFIX.length);
+    return handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName });
+  }
   if (selectionId.startsWith(menus.SERVICE_PREFIX)) {
     const serviceId = selectionId.slice(menus.SERVICE_PREFIX.length);
     return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId });
@@ -374,26 +385,62 @@ async function handleListServices({ tenant, connection, conv, waId, tone }) {
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
   });
   state.setFlowState(waId, { flow: 'listing_services', tone, unclearCount: 0 });
-  const payload = menus.servicesList(svcs, { tone });
+
+  if (svcs.length <= 10) {
+    const payload = menus.servicesList(svcs, { tone });
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[lista de ${svcs.length} servicios]` });
+    return;
+  }
+
+  const byCat = new Map();
+  for (const s of svcs) {
+    const cat = String(s.category || 'Otros');
+    if (!byCat.has(cat)) byCat.set(cat, 0);
+    byCat.set(cat, byCat.get(cat) + 1);
+  }
+  const categories = [...byCat.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, count]) => ({ name, count }));
+  const payload = menus.categoryList(categories, { tone });
   const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, {
-    type: 'interactive',
-    body: `[lista de ${svcs.length} servicios]`,
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías]` });
+}
+
+async function handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName }) {
+  const svcs = await prisma.service.findMany({
+    where: { tenantId: tenant.id, active: true, category: categoryName },
+    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
+    orderBy: { name: 'asc' },
   });
+  if (svcs.length === 0) {
+    const msg = tone === 'tu'
+      ? 'No encontré servicios en esa categoría 🤔 Te muestro el menú:'
+      : 'No encontré servicios en esa categoría 🤔 Le muestro el menú:';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+  state.setFlowState(waId, { flow: 'category_services', category: categoryName, tone, unclearCount: 0 });
+  const payload = menus.servicesInCategory(svcs, categoryName, { tone });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${svcs.length} servicios de ${categoryName}]` });
 }
 
 async function handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId }) {
   const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
   const svc = await serviceService.getService(botActor, serviceId);
   if (!svc || svc.active === false) {
-    await transport.sendText(connection, waId, tone === 'tu'
-      ? 'Ese servicio ya no está disponible. Te muestro los actuales.'
-      : 'Ese servicio ya no está disponible. Le muestro los actuales.');
+    const msg = tone === 'tu'
+      ? 'Ese servicio ya no está disponible 😅 Te muestro los actuales 🌿'
+      : 'Ese servicio ya no está disponible 😅 Le muestro los actuales 🌿';
+    const rr = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, rr, { body: msg });
     return handleListServices({ tenant, connection, conv, waId, tone });
   }
 
   const descLine = svc.description ? `\n\n${svc.description}` : '';
-  const caption = `${svc.name}\n$${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
+  const caption = `🌟 ${svc.name}\n$${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
 
   const imgRes = await serviceService.getServiceImage(botActor, serviceId);
   const image = imgRes?.image;
@@ -421,8 +468,8 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
 async function handleBook({ tenant, connection, conv, waId, tone }) {
   const url = `${RESERVAR_URL_BASE}${tenant.slug}`;
   const msg = tone === 'tu'
-    ? `Puedes reservar en línea aquí:\n${url}\n\nElige tu servicio, día y horario. Cualquier duda, respóndenos por acá.`
-    : `Puede reservar en línea aquí:\n${url}\n\nElija su servicio, día y horario. Cualquier duda, respóndanos por acá.`;
+    ? `📅 ¡Genial! Para reservar, entra aquí:\n${url}\n\nElige tu servicio, día y horario. Si necesitas ayuda, aquí estoy 💛`
+    : `📅 ¡Genial! Para reservar, entre aquí:\n${url}\n\nElija su servicio, día y horario. Si necesita ayuda, aquí estoy 💛`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
   state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0 });
@@ -433,8 +480,8 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
   const client = await prisma.client.findFirst({ where: { tenantId: tenant.id, whatsapp: phone } });
   if (!client) {
     const msg = tone === 'tu'
-      ? 'No encuentro citas a tu nombre. Te muestro el menú por si quieres reservar.'
-      : 'No encuentro citas a su nombre. Le muestro el menú por si desea reservar.';
+      ? 'No encontré citas a tu nombre 🤔 ¿Quieres reservar una? Te ayudo con gusto 💛'
+      : 'No encontré citas a su nombre 🤔 ¿Desea reservar una? Le ayudo con gusto 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
@@ -448,8 +495,8 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
 
   if (!next) {
     const msg = tone === 'tu'
-      ? 'No tienes citas próximas. ¿Quieres reservar una?'
-      : 'No tiene citas próximas. ¿Desea reservar una?';
+      ? 'No tienes citas próximas 📋 ¿Quieres reservar una? Te ayudo con gusto 💛'
+      : 'No tiene citas próximas 📋 ¿Desea reservar una? Le ayudo con gusto 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
@@ -461,8 +508,8 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
   });
   const estado = next.status === 'confirmado' ? 'confirmada' : 'pendiente de confirmar';
   const msg = tone === 'tu'
-    ? `Tu próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesitas cambiar algo, avísanos.`
-    : `Su próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesita cambiar algo, avísenos.`;
+    ? `📋 Tu próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesitas cambiar algo, avísanos 💛`
+    : `📋 Su próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesita cambiar algo, avísenos 💛`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
   state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0 });
@@ -471,8 +518,8 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
 async function handleEscalate({ tenant, connection, conv, waId, tone }) {
   state.markEscalated(waId);
   const msg = tone === 'tu'
-    ? 'Aviso a la recepción para que te contacte por acá lo antes posible. Gracias por escribir 🌿'
-    : 'Aviso a la recepción para que le contacte por acá lo antes posible. Gracias por escribir 🌿';
+    ? '👋 Te paso con recepción. Alguien te responderá pronto.\n¡Que tengas un lindo día! 🌿'
+    : '👋 Le paso con recepción. Alguien le responderá pronto.\n¡Que tenga un lindo día! 🌿';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
   state.clearFlowState(waId);
@@ -486,6 +533,7 @@ module.exports = {
     handleSelection,
     sendMainMenu,
     handleListServices,
+    handleCategoryServices,
     handleServiceDetail,
     handleBook,
     handleMyAppointment,
