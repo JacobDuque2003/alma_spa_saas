@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-const CONTACT_EMAIL = "jacobduqueregalado@gmail.com";
 const LAST_UPDATED = "26 de agosto de 2026";
 
 export function LegalPage({ eyebrow, title, description, children }) {
@@ -58,12 +57,8 @@ export function LegalList({ items }) {
 export function ContactLine() {
   return (
     <p>
-      Para consultas, solicitudes o eliminación de información puedes escribir a{" "}
-      <a className="font-semibold text-[#8C6E50] underline underline-offset-4" href={`mailto:${CONTACT_EMAIL}`}>
-        {CONTACT_EMAIL}
-      </a>
-      .
+      Para consultas, solicitudes o eliminación de información, comunícate con ALMA Spa por sus medios oficiales de
+      atención. Cuando el spa confirme su número y canal definitivo, esta página podrá actualizarse con esa información.
     </p>
   );
 }
-

@@ -9,7 +9,7 @@ Se agregaron tres paginas publicas en el frontend para completar los requisitos 
 - `/terms` - terminos del servicio.
 - `/data-deletion` - instrucciones para eliminacion de datos.
 
-Motivo: Meta rechazaba `https://almaspasaas-production.up.railway.app/data-deletion` porque la ruta no existia y devolvia 404. Estas paginas son publicas, no requieren login, usan paleta visual Alma y explican datos tratados, uso de WhatsApp, seguridad, derechos de cliente y contacto. Pendiente: correr build, commit, push y deploy; despues volver a validar las URLs en Meta.
+Motivo: Meta rechazaba `https://almaspasaas-production.up.railway.app/data-deletion` porque la ruta no existia y devolvia 404. Estas paginas son publicas, no requieren login, usan paleta visual Alma y explican datos tratados, uso de WhatsApp, seguridad, derechos de cliente y contacto por medios oficiales de ALMA Spa, sin exponer correos personales. Validado y desplegado: `/privacy`, `/terms` y `/data-deletion` responden 200 en Railway.
 
 ## Actualizacion 2026-07-16 - Fase 5C/5D frontend admin completada
 

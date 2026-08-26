@@ -14,8 +14,8 @@ export default function DataDeletionPage() {
     >
       <LegalSection title="1. Cómo solicitar la eliminación">
         <p>
-          Para solicitar eliminación de datos, envía un correo indicando tu nombre completo, número de WhatsApp o
-          teléfono usado en el spa y una descripción clara de la solicitud.
+          Para solicitar eliminación de datos, comunícate con ALMA Spa por sus medios oficiales de atención e indica tu
+          nombre completo, número de WhatsApp o teléfono usado en el spa y una descripción clara de la solicitud.
         </p>
         <ContactLine />
       </LegalSection>
@@ -64,4 +64,3 @@ export default function DataDeletionPage() {
     </LegalPage>
   );
 }
-
