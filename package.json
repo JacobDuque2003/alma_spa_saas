@@ -4,7 +4,7 @@
   "description": "NUVIO — Backend multi-tenant para Alma Spa (Fase 1: esquema + autenticación + permisos)",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "prisma migrate deploy && node src/app.js",
     "dev": "nodemon src/app.js",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",

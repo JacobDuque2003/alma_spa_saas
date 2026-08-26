@@ -54,12 +54,40 @@ router.get('/', async (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode !== 'subscribe' || typeof token !== 'string') return res.sendStatus(403);
+
+  logWebhook('info', 'GET verify recibido', {
+    slug: req.params.tenantSlug,
+    mode: mode ?? null,
+    hasToken: typeof token === 'string' && token.length > 0,
+    tokenLength: typeof token === 'string' ? token.length : 0,
+    hasChallenge: typeof challenge === 'string' && challenge.length > 0,
+  });
+
+  if (mode !== 'subscribe' || typeof token !== 'string') {
+    logWebhook('warn', 'GET verify rechazado: mode o token inválido', {
+      mode: mode ?? null,
+      tokenType: typeof token,
+    });
+    return res.sendStatus(403);
+  }
 
   const tenant = await loadTenantOrDrop(req, res);
   if (!tenant) return;
 
-  if (!transport.verifyWebhookChallenge(token)) return res.sendStatus(403);
+  const envTokenSet = typeof process.env.WHATSAPP_VERIFY_TOKEN === 'string'
+    && process.env.WHATSAPP_VERIFY_TOKEN.length > 0;
+
+  if (!transport.verifyWebhookChallenge(token)) {
+    logWebhook('warn', 'GET verify rechazado: token no coincide', {
+      tenant: safeTenant(tenant),
+      envTokenConfigured: envTokenSet,
+      envTokenLength: envTokenSet ? process.env.WHATSAPP_VERIFY_TOKEN.length : 0,
+      receivedTokenLength: token.length,
+    });
+    return res.sendStatus(403);
+  }
+
+  logWebhook('info', 'GET verify exitoso', { tenant: safeTenant(tenant) });
   res.type('text/plain').status(200).send(String(challenge ?? ''));
 });
 
