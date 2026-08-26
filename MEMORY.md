@@ -1,6 +1,16 @@
 # Memoria del proyecto — Alma Spa Backend
 
 > Contexto vivo para retomar el trabajo entre sesiones. Ver también `docs/` (producto, arquitectura, roadmap) y el brief completo de Etapa 4 en `CLAUDE.md` de la carpeta `PROYECTOS/`.
+## Actualizacion 2026-08-26 - Paginas legales publicas para Meta/WhatsApp
+
+Se agregaron tres paginas publicas en el frontend para completar los requisitos de publicacion de Meta Developers / WhatsApp Cloud API:
+
+- `/privacy` - politica de privacidad de ALMA Spa.
+- `/terms` - terminos del servicio.
+- `/data-deletion` - instrucciones para eliminacion de datos.
+
+Motivo: Meta rechazaba `https://almaspasaas-production.up.railway.app/data-deletion` porque la ruta no existia y devolvia 404. Estas paginas son publicas, no requieren login, usan paleta visual Alma y explican datos tratados, uso de WhatsApp, seguridad, derechos de cliente y contacto. Pendiente: correr build, commit, push y deploy; despues volver a validar las URLs en Meta.
+
 ## Actualizacion 2026-07-16 - Fase 5C/5D frontend admin completada
 
 Se implemento en rama `codex/5c-clientes-crm` el panel admin restante: Clientes, CRM WhatsApp, Reportes, Personal y Configuracion. Antes de codigo se obtuvo revision real de Backend Architect y Security/AppSec; ambos confirmaron que no hacian falta migraciones y que el backend faltante debia ser minimo.
