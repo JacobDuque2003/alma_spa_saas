@@ -10,6 +10,40 @@ const router = express.Router({ mergeParams: true });
 
 const SIG_RE = /^sha256=[0-9a-f]{64}$/;
 
+function safeTail(value, size = 4) {
+  if (value === null || value === undefined) return null;
+  const str = String(value);
+  return str.length <= size ? str : str.slice(-size);
+}
+
+function safeTenant(tenant) {
+  return tenant?.slug || tenant?.id || 'unknown';
+}
+
+function logWebhook(level, event, data = {}) {
+  const payload = JSON.stringify(data);
+  console[level](`[WA-WEBHOOK] ${event} ${payload}`);
+}
+
+function summarizePayload(body) {
+  const entries = Array.isArray(body?.entry) ? body.entry : [];
+  let changes = 0;
+  let messages = 0;
+  let statuses = 0;
+
+  for (const entry of entries) {
+    const entryChanges = Array.isArray(entry?.changes) ? entry.changes : [];
+    changes += entryChanges.length;
+    for (const change of entryChanges) {
+      const value = change?.value;
+      if (Array.isArray(value?.messages)) messages += value.messages.length;
+      if (Array.isArray(value?.statuses)) statuses += value.statuses.length;
+    }
+  }
+
+  return { entries: entries.length, changes, messages, statuses };
+}
+
 async function loadTenantOrDrop(req, res) {
   const tenant = await prisma.tenant.findUnique({ where: { slug: req.params.tenantSlug } });
   if (!tenant || !tenant.active) { res.sendStatus(404); return null; }
@@ -51,9 +85,17 @@ router.post('/', async (req, res) => {
   try { valid = crypto.timingSafeEqual(providedBuf, expectedBuf); } catch (_) { valid = false; }
   if (!valid) return res.sendStatus(401);
 
+  const connection = transport.loadActiveConnection(tenant.id);
+  logWebhook('info', 'payload aceptado', {
+    tenant: safeTenant(tenant),
+    ...summarizePayload(req.body),
+    connectionReady: Boolean(connection),
+    phoneNumberConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
+    tokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+  });
+
   res.sendStatus(200);
 
-  const connection = transport.loadActiveConnection(tenant.id);
   setImmediate(() => {
     processWebhookPayload(tenant, connection, req.body).catch((err) => {
       console.error('[WA-WEBHOOK] fallo procesando payload:', transport.sanitizeError(err));
@@ -64,15 +106,47 @@ router.post('/', async (req, res) => {
 async function processWebhookPayload(tenant, connection, body) {
   const envPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const entries = Array.isArray(body?.entry) ? body.entry : [];
+  if (entries.length === 0) {
+    logWebhook('info', 'payload sin entradas procesables', { tenant: safeTenant(tenant) });
+    return;
+  }
+
   for (const entry of entries) {
     const changes = Array.isArray(entry?.changes) ? entry.changes : [];
     for (const change of changes) {
       const value = change?.value;
       if (!value) continue;
       const phoneId = value?.metadata?.phone_number_id;
-      if (phoneId && envPhoneId && phoneId !== envPhoneId) continue;
+      const messageCount = Array.isArray(value.messages) ? value.messages.length : 0;
+      const statusCount = Array.isArray(value.statuses) ? value.statuses.length : 0;
+
+      logWebhook('info', 'cambio recibido', {
+        tenant: safeTenant(tenant),
+        field: change?.field ?? null,
+        messages: messageCount,
+        statuses: statusCount,
+        phoneNumberIdTail: safeTail(phoneId),
+        envPhoneNumberIdTail: safeTail(envPhoneId),
+        connectionReady: Boolean(connection),
+      });
+
+      if (phoneId && envPhoneId && phoneId !== envPhoneId) {
+        logWebhook('warn', 'omitido por phone_number_id distinto', {
+          tenant: safeTenant(tenant),
+          phoneNumberIdTail: safeTail(phoneId),
+          envPhoneNumberIdTail: safeTail(envPhoneId),
+        });
+        continue;
+      }
 
       if (Array.isArray(value.messages)) {
+        if (!connection) {
+          logWebhook('warn', 'conexión incompleta para responder bot', {
+            tenant: safeTenant(tenant),
+            phoneNumberConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
+            tokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+          });
+        }
         for (const message of value.messages) {
           try { await processInboundMessage(tenant, message, value.contacts); }
           catch (err) { console.error('[WA-WEBHOOK] inbound msg fallo:', transport.sanitizeError(err)); }
@@ -92,10 +166,32 @@ const RANK = { queued: 1, sent: 2, delivered: 3, read: 4, failed: 5 };
 
 async function processInboundMessage(tenant, message, contacts) {
   const waMessageId = message?.id;
-  if (!waMessageId) return;
-  if (await prisma.whatsAppMessage.findUnique({ where: { waMessageId } })) return;
+  if (!waMessageId) {
+    logWebhook('warn', 'mensaje sin id omitido', { tenant: safeTenant(tenant), type: message?.type ?? null });
+    return;
+  }
+  if (await prisma.whatsAppMessage.findUnique({ where: { waMessageId } })) {
+    logWebhook('info', 'mensaje duplicado omitido', {
+      tenant: safeTenant(tenant),
+      messageIdTail: safeTail(waMessageId, 8),
+    });
+    return;
+  }
   const fromWaId = message.from;
-  if (!fromWaId) return;
+  if (!fromWaId) {
+    logWebhook('warn', 'mensaje sin remitente omitido', {
+      tenant: safeTenant(tenant),
+      messageIdTail: safeTail(waMessageId, 8),
+    });
+    return;
+  }
+
+  logWebhook('info', 'mensaje entrante recibido', {
+    tenant: safeTenant(tenant),
+    type: message.type,
+    messageIdTail: safeTail(waMessageId, 8),
+    waIdTail: safeTail(fromWaId),
+  });
 
   const contactName = Array.isArray(contacts) ? contacts.find((c) => c?.wa_id === fromWaId)?.profile?.name ?? null : null;
   const bodyText = message.type === 'text' ? message.text?.body ?? null : null;
@@ -137,8 +233,19 @@ async function processInboundMessage(tenant, message, contacts) {
         waTimestamp: waTs,
       },
     });
+    logWebhook('info', 'mensaje guardado', {
+      tenant: safeTenant(tenant),
+      conversationId: conv.id,
+      clientMatched: Boolean(client),
+      type: mapType(message.type),
+      messageIdTail: safeTail(waMessageId, 8),
+    });
   } catch (err) {
     if (err.code !== 'P2002') throw err;
+    logWebhook('info', 'mensaje duplicado por carrera omitido', {
+      tenant: safeTenant(tenant),
+      messageIdTail: safeTail(waMessageId, 8),
+    });
     return;
   }
 
@@ -155,7 +262,18 @@ async function processInboundMessage(tenant, message, contacts) {
   try {
     const connection = transport.loadActiveConnection(tenant.id);
     if (connection) {
+      logWebhook('info', 'bot invocado', {
+        tenant: safeTenant(tenant),
+        conversationId: updatedConv.id,
+        waIdTail: safeTail(fromWaId),
+      });
       await bot.handleInboundMessage({ tenant, connection, conv: updatedConv, incoming: message });
+    } else {
+      logWebhook('warn', 'bot no invocado por conexión incompleta', {
+        tenant: safeTenant(tenant),
+        phoneNumberConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
+        tokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+      });
     }
   } catch (err) {
     console.warn('[BOT] handleInboundMessage falló:', transport.sanitizeError(err));
@@ -188,6 +306,12 @@ async function processDeliveryStatus(tenant, status) {
       AND "tenantId" = ${tenant.id}
       AND status::text = ANY(${whereStatuses})
   `;
+  logWebhook('info', 'estado de entrega procesado', {
+    tenant: safeTenant(tenant),
+    status: nextStatus,
+    messageIdTail: safeTail(waMessageId, 8),
+    hasError: Boolean(errorCode || errorTitle),
+  });
 }
 
 function mapType(t) {

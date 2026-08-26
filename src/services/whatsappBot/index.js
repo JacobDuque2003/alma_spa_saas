@@ -28,6 +28,16 @@ const RESERVAR_URL_BASE = process.env.PUBLIC_BASE_URL
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
 
+function safeTail(value, size = 4) {
+  if (value === null || value === undefined) return null;
+  const str = String(value);
+  return str.length <= size ? str : str.slice(-size);
+}
+
+function logBot(level, event, data = {}) {
+  console[level](`[BOT] ${event} ${JSON.stringify(data)}`);
+}
+
 async function humanAlreadyReplied(tenantId, conversationId) {
   const anyHuman = await prisma.whatsAppMessage.findFirst({
     where: { tenantId, conversationId, direction: 'outbound', sentByUserId: { not: null } },
@@ -38,11 +48,16 @@ async function humanAlreadyReplied(tenantId, conversationId) {
 
 async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', body = null }) {
   if (!sendResult?.ok) {
-    console.warn('[BOT] sendResult ok:false —', JSON.stringify({
+    logBot('warn', 'Meta rechazó respuesta', {
+      conversationId: conv?.id ?? null,
       type,
-      body: body?.slice?.(0, 60),
-      error: sendResult?.data?.error || sendResult?.status || 'unknown',
-    }));
+      status: sendResult?.status ?? null,
+      errorCode: sendResult?.data?.error?.code ?? null,
+      errorType: sendResult?.data?.error?.type ?? null,
+      errorMessage: sendResult?.data?.error?.message
+        ? String(sendResult.data.error.message).slice(0, 180)
+        : null,
+    });
     return;
   }
   const waMessageId = sendResult.data?.messages?.[0]?.id ?? null;
@@ -68,8 +83,16 @@ async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', bod
         lastMessagePreview: body ? String(body).slice(0, 120) : `[${type}]`,
       },
     });
+    logBot('info', 'respuesta registrada', {
+      conversationId: conv.id,
+      type,
+      messageIdTail: safeTail(waMessageId, 8),
+    });
   } catch (err) {
-    console.warn('[BOT] falla al registrar outbound:', transport.sanitizeError(err));
+    logBot('warn', 'no se pudo registrar respuesta', {
+      conversationId: conv?.id ?? null,
+      error: transport.sanitizeError(err),
+    });
   }
 }
 
@@ -117,11 +140,31 @@ async function logBotInteraction(tenantId, conv, { userMessage, intent, reply, a
 async function handleInboundMessage({ tenant, connection, conv, incoming }) {
   const waId = conv.customerWaId;
 
-  if (await humanAlreadyReplied(tenant.id, conv.id)) return;
-  if (state.isEscalated(waId)) return;
+  if (await humanAlreadyReplied(tenant.id, conv.id)) {
+    logBot('info', 'omitido: humano ya respondió', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      waIdTail: safeTail(waId),
+    });
+    return;
+  }
+  if (state.isEscalated(waId)) {
+    logBot('info', 'omitido: conversación escalada', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      waIdTail: safeTail(waId),
+    });
+    return;
+  }
 
   const gate = rateLimit.check(waId);
   if (!gate.allowed) {
+    logBot('warn', 'rate limit aplicado', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      waIdTail: safeTail(waId),
+      warn: Boolean(gate.warn),
+    });
     if (gate.warn) {
       const warn = 'Recibí muchos mensajes seguidos, dame un momento y vuelvo a responder.';
       const r = await transport.sendText(connection, waId, warn);
@@ -141,15 +184,30 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
   const selectionId = listId || buttonId;
 
   if (selectionId) {
+    logBot('info', 'selección recibida', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      selectionId,
+    });
     return handleSelection({ tenant, connection, conv, waId, tone, selectionId });
   }
 
   // Text message → Tier 2 (cache) then Tier 3 (AI)
   if (bodyText) {
+    logBot('info', 'texto recibido', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      aiDisponible: aiClient.isAvailable(),
+    });
     return handleTextMessage({ tenant, connection, conv, waId, tone, bodyText });
   }
 
   // Non-text, non-interactive → main menu
+  logBot('info', 'tipo no soportado; enviando menú base', {
+    tenant: tenant.slug,
+    conversationId: conv.id,
+    type: incoming.type,
+  });
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
@@ -157,6 +215,11 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   // Tier 2: intent cache lookup
   const cached = intentCache.get(bodyText);
   if (cached) {
+    logBot('info', 'intención resuelta por caché', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      intent: cached.intent,
+    });
     await logBotInteraction(tenant.id, conv, {
       userMessage: bodyText, intent: cached.intent, reply: cached.reply,
     });
@@ -165,13 +228,21 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   // Tier 3: AI classification (if available)
   if (!aiClient.isAvailable()) {
+    logBot('info', 'IA no configurada; enviando menú base', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+    });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
   // Cost cap check
   const dailyCost = await getDailyCostForConversation(tenant.id, conv.id);
   if (dailyCost >= DAILY_COST_CAP_USD) {
-    console.warn(`[BOT] cost cap reached for conv ${conv.id}: $${dailyCost.toFixed(4)}`);
+    logBot('warn', 'límite diario de IA alcanzado', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      dailyCost: Number(dailyCost.toFixed(4)),
+    });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
@@ -180,7 +251,11 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   const latencyMs = Date.now() - t0;
 
   if (!aiResult.ok) {
-    console.warn('[BOT] AI classification failed:', aiResult.error);
+    logBot('warn', 'clasificación IA falló', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      error: aiResult.error,
+    });
     await logBotInteraction(tenant.id, conv, {
       userMessage: bodyText, intent: null, reply: null,
       aiResult: { ...aiResult, latencyMs },
@@ -255,6 +330,11 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
 async function sendMainMenu({ tenant, connection, conv, waId, tone }) {
   state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0 });
   const payload = menus.mainMenu({ tone });
+  logBot('info', 'enviando menú principal', {
+    tenant: tenant.slug,
+    conversationId: conv.id,
+    waIdTail: safeTail(waId),
+  });
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, {
     type: 'interactive',
