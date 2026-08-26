@@ -159,10 +159,10 @@ async function processWebhookPayload(tenant, connection, body) {
       });
 
       if (phoneId && envPhoneId && phoneId !== envPhoneId) {
-        logWebhook('warn', 'omitido por phone_number_id distinto', {
+        logWebhook('warn', 'omitido por phone_number_id distinto — actualizar WHATSAPP_PHONE_NUMBER_ID en Railway', {
           tenant: safeTenant(tenant),
-          phoneNumberIdTail: safeTail(phoneId),
-          envPhoneNumberIdTail: safeTail(envPhoneId),
+          metaPhoneNumberId: phoneId,
+          envPhoneNumberId: envPhoneId,
         });
         continue;
       }
