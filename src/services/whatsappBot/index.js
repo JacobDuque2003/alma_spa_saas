@@ -1,4 +1,4 @@
-// Orquestador del bot de WhatsApp — Fase 2 (3-tier: botones → caché → IA).
+// Orquestador del bot de WhatsApp — Fase 3 (conversacional + reserva in-app).
 //
 // handleInboundMessage() se invoca desde webhooks/whatsapp.js DESPUÉS de que
 // se insertó el WhatsAppMessage inbound.
@@ -6,24 +6,25 @@
 // Resolución en 3 niveles:
 //  Tier 1: botones interactivos → determinístico, sin costo.
 //  Tier 2: caché de intenciones → texto normalizado → intent mapeado previamente.
-//  Tier 3: Claude Haiku 4.5 → solo si no hay match de botón ni caché (~<20%).
+//  Tier 3: Claude Haiku 4.5 conversacional → contexto + historial → JSON estructurado.
 //
 // Si la IA no está disponible (sin ANTHROPIC_API_KEY), el bot funciona solo
 // con botones — siempre muestra el menú principal ante texto libre.
+//
+// Reservas se cierran 100% dentro de WhatsApp (NUNCA links externos).
 
 const prisma = require('../../utils/prisma');
 const transport = require('../whatsappTransport');
 const serviceService = require('../serviceService');
+const appointmentService = require('../appointmentService');
+const clientService = require('../clientService');
 const aiClient = require('../aiClient');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
 const menus = require('./menus');
 const intentCache = require('./intentCache');
 const { waIdToPhone } = require('../../utils/phone');
-
-const RESERVAR_URL_BASE = process.env.PUBLIC_BASE_URL
-  ? `${process.env.PUBLIC_BASE_URL}/reservar/`
-  : 'https://tienes-que-configurar-PUBLIC_BASE_URL/reservar/';
+const { SlotUnavailableError } = require('../../utils/errors');
 
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
@@ -36,6 +37,10 @@ function safeTail(value, size = 4) {
 
 function logBot(level, event, data = {}) {
   console[level](`[BOT] ${event} ${JSON.stringify(data)}`);
+}
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
 
 async function humanAlreadyReplied(tenantId, conversationId) {
@@ -136,11 +141,38 @@ async function logBotInteraction(tenantId, conv, { userMessage, intent, reply, a
   }
 }
 
+async function lookupClientByWaId(tenantId, waId) {
+  const phone = waIdToPhone(waId);
+  return prisma.client.findFirst({ where: { tenantId, whatsapp: phone } });
+}
+
+async function loadServicesForAI(tenantId) {
+  return prisma.service.findMany({
+    where: { tenantId, active: true },
+    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true },
+    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+  });
+}
+
+async function matchServiceByQuery(tenantId, query) {
+  if (!query) return null;
+  const q = String(query).toLowerCase().trim();
+  const services = await prisma.service.findMany({
+    where: { tenantId, active: true },
+    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true },
+  });
+  return services.find(s => String(s.name).toLowerCase().includes(q))
+    || services.find(s => q.includes(String(s.name).toLowerCase().slice(0, 6)))
+    || null;
+}
+
+// ─── Entry point ───────────────────────────────────────────────
+
 async function handleInboundMessage({ tenant, connection, conv, incoming }) {
   const waId = conv.customerWaId;
 
-  if (await humanAlreadyReplied(tenant.id, conv.id)) {
-    logBot('info', 'omitido: humano ya respondió', {
+  if (conv.botActive === false) {
+    logBot('info', 'omitido: bot desactivado para esta conversación', {
       tenant: tenant.slug,
       conversationId: conv.id,
       waIdTail: safeTail(waId),
@@ -193,6 +225,7 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
 
   // Text message → Tier 2 (cache) then Tier 3 (AI)
   if (bodyText) {
+    state.pushHistory(waId, 'user', bodyText);
     logBot('info', 'texto recibido', {
       tenant: tenant.slug,
       conversationId: conv.id,
@@ -210,7 +243,16 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
+// ─── Text message handler ──────────────────────────────────────
+
 async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyText }) {
+  const flowState = state.getFlowState(waId) || {};
+
+  // If we're in a booking flow and user sends text, handle contextually
+  if (flowState.booking?.step === 'ask_name') {
+    return handleNameCapture({ tenant, connection, conv, waId, tone, name: bodyText });
+  }
+
   // Tier 2: intent cache lookup
   const cached = intentCache.get(bodyText);
   if (cached) {
@@ -225,14 +267,13 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return routeIntent({ tenant, connection, conv, waId, tone, intent: cached.intent, aiReply: cached.reply });
   }
 
-  // Tier 3: AI classification (if available)
+  // Tier 3: AI (if available)
   if (!aiClient.isAvailable()) {
     logBot('info', 'IA no configurada; enviando menú base', {
       tenant: tenant.slug,
       conversationId: conv.id,
     });
-    const flowState = state.getFlowState(waId);
-    if (flowState?.flow) {
+    if (flowState.flow) {
       const hint = tone === 'tu'
         ? 'No logré entender tu mensaje 🤔 Estas son las opciones:'
         : 'No logré entender su mensaje 🤔 Estas son las opciones:';
@@ -253,12 +294,24 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
+  // Build AI context
+  const client = await lookupClientByWaId(tenant.id, waId);
+  const clientName = client?.fullName || flowState.clientName || null;
+  const services = await loadServicesForAI(tenant.id);
+  const history = state.getHistory(waId);
+
   const t0 = Date.now();
-  const aiResult = await aiClient.classifyIntent(bodyText, { tone });
+  const aiResult = await aiClient.chat(bodyText, {
+    tone,
+    clientName,
+    services,
+    history,
+    bookingState: flowState.booking || null,
+  });
   const latencyMs = Date.now() - t0;
 
   if (!aiResult.ok) {
-    logBot('warn', 'clasificación IA falló', {
+    logBot('warn', 'chat IA falló', {
       tenant: tenant.slug,
       conversationId: conv.id,
       error: aiResult.error,
@@ -271,47 +324,100 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   const enrichedAi = { ...aiResult, latencyMs };
-  intentCache.set(bodyText, aiResult.intent, aiResult.reply);
+  intentCache.set(bodyText, aiResult.intent, aiResult.replyText);
 
   await logBotInteraction(tenant.id, conv, {
     userMessage: bodyText,
     intent: aiResult.intent,
-    reply: aiResult.reply,
+    reply: aiResult.replyText,
     aiResult: enrichedAi,
   });
+
+  if (aiResult.replyText) {
+    state.pushHistory(waId, 'assistant', aiResult.replyText);
+  }
+
+  if (clientName) {
+    state.setFlowState(waId, { clientName });
+  }
 
   return routeIntent({
     tenant, connection, conv, waId, tone,
     intent: aiResult.intent,
-    aiReply: aiResult.reply,
+    aiReply: aiResult.replyText,
+    params: aiResult.params,
   });
 }
 
-async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply }) {
+// ─── Intent router ─────────────────────────────────────────────
+
+async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply, params }) {
   switch (intent) {
     case 'menu':
-      return sendMainMenu({ tenant, connection, conv, waId, tone });
-    case 'list_services':
-      return handleListServices({ tenant, connection, conv, waId, tone });
-    case 'book':
-      return handleBook({ tenant, connection, conv, waId, tone });
-    case 'my_appointment':
-      return handleMyAppointment({ tenant, connection, conv, waId, tone });
-    case 'cancel':
-      return handleMyAppointment({ tenant, connection, conv, waId, tone });
-    case 'escalate':
-      return handleEscalate({ tenant, connection, conv, waId, tone });
-    case 'service_info':
+    case 'greeting':
       if (aiReply) {
         const r = await transport.sendText(connection, waId, aiReply);
         await recordBotMessage(tenant.id, conv, r, { body: aiReply });
       }
+      return sendMainMenu({ tenant, connection, conv, waId, tone });
+
+    case 'list_services':
+      return handleListServices({ tenant, connection, conv, waId, tone, aiReply });
+
+    case 'book':
+    case 'book_start':
+      return handleBook({ tenant, connection, conv, waId, tone, aiReply });
+
+    case 'book_service': {
+      if (params?.service_query) {
+        const svc = await matchServiceByQuery(tenant.id, params.service_query);
+        if (svc) {
+          if (aiReply) {
+            const r = await transport.sendText(connection, waId, aiReply);
+            await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+          }
+          return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
+        }
+      }
+      return handleBook({ tenant, connection, conv, waId, tone, aiReply });
+    }
+
+    case 'my_appointment':
+    case 'cancel':
+      return handleMyAppointment({ tenant, connection, conv, waId, tone });
+
+    case 'escalate':
+      return handleEscalate({ tenant, connection, conv, waId, tone });
+
+    case 'service_info':
+    case 'suggest_service': {
+      if (aiReply) {
+        const r = await transport.sendText(connection, waId, aiReply);
+        await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+      }
+      if (params?.service_query) {
+        const svc = await matchServiceByQuery(tenant.id, params.service_query);
+        if (svc) {
+          return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: svc.id });
+        }
+      }
       return handleListServices({ tenant, connection, conv, waId, tone });
+    }
+
+    case 'chitchat':
+      if (aiReply) {
+        const r = await transport.sendText(connection, waId, aiReply);
+        await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+      }
+      return;
+
     case 'unclear':
     default:
       return handleUnclear({ tenant, connection, conv, waId, tone, aiReply });
   }
 }
+
+// ─── Core handlers ─────────────────────────────────────────────
 
 async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) {
   const flowState = state.getFlowState(waId) || {};
@@ -335,7 +441,8 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
 }
 
 async function sendMainMenu({ tenant, connection, conv, waId, tone }) {
-  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0 });
+  const prev = state.getFlowState(waId) || {};
+  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0, clientName: prev.clientName || null });
   const payload = menus.mainMenu({ tone });
   logBot('info', 'enviando menú principal', {
     tenant: tenant.slug,
@@ -367,18 +474,53 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   if (selectionId === menus.MAIN_MENU_IDS.ESCALATE) {
     return handleEscalate({ tenant, connection, conv, waId, tone });
   }
+
+  // Booking flow selections
+  if (selectionId.startsWith(menus.BOOK_DATE_PREFIX)) {
+    const date = selectionId.slice(menus.BOOK_DATE_PREFIX.length);
+    return handleBookingDateSelected({ tenant, connection, conv, waId, tone, date });
+  }
+  if (selectionId.startsWith(menus.BOOK_TIME_PREFIX)) {
+    const idx = parseInt(selectionId.slice(menus.BOOK_TIME_PREFIX.length), 10);
+    return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex: idx });
+  }
+  if (selectionId === menus.BOOK_CONFIRM_YES) {
+    return handleBookingConfirm({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.BOOK_CONFIRM_NO) {
+    const prev = state.getFlowState(waId) || {};
+    state.setFlowState(waId, { flow: 'menu', booking: null, clientName: prev.clientName, tone, unclearCount: 0 });
+    const msg = tone === 'tu'
+      ? 'Sin problema, cancelé la reserva 🌿 ¿Te ayudo con algo más?'
+      : 'Sin problema, cancelé la reserva 🌿 ¿Le ayudo con algo más?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+
   if (selectionId.startsWith(menus.CATEGORY_PREFIX)) {
     const categoryName = selectionId.slice(menus.CATEGORY_PREFIX.length);
     return handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName });
   }
+
+  // Service selection — check if we're in booking mode
   if (selectionId.startsWith(menus.SERVICE_PREFIX)) {
     const serviceId = selectionId.slice(menus.SERVICE_PREFIX.length);
+    const fs = state.getFlowState(waId);
+    if (fs?.booking?.step === 'select_service') {
+      return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId });
+    }
     return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId });
   }
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
-async function handleListServices({ tenant, connection, conv, waId, tone }) {
+async function handleListServices({ tenant, connection, conv, waId, tone, aiReply }) {
+  if (aiReply) {
+    const r = await transport.sendText(connection, waId, aiReply);
+    await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+  }
+
   const svcs = await prisma.service.findMany({
     where: { tenantId: tenant.id, active: true },
     select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
@@ -465,15 +607,301 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
   state.setFlowState(waId, { flow: 'service_detail', lastServiceId: serviceId, tone, unclearCount: 0 });
 }
 
-async function handleBook({ tenant, connection, conv, waId, tone }) {
-  const url = `${RESERVAR_URL_BASE}${tenant.slug}`;
+// ─── Booking flow ──────────────────────────────────────────────
+
+async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
+  const svcs = await prisma.service.findMany({
+    where: { tenantId: tenant.id, active: true },
+    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
+    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+  });
+
+  if (svcs.length === 0) {
+    const msg = tone === 'tu'
+      ? 'Aún no tenemos servicios cargados 😅 Comunícate con recepción 💛'
+      : 'Aún no tenemos servicios cargados 😅 Comuníquese con recepción 💛';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+
+  const prev = state.getFlowState(waId) || {};
+  state.setFlowState(waId, { flow: 'booking', booking: { step: 'select_service' }, clientName: prev.clientName, tone, unclearCount: 0 });
+
+  const intro = aiReply || (tone === 'tu'
+    ? '✨ ¡Qué bueno que quieres reservar! Elige el servicio:'
+    : '✨ ¡Qué bueno que desea reservar! Elija el servicio:');
+  const r = await transport.sendText(connection, waId, intro);
+  await recordBotMessage(tenant.id, conv, r, { body: intro });
+
+  if (svcs.length <= 10) {
+    const payload = menus.servicesList(svcs, { tone });
+    const r2 = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de servicio para reserva]' });
+  } else {
+    const byCat = new Map();
+    for (const s of svcs) {
+      const cat = String(s.category || 'Otros');
+      if (!byCat.has(cat)) byCat.set(cat, 0);
+      byCat.set(cat, byCat.get(cat) + 1);
+    }
+    const categories = [...byCat.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, count]) => ({ name, count }));
+    const payload = menus.categoryList(categories, { tone });
+    const r2 = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: `[${categories.length} categorías para reserva]` });
+  }
+}
+
+async function handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId }) {
+  const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
+  const svc = await serviceService.getService(botActor, serviceId);
+  if (!svc || !svc.active) {
+    const msg = tone === 'tu'
+      ? 'Ese servicio ya no está disponible 😅 Elige otro:'
+      : 'Ese servicio ya no está disponible 😅 Elija otro:';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  const prev = state.getFlowState(waId) || {};
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: svc.id, serviceName: svc.name },
+    clientName: prev.clientName,
+    tone,
+    unclearCount: 0,
+  });
+
   const msg = tone === 'tu'
-    ? `📅 ¡Genial! Para reservar, entra aquí:\n${url}\n\nElige tu servicio, día y horario. Si necesitas ayuda, aquí estoy 💛`
-    : `📅 ¡Genial! Para reservar, entre aquí:\n${url}\n\nElija su servicio, día y horario. Si necesita ayuda, aquí estoy 💛`;
+    ? `🌟 ${svc.name} — ¡excelente elección! ¿Qué día te queda bien?`
+    : `🌟 ${svc.name} — ¡excelente elección! ¿Qué día le queda bien?`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
-  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0 });
+
+  const payload = menus.datePicker({ tone });
+  const r2 = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
 }
+
+async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date }) {
+  const fs = state.getFlowState(waId);
+  if (!fs?.booking?.serviceId) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
+
+  let slots;
+  try {
+    slots = await appointmentService.getAvailability({
+      tenantId: tenant.id,
+      tenantConfig: tenantData?.config,
+      serviceId: fs.booking.serviceId,
+      date,
+      modality: 'spa',
+    });
+  } catch (err) {
+    logBot('warn', 'error al buscar disponibilidad', { error: err.message });
+    const msg = tone === 'tu'
+      ? 'Hubo un problema al buscar horarios 😅 Probemos de nuevo:'
+      : 'Hubo un problema al buscar horarios 😅 Probemos de nuevo:';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    const dp = menus.datePicker({ tone });
+    const r2 = await transport.sendInteractive(connection, waId, dp);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
+    return;
+  }
+
+  if (slots.length === 0) {
+    const msg = tone === 'tu'
+      ? '😔 No hay horarios disponibles ese día. ¿Probamos otro?'
+      : '😔 No hay horarios disponibles ese día. ¿Probamos otro?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    const dp = menus.datePicker({ tone });
+    const r2 = await transport.sendInteractive(connection, waId, dp);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
+    return;
+  }
+
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { ...fs.booking, step: 'select_time', date, availableSlots: slots },
+    clientName: fs.clientName,
+    tone,
+    unclearCount: 0,
+  });
+
+  const payload = menus.timeSlotList(slots, fs.booking.serviceName, { tone });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${slots.length} horarios para ${date}]` });
+}
+
+async function handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex }) {
+  const fs = state.getFlowState(waId);
+  if (!fs?.booking?.availableSlots || !fs.booking.serviceId) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  const slot = fs.booking.availableSlots[slotIndex];
+  if (!slot) {
+    const msg = tone === 'tu'
+      ? 'Ese horario ya no está disponible 😅 Elige otro:'
+      : 'Ese horario ya no está disponible 😅 Elija otro:';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    const payload = menus.timeSlotList(fs.booking.availableSlots, fs.booking.serviceName, { tone });
+    const r2 = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[horarios]' });
+    return;
+  }
+
+  const client = await lookupClientByWaId(tenant.id, waId);
+  const clientName = client?.fullName || fs.clientName;
+
+  if (!clientName) {
+    state.setFlowState(waId, {
+      flow: 'booking',
+      booking: { ...fs.booking, step: 'ask_name', timeSlot: slot },
+      tone,
+      unclearCount: 0,
+    });
+    const msg = menus.askNameText({ tone });
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  return showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName });
+}
+
+async function handleNameCapture({ tenant, connection, conv, waId, tone, name }) {
+  const trimmed = String(name).trim();
+  if (trimmed.length < 2 || trimmed.length > 100) {
+    const msg = tone === 'tu'
+      ? 'Escribe tu nombre completo, por favor 💛'
+      : 'Escriba su nombre completo, por favor 💛';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  state.setFlowState(waId, { clientName: trimmed });
+  return showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName: trimmed });
+}
+
+async function showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName }) {
+  const fs = state.getFlowState(waId);
+  const booking = fs?.booking;
+  if (!booking?.serviceId || !booking?.timeSlot) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  const slotDate = new Date(booking.timeSlot);
+  const TZ = menus.SPA_TZ;
+  const fechaStr = new Intl.DateTimeFormat('es-EC', {
+    timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long',
+  }).format(slotDate);
+  const horaStr = new Intl.DateTimeFormat('es-EC', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(slotDate);
+
+  const summary = `🌟 ${booking.serviceName}\n📅 ${capitalize(fechaStr)}\n🕐 ${horaStr}\n👤 ${clientName}`;
+
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { ...booking, step: 'confirm', clientName },
+    clientName,
+    tone,
+    unclearCount: 0,
+  });
+
+  const payload = menus.bookingConfirmation(summary, { tone });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[confirmación: ${booking.serviceName}]` });
+}
+
+async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
+  const fs = state.getFlowState(waId);
+  const booking = fs?.booking;
+  if (!booking?.serviceId || !booking?.timeSlot || !booking?.clientName) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  const phone = waIdToPhone(waId);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const client = await clientService.upsertClient(tx, tenant.id, {
+        fullName: booking.clientName,
+        whatsapp: phone,
+      });
+
+      const tenantData = await tx.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
+
+      await appointmentService.resolveAndCreateAppointment(tx, {
+        tenantId: tenant.id,
+        tenantConfig: tenantData?.config,
+        clientId: client.id,
+        serviceId: booking.serviceId,
+        startsAt: new Date(booking.timeSlot),
+        modality: 'spa',
+        status: 'pendiente_bot',
+      });
+    });
+
+    const slotDate = new Date(booking.timeSlot);
+    const TZ = menus.SPA_TZ;
+    const fechaStr = new Intl.DateTimeFormat('es-EC', {
+      timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long',
+    }).format(slotDate);
+    const horaStr = new Intl.DateTimeFormat('es-EC', {
+      timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(slotDate);
+
+    const msg = tone === 'tu'
+      ? `✅ ¡Listo, ${booking.clientName}! Tu cita está reservada 🌿\n\n🌟 ${booking.serviceName}\n📅 ${capitalize(fechaStr)}\n🕐 ${horaStr}\n\nTe esperamos con mucho cariño 💛`
+      : `✅ ¡Listo, ${booking.clientName}! Su cita está reservada 🌿\n\n🌟 ${booking.serviceName}\n📅 ${capitalize(fechaStr)}\n🕐 ${horaStr}\n\nLe esperamos con mucho cariño 💛`;
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+
+    state.setFlowState(waId, { flow: 'menu', booking: null, clientName: booking.clientName, tone, unclearCount: 0 });
+
+  } catch (err) {
+    logBot('warn', 'error al crear reserva', { error: err.message, serviceId: booking.serviceId });
+
+    if (err instanceof SlotUnavailableError) {
+      const msg = tone === 'tu'
+        ? '😔 Ese horario se acaba de ocupar. ¿Probamos otra hora?'
+        : '😔 Ese horario se acaba de ocupar. ¿Probamos otra hora?';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      state.setFlowState(waId, {
+        flow: 'booking',
+        booking: { step: 'select_date', serviceId: booking.serviceId, serviceName: booking.serviceName },
+        clientName: booking.clientName,
+        tone,
+        unclearCount: 0,
+      });
+      const dp = menus.datePicker({ tone });
+      const r2 = await transport.sendInteractive(connection, waId, dp);
+      await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
+    } else {
+      const msg = tone === 'tu'
+        ? 'Hubo un problema al crear tu reserva 😅 Te paso con recepción 💛'
+        : 'Hubo un problema al crear su reserva 😅 Le paso con recepción 💛';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return handleEscalate({ tenant, connection, conv, waId, tone });
+    }
+  }
+}
+
+// ─── Other handlers ────────────────────────────────────────────
 
 async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
   const phone = waIdToPhone(waId);
@@ -486,6 +914,8 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
+
+  state.setFlowState(waId, { clientName: client.fullName });
 
   const next = await prisma.appointment.findFirst({
     where: { tenantId: tenant.id, clientId: client.id, status: { in: ['pendiente', 'pendiente_bot', 'confirmado'] }, startsAt: { gte: new Date() } },
@@ -512,7 +942,7 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
     : `📋 Su próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesita cambiar algo, avísenos 💛`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
-  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0 });
+  state.setFlowState(waId, { flow: 'menu', clientName: client.fullName, tone, unclearCount: 0 });
 }
 
 async function handleEscalate({ tenant, connection, conv, waId, tone }) {
@@ -529,6 +959,7 @@ module.exports = {
   handleInboundMessage,
   _internals: {
     detectTone,
+    capitalize,
     humanAlreadyReplied,
     handleSelection,
     sendMainMenu,
@@ -536,6 +967,12 @@ module.exports = {
     handleCategoryServices,
     handleServiceDetail,
     handleBook,
+    handleBookingServiceSelected,
+    handleBookingDateSelected,
+    handleBookingTimeSelected,
+    handleBookingConfirm,
+    handleNameCapture,
+    showBookingConfirmation,
     handleMyAppointment,
     handleEscalate,
     handleTextMessage,
@@ -543,5 +980,7 @@ module.exports = {
     routeIntent,
     getDailyCostForConversation,
     logBotInteraction,
+    lookupClientByWaId,
+    matchServiceByQuery,
   },
 };

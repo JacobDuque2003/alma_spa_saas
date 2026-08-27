@@ -53,11 +53,52 @@ router.post('/conversations/:id/mark-read', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/conversations/:id/reactivate-bot', async (req, res, next) => {
+  try {
+    const conv = await inboxService.reactivateBot(req.user, req.params.id);
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({ id: conv.id, botActive: conv.botActive });
+  } catch (err) { next(err); }
+});
+
 router.patch('/conversations/:id', async (req, res, next) => {
   try {
     const conv = await inboxService.updateConversation(req.user, req.params.id, req.body);
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
     res.json(conv);
+  } catch (err) { next(err); }
+});
+
+router.put('/conversations/:id/labels', async (req, res, next) => {
+  try {
+    const labels = Array.isArray(req.body?.labels) ? req.body.labels : [];
+    const conv = await inboxService.setLabels(req.user, req.params.id, labels);
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({ id: conv.id, labels: conv.labels });
+  } catch (err) { next(err); }
+});
+
+router.get('/conversations/:id/notes', async (req, res, next) => {
+  try {
+    const notes = await inboxService.listNotes(req.user, req.params.id);
+    if (!notes) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json(notes);
+  } catch (err) { next(err); }
+});
+
+router.post('/conversations/:id/notes', async (req, res, next) => {
+  try {
+    const note = await inboxService.createNote(req.user, req.params.id, req.body?.content);
+    if (!note) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.status(201).json(note);
+  } catch (err) { next(err); }
+});
+
+router.delete('/notes/:noteId', async (req, res, next) => {
+  try {
+    const result = await inboxService.deleteNote(req.user, req.params.noteId);
+    if (!result) return res.status(404).json({ error: 'Nota no encontrada' });
+    res.json(result);
   } catch (err) { next(err); }
 });
 

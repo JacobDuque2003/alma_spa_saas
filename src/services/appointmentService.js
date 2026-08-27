@@ -184,7 +184,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
  * (P2002 — otra transacción concurrente ganó ese room/staff+horario),
  * reintenta con la siguiente combinación.
  */
-async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientId, serviceId, startsAt, modality }) {
+async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientId, serviceId, startsAt, modality, status }) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
@@ -247,6 +247,7 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
             startsAt,
             endsAt,
             priceUsd: service.priceUsd,
+            ...(status ? { status } : {}),
           },
         });
       } catch (err) {

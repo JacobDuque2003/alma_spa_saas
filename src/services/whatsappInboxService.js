@@ -70,7 +70,11 @@ async function listConversations(actor, query) {
     }
   }
 
-  if (query.filter === 'sin_confirmar_hoy') {
+  if (query.filter === 'bot_active') {
+    where.botActive = true;
+  } else if (query.filter === 'bot_off') {
+    where.botActive = false;
+  } else if (query.filter === 'sin_confirmar_hoy') {
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
     const range = todayRangeForTenant(tenant?.config);
     const pending = await prisma.appointment.findMany({
@@ -89,24 +93,10 @@ async function listConversations(actor, query) {
     include: { client: { select: { id: true, fullName: true } } },
   });
 
-  // Determinar, en una sola query, qué conversaciones ya tuvieron algún
-  // outbound de recepción — esas quedan fuera del bot para siempre. Se agrupa
-  // por conversationId para no hacer N+1.
-  const convIds = rows.map((c) => c.id);
-  let handedOffSet = new Set();
-  if (convIds.length) {
-    const groups = await prisma.whatsAppMessage.groupBy({
-      by: ['conversationId'],
-      where: { tenantId, conversationId: { in: convIds }, direction: 'outbound', sentByUserId: { not: null } },
-      _count: { _all: true },
-    });
-    handedOffSet = new Set(groups.map((g) => g.conversationId));
-  }
 
   const items = rows.map((c) => {
-    let botStatus = 'active';
-    if (handedOffSet.has(c.id)) botStatus = 'handedOff';
-    else if (botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
+    let botStatus = c.botActive ? 'active' : 'handedOff';
+    if (c.botActive && botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
     return {
       id: c.id,
       customerWaId: c.customerWaId,
@@ -117,6 +107,7 @@ async function listConversations(actor, query) {
       lastMessageAt: c.lastMessageAt,
       unreadCount: c.unreadCount,
       withinWindow: isWithinWindow(c.lastInboundAt),
+      botActive: c.botActive,
       botStatus, // 'active' | 'escalated' | 'handedOff'
     };
   });
@@ -196,7 +187,7 @@ async function sendManualText(actor, conversationId, text) {
   const now = new Date();
   await prisma.whatsAppConversation.update({
     where: { id: conv.id },
-    data: { lastOutboundAt: now, lastMessageAt: now, lastMessagePreview: previewOf(text) },
+    data: { lastOutboundAt: now, lastMessageAt: now, lastMessagePreview: previewOf(text), botActive: false },
   });
   return updated;
 }
@@ -303,7 +294,65 @@ async function updateConversation(actor, conversationId, changes) {
     data.clientId = changes.clientId;
   }
   if (changes.archived !== undefined) data.archived = !!changes.archived;
+  if (changes.botActive !== undefined) data.botActive = !!changes.botActive;
   return prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+}
+
+async function reactivateBot(actor, conversationId) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  botState.clearFlowState(conv.customerWaId);
+  return prisma.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: { botActive: true, botState: null },
+  });
+}
+
+const VALID_LABELS = ['consulta', 'reserva_pendiente', 'cita_confirmada', 'seguimiento', 'queja', 'nueva_clienta'];
+
+async function setLabels(actor, conversationId, labels) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  const filtered = [...new Set(labels.filter((l) => VALID_LABELS.includes(l)))];
+  return prisma.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: { labels: filtered },
+  });
+}
+
+async function listNotes(actor, conversationId) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  return prisma.whatsAppNote.findMany({
+    where: { conversationId: conv.id },
+    orderBy: { createdAt: 'desc' },
+    include: { author: { select: { id: true, name: true } } },
+  });
+}
+
+async function createNote(actor, conversationId, content) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  if (typeof content !== 'string' || content.trim() === '') {
+    throw new BadRequestError('El contenido de la nota es requerido');
+  }
+  return prisma.whatsAppNote.create({
+    data: {
+      tenantId: conv.tenantId,
+      conversationId: conv.id,
+      content: content.trim().slice(0, 2000),
+      authorId: actor.id,
+    },
+    include: { author: { select: { id: true, name: true } } },
+  });
+}
+
+async function deleteNote(actor, noteId) {
+  const note = await prisma.whatsAppNote.findUnique({ where: { id: noteId } });
+  if (!note) return null;
+  assertTenantScope(actor, note.tenantId);
+  await prisma.whatsAppNote.delete({ where: { id: noteId } });
+  return { deleted: true };
 }
 
 module.exports = {
@@ -314,7 +363,13 @@ module.exports = {
   sendReminder,
   markRead,
   updateConversation,
+  reactivateBot,
+  setLabels,
+  listNotes,
+  createNote,
+  deleteNote,
   isWithinWindow,
   previewOf,
   todayRangeForTenant,
+  VALID_LABELS,
 };

@@ -122,17 +122,113 @@ test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status p
   prisma.whatsAppConversation = {
     findMany: async (args) => {
       convQuery = args.where;
-      return [{ id: 'conv1', customerWaId: '593999', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), client: { id: 'cli1', fullName: 'A' } }];
+      return [{ id: 'conv1', customerWaId: '593999', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, client: { id: 'cli1', fullName: 'A' } }];
     },
   };
-  // El nuevo lookup de "conversaciones donde recepción ya respondió" (para
-  // marcar botStatus='handedOff' en la Bandeja) usa whatsAppMessage.groupBy —
-  // devolvemos vacío para este test: ninguna conversación cedió al humano.
-  prisma.whatsAppMessage = { groupBy: async () => [] };
   const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { filter: 'sin_confirmar_hoy' });
   assert.equal(apptQuery.status, 'pendiente', 'debe filtrar por status pendiente en Appointment');
   assert.deepEqual(apptQuery.client, { is: { active: true } }, 'debe excluir clientas deshabilitadas de recordatorios');
   assert.ok(apptQuery.startsAt.gte instanceof Date && apptQuery.startsAt.lt instanceof Date, 'debe usar rango [gte, lt) sargable');
   assert.deepEqual([...convQuery.clientId.in], ['cli1', 'cli2']);
   assert.equal(items.length, 1);
+});
+
+test('listConversations: botStatus usa botActive del registro (no N+1 query)', async () => {
+  prisma.whatsAppConversation = {
+    findMany: async () => [
+      { id: 'c1', customerWaId: '593111', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, client: null },
+      { id: 'c2', customerWaId: '593222', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: false, client: null },
+    ],
+  };
+  const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, {});
+  assert.equal(items[0].botStatus, 'active');
+  assert.equal(items[0].botActive, true);
+  assert.equal(items[1].botStatus, 'handedOff');
+  assert.equal(items[1].botActive, false);
+});
+
+test('listConversations: filter=bot_active filtra por botActive true', async () => {
+  let convWhere = null;
+  prisma.whatsAppConversation = {
+    findMany: async (args) => { convWhere = args.where; return []; },
+  };
+  await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { filter: 'bot_active' });
+  assert.equal(convWhere.botActive, true);
+});
+
+test('reactivateBot: pone botActive=true y limpia botState', async () => {
+  const botState = require('./whatsappBot/state');
+  botState.setFlowState('593999', { step: 'booking' });
+  let updateData = null;
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999' }),
+    update: async ({ data }) => { updateData = data; return { id: 'c1', botActive: true }; },
+  };
+  const result = await inbox.reactivateBot({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1');
+  assert.equal(updateData.botActive, true);
+  assert.equal(updateData.botState, null);
+  assert.equal(result.botActive, true);
+  assert.equal(botState._internals ? null : null, null); // state cleared
+});
+
+test('sendManualText: auto desactiva botActive', async () => {
+  let updateData = null;
+  mockTransport({
+    sendText: async () => ({ ok: true, data: { messages: [{ id: 'wamid.X' }] } }),
+  });
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999', lastInboundAt: new Date(Date.now() - 60_000) }),
+    update: async ({ data }) => { updateData = data; return {}; },
+  };
+  prisma.whatsAppMessage = {
+    create: async ({ data }) => ({ id: 'm1', ...data }),
+    update: async ({ data }) => ({ id: 'm1', ...data }),
+  };
+  await inbox.sendManualText({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', 'hola');
+  assert.equal(updateData.botActive, false, 'sendManualText debe desactivar el bot');
+});
+
+test('setLabels: filtra etiquetas inválidas', async () => {
+  let updateData = null;
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1' }),
+    update: async ({ data }) => { updateData = data; return { id: 'c1', labels: data.labels }; },
+  };
+  const result = await inbox.setLabels(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    'c1',
+    ['consulta', 'falsa', 'queja', 'consulta']
+  );
+  assert.deepEqual(updateData.labels, ['consulta', 'queja']);
+  assert.deepEqual(result.labels, ['consulta', 'queja']);
+});
+
+test('createNote: guarda nota y valida contenido vacío', async () => {
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1' }),
+  };
+  prisma.whatsAppNote = {
+    create: async ({ data }) => ({ id: 'n1', ...data, author: { id: 'u1', name: 'Gianella' } }),
+  };
+  const note = await inbox.createNote(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    'c1',
+    'Clienta pidió promo de cumpleaños'
+  );
+  assert.equal(note.content, 'Clienta pidió promo de cumpleaños');
+  assert.equal(note.authorId, 'u1');
+
+  await assert.rejects(
+    () => inbox.createNote({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', ''),
+    (err) => err.status === 400
+  );
+});
+
+test('deleteNote: elimina nota existente', async () => {
+  prisma.whatsAppNote = {
+    findUnique: async () => ({ id: 'n1', tenantId: 't1' }),
+    delete: async () => ({}),
+  };
+  const result = await inbox.deleteNote({ id: 'u1', tenantId: 't1', role: 'personal' }, 'n1');
+  assert.deepEqual(result, { deleted: true });
 });

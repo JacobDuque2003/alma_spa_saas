@@ -8,6 +8,15 @@ const MAIN_MENU_IDS = {
 const SERVICE_PREFIX = 'svc_';
 const CATEGORY_PREFIX = 'cat_';
 const NAV_BACK_MENU = 'nav_menu';
+const BOOK_DATE_PREFIX = 'bkd_';
+const BOOK_TIME_PREFIX = 'bkt_';
+const BOOK_CONFIRM_YES = 'bk_yes';
+const BOOK_CONFIRM_NO = 'bk_no';
+const SPA_TZ = 'America/Guayaquil';
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
 
 function greeting(tone) {
   return tone === 'tu'
@@ -138,14 +147,104 @@ function backToMenuButton({ tone } = {}) {
   };
 }
 
+function datePicker({ tone } = {}) {
+  const rows = [];
+  const now = new Date();
+  for (let i = 0; rows.length < 7 && i < 14; i++) {
+    const d = new Date(now.getTime() + i * 86400000);
+    const dow = new Intl.DateTimeFormat('en-US', { timeZone: SPA_TZ, weekday: 'short' }).format(d);
+    if (dow === 'Sun') continue;
+    const isoDate = new Intl.DateTimeFormat('en-CA', { timeZone: SPA_TZ }).format(d);
+    const label = new Intl.DateTimeFormat('es-EC', {
+      timeZone: SPA_TZ, weekday: 'short', day: 'numeric', month: 'short',
+    }).format(d);
+    const fullDay = new Intl.DateTimeFormat('es-EC', {
+      timeZone: SPA_TZ, weekday: 'long',
+    }).format(d);
+    rows.push({
+      id: `${BOOK_DATE_PREFIX}${isoDate}`,
+      title: capitalize(label).slice(0, 24),
+      description: capitalize(fullDay).slice(0, 72),
+    });
+  }
+  return {
+    type: 'list',
+    body: { text: tone === 'tu'
+      ? '📅 ¿Qué día te queda bien?'
+      : '📅 ¿Qué día le queda bien?' },
+    footer: { text: 'Alma Spa 🌿' },
+    action: {
+      button: 'Elegir día',
+      sections: [{ title: 'Días disponibles', rows }],
+    },
+  };
+}
+
+function timeSlotList(slots, serviceName, { tone } = {}) {
+  const rows = slots.slice(0, 10).map((isoStr, i) => {
+    const d = new Date(isoStr);
+    const time = new Intl.DateTimeFormat('es-EC', {
+      timeZone: SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(d);
+    return {
+      id: `${BOOK_TIME_PREFIX}${i}`,
+      title: time,
+      description: String(serviceName).slice(0, 72),
+    };
+  });
+  const svcLabel = String(serviceName).slice(0, 50);
+  return {
+    type: 'list',
+    body: { text: tone === 'tu'
+      ? `🕐 Horarios disponibles para ${svcLabel}:`
+      : `🕐 Horarios disponibles para ${svcLabel}:` },
+    footer: { text: 'Alma Spa 🌿' },
+    action: {
+      button: 'Ver horarios',
+      sections: [{ title: 'Horarios', rows }],
+    },
+  };
+}
+
+function bookingConfirmation(summary, { tone } = {}) {
+  return {
+    type: 'button',
+    body: { text: `📋 ¿Confirmo esta cita?\n\n${summary}\n\n${
+      tone === 'tu' ? 'Presiona Sí para confirmar 💛' : 'Presione Sí para confirmar 💛'
+    }` },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: BOOK_CONFIRM_YES, title: 'Sí, confirmar' } },
+        { type: 'reply', reply: { id: BOOK_CONFIRM_NO, title: 'No, cancelar' } },
+      ],
+    },
+  };
+}
+
+function askNameText({ tone } = {}) {
+  return tone === 'tu'
+    ? '💛 Para completar tu reserva, ¿me dices tu nombre completo?'
+    : '💛 Para completar su reserva, ¿me dice su nombre completo?';
+}
+
 module.exports = {
   MAIN_MENU_IDS,
   SERVICE_PREFIX,
   CATEGORY_PREFIX,
   NAV_BACK_MENU,
+  BOOK_DATE_PREFIX,
+  BOOK_TIME_PREFIX,
+  BOOK_CONFIRM_YES,
+  BOOK_CONFIRM_NO,
+  SPA_TZ,
+  capitalize,
   mainMenu,
   servicesList,
   categoryList,
   servicesInCategory,
   backToMenuButton,
+  datePicker,
+  timeSlotList,
+  bookingConfirmation,
+  askNameText,
 };

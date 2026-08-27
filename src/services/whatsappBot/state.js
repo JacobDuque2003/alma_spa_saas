@@ -13,6 +13,7 @@
 
 const FLOW_TTL_MS = 60 * 60 * 1000;        // 1h
 const ESCALATED_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const MAX_HISTORY = 10;
 
 const flowState = new Map();  // customerWaId -> { flow, tone, updatedAt }
 const escalated = new Map();  // customerWaId -> expiresAt
@@ -65,14 +66,29 @@ function isEscalated(waId) {
   return true;
 }
 
+function pushHistory(waId, role, content) {
+  const s = getFlowState(waId) || {};
+  const history = Array.isArray(s.history) ? [...s.history] : [];
+  history.push({ role, content: String(content).slice(0, 300) });
+  while (history.length > MAX_HISTORY) history.shift();
+  setFlowState(waId, { history });
+}
+
+function getHistory(waId) {
+  const s = getFlowState(waId);
+  return s?.history || [];
+}
+
 module.exports = {
   getFlowState,
   setFlowState,
   clearFlowState,
+  pushHistory,
+  getHistory,
   markEscalated,
   isEscalated,
-  // exports internos para tests
   _reset: () => { flowState.clear(); escalated.clear(); },
   FLOW_TTL_MS,
   ESCALATED_TTL_MS,
+  MAX_HISTORY,
 };

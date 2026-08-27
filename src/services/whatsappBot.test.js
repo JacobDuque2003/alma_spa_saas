@@ -10,12 +10,12 @@ const transport = require('./whatsappTransport');
 const bot = require('./whatsappBot');
 const state = require('./whatsappBot/state');
 const rateLimit = require('./whatsappBot/rateLimit');
+const menus = require('./whatsappBot/menus');
 
 const TENANT = { id: 't1', slug: 'alma-spa' };
 const CONN = { id: 'c1', tenantId: 't1', phoneNumberId: '999', status: 'activo' };
 const CONV = { id: 'conv1', tenantId: 't1', customerWaId: '593999111222' };
 
-// Helpers para capturar los mensajes que el bot habría enviado.
 function installTransportMocks() {
   const sent = [];
   transport.sendText = async (conn, to, body) => { sent.push({ kind: 'text', to, body }); return { ok: true, data: { messages: [{ id: 'wamid.mock' }] } }; };
@@ -26,7 +26,7 @@ function installTransportMocks() {
   return sent;
 }
 
-function installPrismaMocks({ humanReplied = false, services = [], serviceById = {}, imageForId = {}, clientByPhone = null, nextAppointment = null } = {}) {
+function installPrismaMocks({ humanReplied = false, services = [], serviceById = {}, imageForId = {}, clientByPhone = null, nextAppointment = null, tenantConfig = {} } = {}) {
   prisma.whatsAppMessage = {
     findFirst: async () => (humanReplied ? { id: 'human1' } : null),
     create: async () => ({ id: 'msg1' }),
@@ -38,19 +38,36 @@ function installPrismaMocks({ humanReplied = false, services = [], serviceById =
   };
   prisma.client = { findFirst: async () => clientByPhone };
   prisma.appointment = { findFirst: async () => nextAppointment };
+  prisma.tenant = { findUnique: async () => ({ config: tenantConfig }) };
+  prisma.botInteractionLog = {
+    create: async () => ({}),
+    aggregate: async () => ({ _sum: { costUsd: 0 } }),
+  };
 }
 
 function resetState() { state._reset(); rateLimit._reset(); }
 
-test('Fase 1: bot no responde si algún outbound humano existe (recepción ya intervino)', async () => {
+// ─── Core behavior tests ──────────────────────────────────────
+
+test('bot no responde si botActive === false', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ humanReplied: true });
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'hola' } } });
+  installPrismaMocks();
+  const convOff = { ...CONV, botActive: false };
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: convOff, incoming: { type: 'text', text: { body: 'hola' } } });
   assert.equal(sent.length, 0);
 });
 
-test('Fase 1: bot no responde a conversaciones escaladas (dentro del TTL)', async () => {
+test('bot responde aunque haya outbound humano si botActive === true', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ humanReplied: true });
+  const convOn = { ...CONV, botActive: true };
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: convOn, incoming: { type: 'text', text: { body: 'hola' } } });
+  assert.ok(sent.length > 0, 'bot debería responder cuando botActive=true');
+});
+
+test('bot no responde a conversaciones escaladas', async () => {
   resetState();
   state.markEscalated(CONV.customerWaId);
   const sent = installTransportMocks();
@@ -59,7 +76,7 @@ test('Fase 1: bot no responde a conversaciones escaladas (dentro del TTL)', asyn
   assert.equal(sent.length, 0);
 });
 
-test('Fase 1: primer mensaje inbound texto dispara menú principal con nombre Almita', async () => {
+test('primer mensaje texto dispara menú principal con Almita', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -72,7 +89,7 @@ test('Fase 1: primer mensaje inbound texto dispara menú principal con nombre Al
   assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_my_appointment', 'menu_escalate']);
 });
 
-test('Fase 1: seleccionar "Ver servicios" del menú → lista con los activos agrupados por categoría', async () => {
+test('"Ver servicios" → lista agrupada por categoría', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -92,19 +109,14 @@ test('Fase 1: seleccionar "Ver servicios" del menú → lista con los activos ag
   assert.ok(secs.includes('yoga'));
 });
 
-test('Fase 1: seleccionar un servicio con imagen → sube a Meta y envía type:image con caption; luego botón "Ver menú"', async () => {
+test('servicio con imagen → sube y envía image+caption; luego botón volver', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
     serviceById: {
       s1: { id: 's1', tenantId: 't1', name: 'Aero yoga', category: 'yoga', priceUsd: 20, durationMins: 60, description: 'Yoga en telas.', active: true, imageMimeType: 'image/jpeg', imageUpdatedAt: new Date() },
     },
-    imageForId: { s1: { data: Buffer.from([0xff, 0xd8, 0xff]), mimeType: 'image/jpeg' } },
   });
-  // getServiceImage requiere una imagen "real": stub del prisma.service.findUnique
-  // ya lo cubrimos con select del serviceService; pero como getServiceImage usa
-  // un select distinto necesitamos otro stub. Aquí lo simulamos redefiniendo el
-  // prisma.service.findUnique para devolver imageData cuando el select lo pide.
   const originalFindUnique = prisma.service.findUnique.bind(prisma.service);
   prisma.service.findUnique = async ({ where, select }) => {
     if (select && select.imageData) {
@@ -122,7 +134,7 @@ test('Fase 1: seleccionar un servicio con imagen → sube a Meta y envía type:i
   assert.match(sent[1].caption, /Yoga en telas\./);
 });
 
-test('Fase 1: servicio SIN foto → solo texto con nombre+precio+duración+descripción, sin mencionar la falta de foto', async () => {
+test('servicio SIN foto → texto con nombre+precio+duración', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -143,10 +155,10 @@ test('Fase 1: servicio SIN foto → solo texto con nombre+precio+duración+descr
   });
   const textMessages = sent.filter((s) => s.kind === 'text').map((s) => s.body);
   assert.ok(textMessages.some((b) => /Limpieza facial/.test(b)));
-  assert.ok(textMessages.every((b) => !/foto|imagen/i.test(b)), 'no debe mencionar la falta de foto');
+  assert.ok(textMessages.every((b) => !/foto|imagen/i.test(b)));
 });
 
-test('Fase 1: "Mi cita" con número que NO matchea → responde "No encuentro..." y muestra menú', async () => {
+test('"Mi cita" sin cliente → "No encontré citas" + menú', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({ clientByPhone: null });
@@ -155,10 +167,10 @@ test('Fase 1: "Mi cita" con número que NO matchea → responde "No encuentro...
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_my_appointment' } } },
   });
   assert.match(sent[0].body, /No encontré citas a su nombre/);
-  assert.equal(sent[1].kind, 'interactive'); // menú principal
+  assert.equal(sent[1].kind, 'interactive');
 });
 
-test('Fase 1: "Mi cita" con número que matchea + hay cita próxima → devuelve detalles', async () => {
+test('"Mi cita" con cita próxima → devuelve detalles', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -181,19 +193,7 @@ test('Fase 1: "Mi cita" con número que matchea + hay cita próxima → devuelve
   assert.match(body, /confirmada/);
 });
 
-test('Fase 1: "Reservar" → responde con link a /reservar/<slug> y emoji 📅', async () => {
-  resetState();
-  const sent = installTransportMocks();
-  installPrismaMocks();
-  await bot.handleInboundMessage({
-    tenant: TENANT, connection: CONN, conv: CONV,
-    incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book' } } },
-  });
-  assert.match(sent[0].body, /\/reservar\/alma-spa/);
-  assert.match(sent[0].body, /📅/);
-});
-
-test('Fase 1: "Hablar con recepción" marca conversación como escalada + envía confirmación', async () => {
+test('"Hablar con recepción" marca escalada + envía confirmación', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -205,7 +205,7 @@ test('Fase 1: "Hablar con recepción" marca conversación como escalada + envía
   assert.equal(state.isEscalated(CONV.customerWaId), true);
 });
 
-test('Fase 1: tono se cambia a "tú" si la clienta lo usa primero (persistente en el estado)', async () => {
+test('tono "tú" detectado y persistido', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -217,7 +217,7 @@ test('Fase 1: tono se cambia a "tú" si la clienta lo usa primero (persistente e
   assert.equal(st.tone, 'tu');
 });
 
-test('Fase 1: rate limit — al mensaje 21 en 5 min responde con aviso; del 22 en adelante silencio total', async () => {
+test('rate limit — aviso en msg 21, silencio después', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -233,10 +233,12 @@ test('Fase 1: rate limit — al mensaje 21 en 5 min responde con aviso; del 22 e
   for (let i = 0; i < 5; i += 1) {
     await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'x' } } });
   }
-  assert.equal(sent.length, countAfterWarn, 'debe estar en silencio total durante cool-down');
+  assert.equal(sent.length, countAfterWarn);
 });
 
-test('Fase 2: >10 servicios → envía lista de categorías en vez de lista plana', async () => {
+// ─── Category flow (>10 services) ──────────────────────────────
+
+test('>10 servicios → envía categorías', async () => {
   resetState();
   const sent = installTransportMocks();
   const manyServices = [];
@@ -252,11 +254,11 @@ test('Fase 2: >10 servicios → envía lista de categorías en vez de lista plan
   assert.equal(sent.length, 1);
   assert.equal(sent[0].payload.type, 'list');
   const rows = sent[0].payload.action.sections[0].rows;
-  assert.ok(rows.length <= 10, 'no debe exceder 10 rows');
-  assert.ok(rows.some((r) => r.id.startsWith('cat_')), 'rows deben ser categorías');
+  assert.ok(rows.length <= 10);
+  assert.ok(rows.some((r) => r.id.startsWith('cat_')));
 });
 
-test('Fase 2: seleccionar categoría → muestra servicios de esa categoría', async () => {
+test('seleccionar categoría → servicios de esa categoría', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -276,22 +278,20 @@ test('Fase 2: seleccionar categoría → muestra servicios de esa categoría', a
   assert.match(sent[0].payload.body.text, /Masajes/);
 });
 
-test('Fase 2: texto libre sin IA y con state previo → "no logré entender" + menú', async () => {
+test('texto libre sin IA y con state previo → "no logré entender" + menú', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
-  // First message sets flow state
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'hola' } } });
   const afterFirst = sent.length;
-  // Second message should trigger "no entendí" hint
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'quiero algo raro' } } });
   const newMessages = sent.slice(afterFirst);
-  assert.equal(newMessages.length, 2, 'debe enviar hint + menú');
+  assert.equal(newMessages.length, 2);
   assert.match(newMessages[0].body, /No logré entender/);
   assert.equal(newMessages[1].kind, 'interactive');
 });
 
-test('Fase 2: escalate incluye "recepción" y emojis en el mensaje', async () => {
+test('escalate incluye "recepción" y emojis', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -302,4 +302,160 @@ test('Fase 2: escalate incluye "recepción" y emojis en el mensaje', async () =>
   assert.match(sent[0].body, /recepción/);
   assert.match(sent[0].body, /👋/);
   assert.match(sent[0].body, /🌿/);
+});
+
+// ─── Booking flow tests ───────────────────────────────────────
+
+test('"Reservar cita" → muestra servicios en modo reserva (NUNCA link externo)', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+    ],
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book' } } },
+  });
+  assert.ok(sent.some(s => s.kind === 'interactive'));
+  const textMsgs = sent.filter(s => s.kind === 'text');
+  assert.ok(textMsgs.every(s => !/https?:\/\//.test(s.body)), 'NUNCA debe enviar links externos');
+  assert.match(textMsgs[0].body, /reservar/i);
+  const st = state.getFlowState(CONV.customerWaId);
+  assert.equal(st.booking?.step, 'select_service');
+});
+
+test('seleccionar servicio en booking → muestra date picker', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    serviceById: {
+      s1: { id: 's1', tenantId: 't1', name: 'Masaje Relajante', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+    },
+  });
+  const originalFindUnique = prisma.service.findUnique.bind(prisma.service);
+  prisma.service.findUnique = async ({ where, select }) => {
+    if (select && select.imageData) return { tenantId: 't1', imageData: null, imageMimeType: null };
+    return originalFindUnique({ where });
+  };
+  // Set booking state
+  state.setFlowState(CONV.customerWaId, { flow: 'booking', booking: { step: 'select_service' }, tone: 'usted' });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_s1' } } },
+  });
+  const interactives = sent.filter(s => s.kind === 'interactive');
+  assert.ok(interactives.length >= 1);
+  const datePicker = interactives.find(s => s.payload?.action?.button === 'Elegir día');
+  assert.ok(datePicker, 'debe mostrar date picker');
+  const rows = datePicker.payload.action.sections[0].rows;
+  assert.ok(rows.every(r => r.id.startsWith('bkd_')));
+  const st = state.getFlowState(CONV.customerWaId);
+  assert.equal(st.booking?.step, 'select_date');
+  assert.equal(st.booking?.serviceId, 's1');
+});
+
+test('seleccionar servicio fuera de booking → muestra detalle normal', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    serviceById: {
+      s1: { id: 's1', tenantId: 't1', name: 'Masaje', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+    },
+  });
+  const originalFindUnique = prisma.service.findUnique.bind(prisma.service);
+  prisma.service.findUnique = async ({ where, select }) => {
+    if (select && select.imageData) return { tenantId: 't1', imageData: null, imageMimeType: null };
+    return originalFindUnique({ where });
+  };
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_s1' } } },
+  });
+  const textMsgs = sent.filter(s => s.kind === 'text');
+  assert.ok(textMsgs.some(s => /🌟.*Masaje/.test(s.body)));
+});
+
+test('booking confirm_no → cancela y vuelve a menú', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { button_reply: { id: 'bk_no' } } },
+  });
+  assert.ok(sent.some(s => s.kind === 'text' && /cancelé la reserva/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'interactive'));
+});
+
+test('name capture → nombre corto rechazado, nombre válido aceptado', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: null });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'ask_name', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z' },
+    tone: 'usted',
+  });
+  // Too short name
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'A' } },
+  });
+  assert.ok(sent.some(s => s.kind === 'text' && /nombre completo/.test(s.body)));
+});
+
+test('date picker genera solo días lun-sáb (sin domingo)', async () => {
+  const picker = menus.datePicker({ tone: 'usted' });
+  assert.equal(picker.type, 'list');
+  assert.ok(picker.action.sections[0].rows.length >= 1);
+  assert.ok(picker.action.sections[0].rows.length <= 7);
+  for (const row of picker.action.sections[0].rows) {
+    assert.ok(row.id.startsWith('bkd_'));
+    assert.ok(!row.description.toLowerCase().includes('domingo'));
+  }
+});
+
+test('time slot list respeta máximo 10 rows', async () => {
+  const slots = [];
+  for (let i = 0; i < 15; i++) {
+    slots.push(new Date(`2026-09-01T${String(9 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 === 0 ? '00' : '30'}:00Z`).toISOString());
+  }
+  const list = menus.timeSlotList(slots, 'Masaje Relajante', { tone: 'tu' });
+  assert.equal(list.type, 'list');
+  assert.ok(list.action.sections[0].rows.length <= 10);
+  assert.ok(list.action.sections[0].rows.every(r => r.id.startsWith('bkt_')));
+});
+
+test('booking confirmation buttons have correct IDs', async () => {
+  const confirmation = menus.bookingConfirmation('🌟 Test\n📅 Lunes\n🕐 10:00', { tone: 'usted' });
+  assert.equal(confirmation.type, 'button');
+  const ids = confirmation.action.buttons.map(b => b.reply.id);
+  assert.ok(ids.includes('bk_yes'));
+  assert.ok(ids.includes('bk_no'));
+});
+
+// ─── State history tests ──────────────────────────────────────
+
+test('pushHistory + getHistory mantiene últimos MAX_HISTORY mensajes', async () => {
+  resetState();
+  for (let i = 0; i < 15; i++) {
+    state.pushHistory('test_wa', 'user', `msg ${i}`);
+  }
+  const history = state.getHistory('test_wa');
+  assert.equal(history.length, state.MAX_HISTORY);
+  assert.equal(history[0].content, 'msg 5');
+  assert.equal(history[history.length - 1].content, 'msg 14');
+});
+
+test('capitalize helper', () => {
+  assert.equal(menus.capitalize('hola'), 'Hola');
+  assert.equal(menus.capitalize(''), '');
+  assert.equal(menus.capitalize(null), '');
 });

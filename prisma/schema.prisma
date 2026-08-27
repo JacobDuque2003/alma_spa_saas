@@ -38,6 +38,7 @@ model Tenant {
   whatsappConnection    WhatsAppConnection?
   whatsappConversations WhatsAppConversation[]
   whatsappMessages      WhatsAppMessage[]
+  whatsappNotes         WhatsAppNote[]
   botInteractionLogs    BotInteractionLog[]
 }
 
@@ -63,6 +64,7 @@ model User {
   editedTreatments     TreatmentHistory[]  @relation("EditedTreatments")
   ledgerEntries        ClientLedgerEntry[] @relation("LedgerEntriesCreated")
   whatsappMessagesSent WhatsAppMessage[]   @relation("WhatsAppMessagesSent")
+  whatsappNotesAuthored WhatsAppNote[]    @relation("WhatsAppNotesAuthored")
 
   @@index([tenantId, role, active, canAttendAppointments])
 }
@@ -450,6 +452,7 @@ model WhatsAppConversation {
   archived           Boolean   @default(false)
   botActive          Boolean   @default(true)
   botState           Json?
+  labels             String[]  @default([])
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -457,6 +460,7 @@ model WhatsAppConversation {
   client             Client?             @relation(fields: [clientId], references: [id])
   messages           WhatsAppMessage[]
   botInteractionLogs BotInteractionLog[]
+  notes              WhatsAppNote[]
 
   @@unique([tenantId, customerWaId])
   @@index([tenantId, lastMessageAt(sort: Desc)])
@@ -486,6 +490,21 @@ model WhatsAppMessage {
   sentBy       User?                @relation("WhatsAppMessagesSent", fields: [sentByUserId], references: [id])
 
   @@index([tenantId, conversationId, createdAt])
+}
+
+model WhatsAppNote {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  content        String
+  authorId       String
+  createdAt      DateTime @default(now())
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User                 @relation("WhatsAppNotesAuthored", fields: [authorId], references: [id])
+
+  @@index([conversationId, createdAt])
 }
 
 // ---- Admin Audit Log --------------------------------------------------------
