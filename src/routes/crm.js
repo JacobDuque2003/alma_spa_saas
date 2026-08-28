@@ -18,6 +18,20 @@ router.get('/assignees', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/labels', async (req, res, next) => {
+  try {
+    const labels = await inboxService.listLabelDefinitions(req.user);
+    res.json({ items: labels });
+  } catch (err) { next(err); }
+});
+
+router.put('/labels', async (req, res, next) => {
+  try {
+    const labels = await inboxService.saveLabelDefinitions(req.user, req.body?.labels);
+    res.json({ items: labels });
+  } catch (err) { next(err); }
+});
+
 router.get('/conversations', async (req, res, next) => {
   try {
     const result = await inboxService.listConversations(req.user, req.query);

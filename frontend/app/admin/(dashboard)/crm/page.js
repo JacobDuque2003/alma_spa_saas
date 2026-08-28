@@ -1,23 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import {
   Loader2, Send, ArrowLeft, Bot, UserRound, Search,
   MessageSquare, StickyNote, Tag, Phone, Calendar, Hash, ChevronRight,
   Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
+  ChevronDown, ArrowDown, Edit3,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 
-const LABEL_CONFIG = {
-  consulta:          { text: "Consulta",          bg: "bg-blue-100",    fg: "text-blue-700",    dot: "bg-blue-500" },
-  reserva_pendiente: { text: "Reserva pendiente", bg: "bg-amber-100",   fg: "text-amber-700",   dot: "bg-amber-500" },
-  cita_confirmada:   { text: "Cita confirmada",   bg: "bg-emerald-100", fg: "text-emerald-700", dot: "bg-emerald-500" },
-  seguimiento:       { text: "Seguimiento",        bg: "bg-purple-100",  fg: "text-purple-700",  dot: "bg-purple-500" },
-  queja:             { text: "Queja",              bg: "bg-red-100",     fg: "text-red-700",     dot: "bg-red-500" },
-  nueva_clienta:     { text: "Nueva clienta",     bg: "bg-sky-100",     fg: "text-sky-700",     dot: "bg-sky-500" },
+const DEFAULT_LABELS = [
+  { key: "consulta", text: "Consulta", tone: "blue" },
+  { key: "reserva_pendiente", text: "Reserva pendiente", tone: "amber" },
+  { key: "cita_confirmada", text: "Cita confirmada", tone: "emerald" },
+  { key: "seguimiento", text: "Seguimiento", tone: "purple" },
+  { key: "queja", text: "Queja", tone: "red" },
+  { key: "nueva_clienta", text: "Nueva clienta", tone: "sky" },
+];
+
+const LABEL_TONES = {
+  blue:    { label: "Azul",    bg: "bg-blue-100",    fg: "text-blue-700",    dot: "bg-blue-500",    ring: "border-blue-200" },
+  amber:   { label: "Dorado",  bg: "bg-amber-100",   fg: "text-amber-700",   dot: "bg-amber-500",   ring: "border-amber-200" },
+  emerald: { label: "Verde",   bg: "bg-emerald-100", fg: "text-emerald-700", dot: "bg-emerald-500", ring: "border-emerald-200" },
+  purple:  { label: "Lila",    bg: "bg-purple-100",  fg: "text-purple-700",  dot: "bg-purple-500",  ring: "border-purple-200" },
+  red:     { label: "Rojo",    bg: "bg-red-100",     fg: "text-red-700",     dot: "bg-red-500",     ring: "border-red-200" },
+  sky:     { label: "Celeste", bg: "bg-sky-100",     fg: "text-sky-700",     dot: "bg-sky-500",     ring: "border-sky-200" },
+  rose:    { label: "Rosa",    bg: "bg-rose-100",    fg: "text-rose-700",    dot: "bg-rose-500",    ring: "border-rose-200" },
+  neutral: { label: "Arena",   bg: "bg-cream",       fg: "text-bronze",      dot: "bg-warm-gray",   ring: "border-border" },
 };
 
 const FILTERS = [
@@ -46,6 +58,22 @@ function dateStr(value) {
   });
 }
 
+function slugLabel(text) {
+  return String(text || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || `etiqueta_${Date.now()}`;
+}
+
+function labelMapFrom(items) {
+  return Object.fromEntries((items || DEFAULT_LABELS).map((label) => [label.key, {
+    ...label,
+    ...(LABEL_TONES[label.tone] || LABEL_TONES.neutral),
+  }]));
+}
+
 const QUICK_REPLIES_DEFAULT = [
   { icon: "👋", title: "Saludo", text: "Hola, gracias por escribir a Alma Spa. ¿En qué podemos ayudarte?" },
   { icon: "✅", title: "Confirmar", text: "Perfecto, tu cita queda confirmada. Te esperamos con mucho gusto." },
@@ -60,6 +88,7 @@ export default function CRMPage() {
   const [conversations, setConversations] = useState([]);
   const [counts, setCounts] = useState({ all: 0, pending: 0, resolved: 0 });
   const [assignees, setAssignees] = useState([]);
+  const [labelDefs, setLabelDefs] = useState(DEFAULT_LABELS);
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -70,6 +99,14 @@ export default function CRMPage() {
   const [notes, setNotes] = useState([]);
   const [noteText, setNoteText] = useState("");
   const [showPanel, setShowPanel] = useState("info"); // info | notes | labels
+  const [showLabelEditor, setShowLabelEditor] = useState(false);
+  const [labelDraft, setLabelDraft] = useState({ key: "", text: "", tone: "blue" });
+  const [editingLabelKey, setEditingLabelKey] = useState(null);
+  const [showAssignees, setShowAssignees] = useState(false);
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatSearch, setChatSearch] = useState("");
+  const [chatSearchIndex, setChatSearchIndex] = useState(0);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
   const toast = useToast();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState("list"); // list | chat | panel
@@ -80,6 +117,25 @@ export default function CRMPage() {
   const messagesContainerRef = useRef(null);
   const [quickReplies] = useState(QUICK_REPLIES_DEFAULT);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const labelConfig = useMemo(() => labelMapFrom(labelDefs), [labelDefs]);
+  const selectedName = selected?.client?.fullName || selected?.customerName || selected?.customerWaId || "";
+  const chatMatches = useMemo(() => {
+    const term = chatSearch.trim().toLowerCase();
+    if (!term) return [];
+    return messages.filter((m) => String(m.body || "").toLowerCase().includes(term));
+  }, [messages, chatSearch]);
+  const detailsMatch = useMemo(() => {
+    const term = chatSearch.trim().toLowerCase();
+    if (!term || chatMatches.length > 0 || !selected) return false;
+    return [
+      selectedName,
+      selected.customerWaId,
+      selected.client?.recordNumber,
+      selected.client?.email,
+      selected.assignedTo?.name,
+      ...(selected.labels || []).map((key) => labelConfig[key]?.text || key),
+    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
+  }, [chatSearch, chatMatches.length, selected, selectedName, labelConfig]);
 
   // ─── Data fetching ──────────────────────────────────────────
   const fetchConversations = useCallback(async (silent = false) => {
@@ -124,6 +180,12 @@ export default function CRMPage() {
     authFetch("/crm/assignees")
       .then((data) => setAssignees(data.items || []))
       .catch(() => setAssignees([]));
+  }, []);
+
+  useEffect(() => {
+    authFetch("/crm/labels")
+      .then((data) => setLabelDefs(data.items?.length ? data.items : DEFAULT_LABELS))
+      .catch(() => setLabelDefs(DEFAULT_LABELS));
   }, []);
 
   const fetchConversation = useCallback(async (silent = false) => {
@@ -175,6 +237,10 @@ export default function CRMPage() {
       if (event.type === "crm.ping" || event.type === "crm.connected") return;
       let payload = {};
       try { payload = JSON.parse(event.data || "{}"); } catch { payload = {}; }
+      if (event.type === "conversation.labels.config.updated") {
+        if (payload.labels?.length) setLabelDefs(payload.labels);
+        return;
+      }
       fetchConversations(true);
       if (payload.conversationId && payload.conversationId === selectedId) {
         fetchConversation(true);
@@ -191,6 +257,7 @@ export default function CRMPage() {
       "conversation.tags.updated",
       "conversation.notes.updated",
       "conversation.updated",
+      "conversation.labels.config.updated",
     ];
     eventNames.forEach((name) => source.addEventListener(name, refreshFromEvent));
     source.onerror = () => {
@@ -215,6 +282,31 @@ export default function CRMPage() {
     }
     lastMsgIdRef.current = lastId;
   }, [messages]);
+
+  useEffect(() => {
+    setChatSearch("");
+    setChatSearchIndex(0);
+    setChatSearchOpen(false);
+    setShowAssignees(false);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!chatMatches.length) return;
+    const match = chatMatches[Math.min(chatSearchIndex, chatMatches.length - 1)];
+    const node = document.getElementById(`crm-msg-${match.id}`);
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [chatMatches, chatSearchIndex]);
+
+  function scrollToBottom(behavior = "smooth") {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setShowScrollBottom(false);
+  }
+
+  function handleMessagesScroll() {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    setShowScrollBottom(container.scrollHeight - container.scrollTop - container.clientHeight > 180);
+  }
 
   // ─── Actions ─────────────────────────────────────────────────
   async function sendText() {
@@ -373,9 +465,70 @@ export default function CRMPage() {
     }
   }
 
+  async function saveLabelsConfig(nextLabels) {
+    const clean = nextLabels.filter((label) => label.text?.trim()).slice(0, 24);
+    const saved = await authFetch("/crm/labels", {
+      method: "PUT",
+      body: { labels: clean },
+    });
+    setLabelDefs(saved.items || clean);
+    return saved.items || clean;
+  }
+
+  async function saveLabelDraft() {
+    const text = labelDraft.text.trim();
+    if (!text) return;
+    const key = editingLabelKey || slugLabel(text);
+    const next = editingLabelKey
+      ? labelDefs.map((label) => label.key === editingLabelKey ? { ...label, text, tone: labelDraft.tone } : label)
+      : [...labelDefs, { key, text, tone: labelDraft.tone }];
+    try {
+      await saveLabelsConfig(next);
+      setLabelDraft({ key: "", text: "", tone: "blue" });
+      setEditingLabelKey(null);
+      setShowLabelEditor(false);
+      toast.success(editingLabelKey ? "Etiqueta actualizada" : "Etiqueta agregada");
+    } catch (err) {
+      toast.error(err.message || "No se pudo guardar la etiqueta");
+    }
+  }
+
+  function startEditingLabel(label) {
+    setEditingLabelKey(label.key);
+    setLabelDraft({ key: label.key, text: label.text, tone: label.tone || "neutral" });
+    setShowLabelEditor(true);
+  }
+
+  async function removeLabel(key) {
+    try {
+      await saveLabelsConfig(labelDefs.filter((label) => label.key !== key));
+      if (selected?.labels?.includes(key)) {
+        await toggleLabel(key);
+      }
+    } catch (err) {
+      toast.error(err.message || "No se pudo eliminar la etiqueta");
+    }
+  }
+
   function selectConversation(id) {
     setSelectedId(id);
     if (isMobile) setMobileView("chat");
+  }
+
+  function renderHighlightedText(text) {
+    const value = text || "";
+    const term = chatSearch.trim();
+    if (!term) return value;
+    const lower = value.toLowerCase();
+    const index = lower.indexOf(term.toLowerCase());
+    if (index === -1) return value;
+    return (
+      <>
+        {value.slice(0, index)}
+        <mark className="rounded bg-gold/30 px-0.5 text-bronze-deep">{value.slice(index, index + term.length)}</mark>
+        {value.slice(index + term.length)}
+      </>
+    );
   }
 
   // ─── Render helpers ──────────────────────────────────────────
@@ -448,7 +601,7 @@ export default function CRMPage() {
               </span>
             )}
             {labels.slice(0, 2).map((l) => {
-              const cfg = LABEL_CONFIG[l];
+              const cfg = labelConfig[l];
               if (!cfg) return null;
               return (
                 <span key={l} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${cfg.bg} ${cfg.fg}`}>
@@ -482,7 +635,7 @@ export default function CRMPage() {
     };
 
     return (
-      <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+      <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
           max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-sm
           ${isBot
@@ -506,7 +659,7 @@ export default function CRMPage() {
             </div>
           )}
           <p className="whitespace-pre-wrap leading-relaxed">
-            {m.body || mediaLabels[m.type] || "Mensaje recibido"}
+            {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
           </p>
           <p className="text-right text-[10px] text-warm-gray mt-1.5">
             {timeStr(m.createdAt)} {m.status ? `· ${m.status}` : ""}
@@ -611,28 +764,91 @@ export default function CRMPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {selected.botActive ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
-                <Bot size={12} /> Bot activo
-              </span>
-            ) : (
+            <button
+              onClick={selected.botActive ? pauseBot : reactivateBot}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-150 ${
+                selected.botActive
+                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                  : "bg-bronze text-white hover:bg-bronze-deep"
+              }`}
+            >
+              {selected.botActive ? <Bot size={12} /> : <RefreshCw size={12} />}
+              {selected.botActive ? "Bot activo" : "Reactivar bot"}
+            </button>
+            <div className="relative">
               <button
-                onClick={reactivateBot}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-bronze text-white text-[11px] font-semibold
-                           hover:bg-bronze-deep transition-colors duration-150"
+                onClick={() => setShowAssignees((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-white text-bronze-deep text-[11px] font-semibold hover:bg-cream transition-colors"
               >
-                <RefreshCw size={12} /> Reactivar bot
+                <UserCheck size={12} />
+                {selected.assignedTo?.name?.split(" ")[0] || "Asignar"}
+                <ChevronDown size={12} />
               </button>
-            )}
+              {showAssignees && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-56 rounded-2xl border border-border bg-white p-2 shadow-xl">
+                  <button
+                    onClick={() => { assignConversation(""); setShowAssignees(false); }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-xs text-warm-gray hover:bg-cream"
+                  >
+                    Sin asignar
+                  </button>
+                  {assignees.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => { assignConversation(u.id); setShowAssignees(false); }}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-xs transition-colors ${
+                        selected.assignedToUserId === u.id
+                          ? "bg-gold/15 text-bronze-deep font-semibold"
+                          : "text-bronze hover:bg-cream"
+                      }`}
+                    >
+                      {u.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setChatSearchOpen((v) => !v)}
+                className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors ${
+                  chatSearchOpen ? "bg-gold text-white border-gold" : "bg-white text-bronze border-border hover:bg-cream"
+                }`}
+                title="Buscar en esta conversación"
+              >
+                <Search size={14} />
+              </button>
+              {chatSearchOpen && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-2xl border border-border bg-white p-3 shadow-xl">
+                  <input
+                    autoFocus
+                    value={chatSearch}
+                    onChange={(e) => { setChatSearch(e.target.value); setChatSearchIndex(0); }}
+                    placeholder="Buscar en este chat…"
+                    className="w-full rounded-xl border border-border bg-cream/40 px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                  {chatSearch.trim() && (
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-warm-gray">
+                      <span>
+                        {chatMatches.length > 0
+                          ? `${chatMatches.length} coincidencia${chatMatches.length === 1 ? "" : "s"}`
+                          : detailsMatch ? "Coincide con la ficha" : "Sin coincidencias"}
+                      </span>
+                      {chatMatches.length > 1 && (
+                        <button
+                          onClick={() => setChatSearchIndex((i) => (i + 1) % chatMatches.length)}
+                          className="rounded-full bg-cream px-2 py-1 text-bronze hover:bg-glow/40"
+                        >
+                          Siguiente
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             {!isMobile ? (
-              <button
-                onClick={sendReminder}
-                disabled={sending}
-                className="px-4 py-1.5 rounded-full bg-bronze-deep text-white text-xs font-medium
-                           hover:bg-bronze transition-colors duration-150 disabled:opacity-60"
-              >
-                Recordatorio
-              </button>
+              null
             ) : (
               <button
                 onClick={() => setMobileView("panel")}
@@ -649,9 +865,24 @@ export default function CRMPage() {
         )}
 
         {/* Messages */}
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-          {messages.map((m) => renderMessageBubble(m))}
-          <div ref={messagesEndRef} />
+        <div className="relative flex-1 min-h-0">
+          <div
+            ref={messagesContainerRef}
+            onScroll={handleMessagesScroll}
+            className="h-full overflow-y-auto p-4 flex flex-col gap-3"
+          >
+            {messages.map((m) => renderMessageBubble(m))}
+            <div ref={messagesEndRef} />
+          </div>
+          {showScrollBottom && (
+            <button
+              onClick={() => scrollToBottom()}
+              className="absolute bottom-4 right-5 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-bronze shadow-lg transition-colors hover:bg-cream"
+              title="Bajar al último mensaje"
+            >
+              <ArrowDown size={16} />
+            </button>
+          )}
         </div>
 
         {/* Quick replies popover */}
@@ -717,11 +948,13 @@ export default function CRMPage() {
     const linkedClient = selected.client || null;
     const name = linkedClient?.fullName || selected.customerName || selected.customerWaId;
     const labels = selected.labels || [];
+    const isResolved = selected.status === "resolved";
+    const isUnreadActive = !isResolved && (selected.unreadCount > 0 || selected.manuallyMarkedUnread);
 
     return (
       <div className={`
         flex flex-col h-full bg-white
-        ${isMobile ? "w-full" : "w-[320px] flex-shrink-0 border-l border-border"}
+        ${isMobile ? "w-full" : "w-[300px] flex-shrink-0 border-l border-border"}
       `}>
         {isMobile && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
@@ -734,8 +967,8 @@ export default function CRMPage() {
 
         {/* Client card */}
         <div className="p-4 border-b border-border">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="w-12 h-12 rounded-full bg-gold text-white flex items-center justify-center text-lg font-semibold">
+          <div className="flex items-center gap-3">
+            <span className="w-11 h-11 rounded-full bg-gold text-white flex items-center justify-center text-base font-semibold">
               {initials(name)}
             </span>
             <div className="min-w-0">
@@ -745,7 +978,7 @@ export default function CRMPage() {
               </div>
             </div>
           </div>
-          <div className="grid gap-2 text-xs text-warm-gray">
+          <div className="mt-3 grid gap-1.5 text-xs text-warm-gray">
             {linkedClient ? (
               <>
                 <span className="flex items-center gap-1">
@@ -760,22 +993,6 @@ export default function CRMPage() {
                 Contacto de WhatsApp aún sin ficha enlazada.
               </span>
             )}
-          </div>
-          <div className="mt-4 grid gap-2">
-            <label className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider">
-              Responsable
-            </label>
-            <select
-              value={selected.assignedToUserId || ""}
-              onChange={(e) => assignConversation(e.target.value)}
-              className="w-full rounded-xl border border-border bg-cream/50 px-3 py-2 text-sm text-bronze-deep
-                         focus:outline-none focus:ring-2 focus:ring-gold/40"
-            >
-              <option value="">Sin asignar</option>
-              {assignees.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
           </div>
         </div>
 
@@ -806,29 +1023,97 @@ export default function CRMPage() {
         <div className="flex-1 overflow-y-auto p-4">
           {showPanel === "info" && (
             <div>
-              <p className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider mb-3">Etiquetas</p>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider">Etiquetas</p>
+                <button
+                  onClick={() => {
+                    setShowLabelEditor((v) => !v);
+                    setEditingLabelKey(null);
+                    setLabelDraft({ key: "", text: "", tone: "blue" });
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full bg-cream px-2.5 py-1 text-[11px] font-semibold text-bronze hover:bg-glow/40"
+                >
+                  <Plus size={12} /> Más
+                </button>
+              </div>
+              {showLabelEditor && (
+                <div className="mb-3 rounded-2xl border border-border bg-cream/40 p-3">
+                  <input
+                    value={labelDraft.text}
+                    onChange={(e) => setLabelDraft((d) => ({ ...d, text: e.target.value }))}
+                    placeholder="Nombre de etiqueta"
+                    className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {Object.entries(LABEL_TONES).map(([tone, cfg]) => (
+                      <button
+                        key={tone}
+                        onClick={() => setLabelDraft((d) => ({ ...d, tone }))}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${cfg.bg} ${cfg.fg} ${
+                          labelDraft.tone === tone ? cfg.ring : "border-transparent"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                        {cfg.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={saveLabelDraft}
+                      className="flex-1 rounded-xl bg-bronze px-3 py-2 text-xs font-semibold text-white hover:bg-bronze-deep"
+                    >
+                      {editingLabelKey ? "Guardar" : "Agregar"}
+                    </button>
+                    <button
+                      onClick={() => { setShowLabelEditor(false); setEditingLabelKey(null); }}
+                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
-                {Object.entries(LABEL_CONFIG).map(([key, cfg]) => {
+                {labelDefs.map((label) => {
+                  const key = label.key;
+                  const cfg = labelConfig[key] || LABEL_TONES.neutral;
                   const active = labels.includes(key);
                   return (
-                    <button
-                      key={key}
-                      onClick={() => toggleLabel(key)}
-                      className={`
-                        inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
-                        transition-all duration-150 border
-                        ${active
-                          ? `${cfg.bg} ${cfg.fg} border-current`
-                          : "bg-cream/60 text-warm-gray border-border hover:bg-cream"
-                        }
-                      `}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
-                      {cfg.text}
-                    </button>
+                    <span key={key} className="group inline-flex items-center">
+                      <button
+                        onClick={() => toggleLabel(key)}
+                        className={`
+                          inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium
+                          transition-all duration-150
+                          ${active
+                            ? `${cfg.bg} ${cfg.fg} border-current`
+                            : "bg-cream/60 text-warm-gray border-border hover:bg-cream"
+                          }
+                        `}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
+                        {label.text}
+                      </button>
+                      <button
+                        onClick={() => startEditingLabel(label)}
+                        className="-ml-1 hidden h-7 w-7 items-center justify-center rounded-full border border-border bg-white text-warm-gray shadow-sm hover:text-bronze group-hover:inline-flex"
+                        title="Editar etiqueta"
+                      >
+                        <Edit3 size={11} />
+                      </button>
+                    </span>
                   );
                 })}
               </div>
+              {editingLabelKey && (
+                <button
+                  onClick={() => removeLabel(editingLabelKey)}
+                  className="mt-3 text-[11px] font-semibold text-red-500 hover:text-red-600"
+                >
+                  Eliminar etiqueta seleccionada
+                </button>
+              )}
             </div>
           )}
 
@@ -880,61 +1165,36 @@ export default function CRMPage() {
         </div>
 
         {/* Actions */}
-        <div className="p-4 border-t border-border flex flex-col gap-2">
-          {selected.status === "resolved" ? (
+        <div className="border-t border-border p-4">
+          <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => changeStatus("open")}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                         bg-cream border border-border text-bronze text-sm font-semibold
-                         hover:bg-glow/40 transition-colors duration-150"
-            >
-              <CircleDot size={14} /> Reabrir conversación
-            </button>
-          ) : (
-            <button
-              onClick={() => changeStatus("resolved")}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                         bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold
-                         hover:bg-emerald-100 transition-colors duration-150"
+              onClick={() => changeStatus(isResolved ? "open" : "resolved")}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
+                isResolved
+                  ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
+                  : "bg-cream border-border text-bronze hover:bg-emerald-50 hover:text-emerald-700"
+              }`}
             >
               <CheckCircle2 size={14} /> Resolver
             </button>
-          )}
-          {selected.botActive ? (
             <button
-              onClick={pauseBot}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                         bg-cream border border-border text-bronze text-sm font-semibold
-                         hover:bg-glow/40 transition-colors duration-150"
+              onClick={markUnread}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
+                isUnreadActive
+                  ? "bg-sky-500 border-sky-500 text-white shadow-sm"
+                  : "bg-cream border-border text-bronze hover:bg-sky-50 hover:text-sky-700"
+              }`}
             >
-              <Bot size={14} /> Pausar bot
+              <RefreshCw size={14} /> No leído
             </button>
-          ) : (
-            <button
-              onClick={reactivateBot}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                         bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold
-                         hover:bg-emerald-100 transition-colors duration-150"
-            >
-              <RefreshCw size={14} /> Reactivar bot
-            </button>
-          )}
+          </div>
           <button
             onClick={sendReminder}
             disabled={sending}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                       bg-bronze text-white text-sm font-medium
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-bronze px-4 py-2.5 text-sm font-semibold text-white
                        hover:bg-bronze-deep transition-colors duration-150 disabled:opacity-50"
           >
             <Send size={14} /> Enviar recordatorio
-          </button>
-          <button
-            onClick={markUnread}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                       bg-cream border border-border text-bronze text-sm font-medium
-                       hover:bg-glow/40 transition-colors duration-150"
-          >
-            Marcar no leída
           </button>
         </div>
       </div>

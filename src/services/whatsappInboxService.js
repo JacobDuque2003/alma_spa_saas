@@ -7,6 +7,15 @@ const crmEvents = require('./crmEventBus');
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TZ_OFFSET_MINUTES = -5 * 60; // America/Guayaquil (UTC-5, sin DST). Fallback si Tenant.config no lo trae.
+const LABEL_TONES = ['blue', 'amber', 'emerald', 'purple', 'red', 'sky', 'rose', 'neutral'];
+const DEFAULT_LABELS = [
+  { key: 'consulta', text: 'Consulta', tone: 'blue' },
+  { key: 'reserva_pendiente', text: 'Reserva pendiente', tone: 'amber' },
+  { key: 'cita_confirmada', text: 'Cita confirmada', tone: 'emerald' },
+  { key: 'seguimiento', text: 'Seguimiento', tone: 'purple' },
+  { key: 'queja', text: 'Queja', tone: 'red' },
+  { key: 'nueva_clienta', text: 'Nueva clienta', tone: 'sky' },
+];
 
 function isWithinWindow(lastInboundAt) {
   if (!lastInboundAt) return false;
@@ -17,6 +26,63 @@ function previewOf(text) {
   if (!text) return null;
   const clean = String(text).replace(/\s+/g, ' ').trim();
   return clean.length > 120 ? clean.slice(0, 120) + '…' : clean;
+}
+
+function slugLabel(text, fallback = 'etiqueta') {
+  const slug = String(text || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  return slug || fallback;
+}
+
+function normalizeLabelDefinitions(input) {
+  const rows = Array.isArray(input) && input.length > 0 ? input : DEFAULT_LABELS;
+  const used = new Set();
+  return rows.slice(0, 24).map((row, index) => {
+    const text = String(row?.text || '').trim().slice(0, 36) || `Etiqueta ${index + 1}`;
+    let key = slugLabel(row?.key || text, `etiqueta_${index + 1}`);
+    if (used.has(key)) key = `${key}_${index + 1}`.slice(0, 48);
+    used.add(key);
+    const tone = LABEL_TONES.includes(row?.tone) ? row.tone : DEFAULT_LABELS[index]?.tone || 'neutral';
+    return { key, text, tone };
+  });
+}
+
+async function listLabelDefinitions(actor) {
+  if (!actor?.tenantId || !prisma.tenant?.findUnique) return DEFAULT_LABELS;
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: actor.tenantId },
+    select: { config: true },
+  });
+  return normalizeLabelDefinitions(tenant?.config?.crm?.labels);
+}
+
+async function saveLabelDefinitions(actor, labels) {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: actor.tenantId },
+    select: { config: true },
+  });
+  if (!tenant) throw new BadRequestError('Tenant no encontrado');
+  const nextLabels = normalizeLabelDefinitions(labels);
+  const existing = tenant.config || {};
+  const nextConfig = {
+    ...existing,
+    crm: {
+      ...(existing.crm || {}),
+      labels: nextLabels,
+    },
+  };
+  await prisma.tenant.update({
+    where: { id: actor.tenantId },
+    data: { config: nextConfig },
+  });
+  publishConversationEvent(actor.tenantId, 'conversation.labels.config.updated', {
+    labels: nextLabels,
+  });
+  return nextLabels;
 }
 
 /**
@@ -524,12 +590,14 @@ async function listAssignees(actor) {
   });
 }
 
-const VALID_LABELS = ['consulta', 'reserva_pendiente', 'cita_confirmada', 'seguimiento', 'queja', 'nueva_clienta'];
+const VALID_LABELS = DEFAULT_LABELS.map((label) => label.key);
 
 async function setLabels(actor, conversationId, labels) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
-  const filtered = [...new Set(labels.filter((l) => VALID_LABELS.includes(l)))];
+  const labelDefinitions = await listLabelDefinitions(actor);
+  const validLabels = new Set(labelDefinitions.map((label) => label.key));
+  const filtered = [...new Set(labels.filter((l) => validLabels.has(l)))];
   const updated = await prisma.whatsAppConversation.update({
     where: { id: conv.id },
     data: { labels: filtered },
@@ -593,6 +661,8 @@ module.exports = {
   setStatus,
   assignConversation,
   listAssignees,
+  listLabelDefinitions,
+  saveLabelDefinitions,
   setLabels,
   listNotes,
   createNote,
@@ -601,4 +671,5 @@ module.exports = {
   previewOf,
   todayRangeForTenant,
   VALID_LABELS,
+  DEFAULT_LABELS,
 };
