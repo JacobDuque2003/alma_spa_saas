@@ -89,6 +89,50 @@ test('primer mensaje texto dispara menú principal con Almita', async () => {
   assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_my_appointment', 'menu_escalate']);
 });
 
+test('menú principal cae a texto si Meta rechaza el interactivo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  transport.sendInteractive = async (conn, to, payload) => {
+    sent.push({ kind: 'interactive', to, payload });
+    return { ok: false, status: 400, errorCode: 'mock_interactive_rejected', errorTitle: 'Rejected' };
+  };
+  installPrismaMocks();
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: 'hola' } },
+  });
+
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(sent[1].kind, 'text');
+  assert.match(sent[1].body, /1\. Ver servicios/);
+  assert.match(sent[1].body, /4\. Hablar con recepción/);
+});
+
+test('opciones numéricas funcionan sin IA', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje relajante', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+    ],
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: '1' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.match(sent[0].payload.body.text, /servicios/i);
+});
+
 test('"Ver servicios" → lista agrupada por categoría', async () => {
   resetState();
   const sent = installTransportMocks();

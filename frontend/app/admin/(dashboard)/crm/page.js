@@ -27,6 +27,8 @@ const FILTERS = [
   { id: "bot_off",    label: "Resueltos" },
 ];
 
+const LIVE_REFRESH_MS = 5_000;
+
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
 }
@@ -87,7 +89,7 @@ export default function CRMPage() {
     try {
       const data = await authFetch("/crm/conversations", {
         query: {
-          ...(filter === "pending" ? { filter: "sin_confirmar_hoy" } : {}),
+          ...(filter === "pending" ? { unread: "true" } : {}),
           ...(filter === "bot_active" ? { filter: "bot_active" } : {}),
           ...(filter === "bot_off" ? { filter: "bot_off" } : {}),
           ...(q ? { q } : {}),
@@ -95,7 +97,12 @@ export default function CRMPage() {
       });
       const items = data.items || [];
       setConversations(items);
-      if (!isMobile) setSelectedId((cur) => cur || items[0]?.id || null);
+      if (!isMobile) {
+        setSelectedId((cur) => {
+          if (!cur) return items[0]?.id || null;
+          return items.some((item) => item.id === cur) ? cur : items[0]?.id || null;
+        });
+      }
     } catch (err) {
       if (!silent) {
         setLoadError(err.message);
@@ -108,7 +115,7 @@ export default function CRMPage() {
 
   useEffect(() => {
     const t = setTimeout(() => fetchConversations(), 200);
-    const interval = setInterval(() => fetchConversations(true), 30_000);
+    const interval = setInterval(() => fetchConversations(true), LIVE_REFRESH_MS);
     return () => { clearTimeout(t); clearInterval(interval); };
   }, [fetchConversations]);
 
@@ -121,17 +128,27 @@ export default function CRMPage() {
       ]);
       setSelected(conv);
       setMessages(msgs.items || []);
-      if (!silent) {
-        authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" }).catch(() => null);
+      const chatIsVisible = typeof document === "undefined"
+        || document.visibilityState === "visible";
+      const mobileChatIsOpen = !isMobile || mobileView === "chat";
+      if (conv.unreadCount > 0 && chatIsVisible && mobileChatIsOpen) {
+        authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" })
+          .then(() => {
+            setSelected((cur) => cur?.id === selectedId ? { ...cur, unreadCount: 0, lastReadAt: new Date().toISOString() } : cur);
+            setConversations((prev) => prev.map((item) => (
+              item.id === selectedId ? { ...item, unreadCount: 0 } : item
+            )));
+          })
+          .catch(() => null);
       }
     } catch (err) {
       if (!silent) toast.error(err.message);
     }
-  }, [selectedId, toast]);
+  }, [selectedId, toast, isMobile, mobileView]);
 
   useEffect(() => {
     fetchConversation();
-    const interval = setInterval(() => fetchConversation(true), 30_000);
+    const interval = setInterval(() => fetchConversation(true), LIVE_REFRESH_MS);
     return () => clearInterval(interval);
   }, [fetchConversation]);
 
@@ -261,12 +278,13 @@ export default function CRMPage() {
   }
 
   // ─── Render helpers ──────────────────────────────────────────
-  function ConversationCard({ c }) {
+  function renderConversationCard(c) {
     const isSelected = c.id === selectedId;
     const name = c.clientName || c.customerName || c.customerWaId;
     const labels = c.labels || [];
     return (
       <button
+        key={c.id}
         onClick={() => selectConversation(c.id)}
         className={`
           w-full flex items-start gap-3 p-3 rounded-xl text-left
@@ -327,13 +345,13 @@ export default function CRMPage() {
     );
   }
 
-  function MessageBubble({ m }) {
+  function renderMessageBubble(m) {
     const isOutbound = m.direction === "outbound";
     const isBot = isOutbound && !m.sentByUserId;
     const isHuman = isOutbound && !!m.sentByUserId;
 
     return (
-      <div className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+      <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
           max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-sm
           ${isBot
@@ -368,7 +386,7 @@ export default function CRMPage() {
   }
 
   // ─── Column 1: Conversations List ──────────────────────────
-  function ConversationList() {
+  function renderConversationList() {
     return (
       <div className={`
         flex flex-col h-full bg-[rgba(247,245,240,0.6)]
@@ -416,7 +434,7 @@ export default function CRMPage() {
             <p className="text-center py-10 text-sm text-warm-gray">No hay conversaciones.</p>
           ) : (
             <div className="flex flex-col gap-0.5">
-              {conversations.map((c) => <ConversationCard key={c.id} c={c} />)}
+              {conversations.map((c) => renderConversationCard(c))}
             </div>
           )}
         </div>
@@ -425,7 +443,7 @@ export default function CRMPage() {
   }
 
   // ─── Column 2: Chat ───────────────────────────────────────
-  function ChatColumn() {
+  function renderChatColumn() {
     if (!selected) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center text-sm text-warm-gray bg-cream/40">
@@ -435,7 +453,7 @@ export default function CRMPage() {
       );
     }
 
-    const name = selected.customerName || selected.customerWaId;
+    const name = selected.client?.fullName || selected.customerName || selected.customerWaId;
 
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-cream/40">
@@ -498,7 +516,7 @@ export default function CRMPage() {
 
         {/* Messages */}
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-          {messages.map((m) => <MessageBubble key={m.id} m={m} />)}
+          {messages.map((m) => renderMessageBubble(m))}
           <div ref={messagesEndRef} />
         </div>
 
@@ -560,9 +578,10 @@ export default function CRMPage() {
   }
 
   // ─── Column 3: Client Panel ────────────────────────────────
-  function ClientPanel() {
+  function renderClientPanel() {
     if (!selected) return null;
-    const name = selected.customerName || selected.customerWaId;
+    const linkedClient = selected.client || null;
+    const name = linkedClient?.fullName || selected.customerName || selected.customerWaId;
     const labels = selected.labels || [];
 
     return (
@@ -592,12 +611,22 @@ export default function CRMPage() {
               </div>
             </div>
           </div>
-          {selected.clientId && (
-            <div className="flex items-center gap-4 text-xs text-warm-gray">
-              <span className="flex items-center gap-1"><Hash size={11} /> {selected.clientId.slice(-6)}</span>
-              <span className="flex items-center gap-1"><Calendar size={11} /> {dateStr(selected.createdAt)}</span>
-            </div>
-          )}
+          <div className="grid gap-2 text-xs text-warm-gray">
+            {linkedClient ? (
+              <>
+                <span className="flex items-center gap-1">
+                  <Hash size={11} /> Ficha {linkedClient.recordNumber || linkedClient.id.slice(-6)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Calendar size={11} /> Cliente desde {dateStr(linkedClient.createdAt || selected.createdAt)}
+                </span>
+              </>
+            ) : (
+              <span className="rounded-xl bg-cream/70 px-3 py-2 text-bronze">
+                Contacto de WhatsApp aún sin ficha enlazada.
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -738,15 +767,15 @@ export default function CRMPage() {
   if (isMobile) {
     return (
       <div className="flex flex-col h-full">
-        {mobileView === "list" && <ConversationList />}
+        {mobileView === "list" && renderConversationList()}
         {mobileChat.shouldRender && (
           <div className={`flex-1 flex flex-col alma-slide-right alma-anim-${mobileChat.phase}`}>
-            <ChatColumn />
+            {renderChatColumn()}
           </div>
         )}
         {mobilePanel.shouldRender && (
           <div className={`flex-1 flex flex-col alma-slide-right alma-anim-${mobilePanel.phase}`}>
-            <ClientPanel />
+            {renderClientPanel()}
           </div>
         )}
       </div>
@@ -755,9 +784,9 @@ export default function CRMPage() {
 
   return (
     <div className="flex h-full">
-      <ConversationList />
-      <ChatColumn />
-      <ClientPanel />
+      {renderConversationList()}
+      {renderChatColumn()}
+      {renderClientPanel()}
     </div>
   );
 }

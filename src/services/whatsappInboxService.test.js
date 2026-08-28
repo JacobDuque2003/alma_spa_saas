@@ -136,15 +136,26 @@ test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status p
 test('listConversations: botStatus usa botActive del registro (no N+1 query)', async () => {
   prisma.whatsAppConversation = {
     findMany: async () => [
-      { id: 'c1', customerWaId: '593111', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, client: null },
-      { id: 'c2', customerWaId: '593222', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: false, client: null },
+      { id: 'c1', customerWaId: '593111', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, labels: ['consulta'], archived: false, createdAt: new Date(), client: { id: 'cli1', fullName: 'Ana', whatsapp: '+593111', recordNumber: 'A-001' } },
+      { id: 'c2', customerWaId: '593222', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: false, labels: [], archived: false, createdAt: new Date(), client: null },
     ],
   };
   const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, {});
   assert.equal(items[0].botStatus, 'active');
   assert.equal(items[0].botActive, true);
+  assert.deepEqual(items[0].labels, ['consulta']);
+  assert.equal(items[0].client.recordNumber, 'A-001');
   assert.equal(items[1].botStatus, 'handedOff');
   assert.equal(items[1].botActive, false);
+});
+
+test('listConversations: unread=true filtra conversaciones con mensajes pendientes', async () => {
+  let convWhere = null;
+  prisma.whatsAppConversation = {
+    findMany: async (args) => { convWhere = args.where; return []; },
+  };
+  await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { unread: 'true' });
+  assert.deepEqual(convWhere.unreadCount, { gt: 0 });
 });
 
 test('listConversations: filter=bot_active filtra por botActive true', async () => {
@@ -201,6 +212,38 @@ test('setLabels: filtra etiquetas inválidas', async () => {
   );
   assert.deepEqual(updateData.labels, ['consulta', 'queja']);
   assert.deepEqual(result.labels, ['consulta', 'queja']);
+});
+
+test('updateConversation: permite marcar no leído y leído con unreadCount controlado', async () => {
+  const updates = [];
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1' }),
+    update: async ({ data }) => {
+      updates.push(data);
+      return { id: 'c1', ...data };
+    },
+  };
+
+  const unread = await inbox.updateConversation(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    'c1',
+    { unreadCount: 1 }
+  );
+  assert.equal(unread.unreadCount, 1);
+  assert.equal(updates[0].lastReadAt, undefined);
+
+  const read = await inbox.updateConversation(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    'c1',
+    { unreadCount: 0 }
+  );
+  assert.equal(read.unreadCount, 0);
+  assert.ok(updates[1].lastReadAt instanceof Date);
+
+  await assert.rejects(
+    () => inbox.updateConversation({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', { unreadCount: -1 }),
+    (err) => err.status === 400
+  );
 });
 
 test('createNote: guarda nota y valida contenido vacío', async () => {

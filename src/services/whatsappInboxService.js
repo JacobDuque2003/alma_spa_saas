@@ -36,7 +36,22 @@ function todayRangeForTenant(tenantConfig) {
 }
 
 async function loadConversationForActor(actor, conversationId) {
-  const conv = await prisma.whatsAppConversation.findUnique({ where: { id: conversationId } });
+  const conv = await prisma.whatsAppConversation.findUnique({
+    where: { id: conversationId },
+    include: {
+      client: {
+        select: {
+          id: true,
+          recordNumber: true,
+          fullName: true,
+          whatsapp: true,
+          email: true,
+          active: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
   if (!conv) return null;
   assertTenantScope(actor, conv.tenantId);
   return conv;
@@ -53,9 +68,14 @@ async function listConversations(actor, query) {
   const where = { tenantId };
   if (query.unread === 'true') where.unreadCount = { gt: 0 };
   if (query.q) {
+    const search = String(query.q);
     where.OR = [
-      { customerWaId: { contains: String(query.q) } },
-      { customerName: { contains: String(query.q), mode: 'insensitive' } },
+      { customerWaId: { contains: search } },
+      { customerName: { contains: search, mode: 'insensitive' } },
+      { lastMessagePreview: { contains: search, mode: 'insensitive' } },
+      { client: { is: { fullName: { contains: search, mode: 'insensitive' } } } },
+      { client: { is: { whatsapp: { contains: search } } } },
+      { client: { is: { recordNumber: { contains: search, mode: 'insensitive' } } } },
     ];
   }
   if (query.cursor) {
@@ -90,7 +110,19 @@ async function listConversations(actor, query) {
     where,
     orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
     take: limit,
-    include: { client: { select: { id: true, fullName: true } } },
+    include: {
+      client: {
+        select: {
+          id: true,
+          recordNumber: true,
+          fullName: true,
+          whatsapp: true,
+          email: true,
+          active: true,
+          createdAt: true,
+        },
+      },
+    },
   });
 
 
@@ -103,12 +135,16 @@ async function listConversations(actor, query) {
       customerName: c.customerName,
       clientId: c.clientId,
       clientName: c.client?.fullName ?? null,
+      client: c.client ?? null,
       lastMessagePreview: c.lastMessagePreview,
       lastMessageAt: c.lastMessageAt,
       unreadCount: c.unreadCount,
       withinWindow: isWithinWindow(c.lastInboundAt),
       botActive: c.botActive,
       botStatus, // 'active' | 'escalated' | 'handedOff'
+      labels: c.labels || [],
+      archived: c.archived,
+      createdAt: c.createdAt,
     };
   });
   const last = rows[rows.length - 1];
@@ -295,6 +331,14 @@ async function updateConversation(actor, conversationId, changes) {
   }
   if (changes.archived !== undefined) data.archived = !!changes.archived;
   if (changes.botActive !== undefined) data.botActive = !!changes.botActive;
+  if (changes.unreadCount !== undefined) {
+    const unreadCount = Number(changes.unreadCount);
+    if (!Number.isInteger(unreadCount) || unreadCount < 0 || unreadCount > 999) {
+      throw new BadRequestError('unreadCount inválido');
+    }
+    data.unreadCount = unreadCount;
+    if (unreadCount === 0) data.lastReadAt = new Date();
+  }
   return prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
 }
 

@@ -50,6 +50,18 @@ function mainMenu({ tone } = {}) {
   };
 }
 
+function mainMenuText({ tone } = {}) {
+  const instruction = tone === 'tu' ? 'Responde con una opción:' : 'Responda con una opción:';
+  return `${greeting(tone)}
+${verbYouCan(tone)}
+
+${instruction}
+1. Ver servicios
+2. Reservar cita
+3. Consultar mi cita
+4. Hablar con recepción`;
+}
+
 // Flat service list — only used when total active services ≤ 10 (Meta's
 // hard limit is 10 rows across all sections in an interactive list).
 function servicesList(services, { tone, body } = {}) {
@@ -241,6 +253,7 @@ module.exports = {
   SPA_TZ,
   capitalize,
   mainMenu,
+  mainMenuText,
   servicesList,
   categoryList,
   servicesInCategory,

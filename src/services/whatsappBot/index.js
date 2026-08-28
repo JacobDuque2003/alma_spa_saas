@@ -108,6 +108,22 @@ function detectTone(text) {
   return null;
 }
 
+function detectDeterministicIntent(text) {
+  if (!text) return null;
+  const t = String(text)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (/^(hola|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
+  if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
+  if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
+  if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
+  if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
+  return null;
+}
+
 async function getDailyCostForConversation(tenantId, conversationId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -257,6 +273,21 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   // If we're in a booking flow and user sends text, handle contextually
   if (flowState.booking?.step === 'ask_name') {
     return handleNameCapture({ tenant, connection, conv, waId, tone, name: bodyText });
+  }
+
+  const deterministicIntent = detectDeterministicIntent(bodyText);
+  if (deterministicIntent) {
+    logBot('info', 'intención determinística resuelta', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      intent: deterministicIntent,
+    });
+    await logBotInteraction(tenant.id, conv, {
+      userMessage: bodyText,
+      intent: deterministicIntent,
+      reply: null,
+    });
+    return routeIntent({ tenant, connection, conv, waId, tone, intent: deterministicIntent });
   }
 
   // Tier 2: intent cache lookup
@@ -465,10 +496,23 @@ async function sendMainMenu({ tenant, connection, conv, waId, tone }) {
     waIdTail: safeTail(waId),
   });
   const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, {
-    type: 'interactive',
-    body: '[menú principal]',
+  if (r.ok) {
+    await recordBotMessage(tenant.id, conv, r, {
+      type: 'interactive',
+      body: '[menú principal]',
+    });
+    return;
+  }
+
+  const fallback = menus.mainMenuText({ tone });
+  logBot('warn', 'menú interactivo rechazado; enviando menú de texto', {
+    tenant: tenant.slug,
+    conversationId: conv.id,
+    status: r.status ?? null,
+    errorCode: r.errorCode ?? null,
   });
+  const textResult = await transport.sendText(connection, waId, fallback);
+  await recordBotMessage(tenant.id, conv, textResult, { body: fallback });
 }
 
 async function handleSelection({ tenant, connection, conv, waId, tone, selectionId }) {
