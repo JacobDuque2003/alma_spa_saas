@@ -155,9 +155,15 @@ function buildChatSystemPrompt(context = {}) {
     ? `Estado de reserva: paso=${bookingState.step}, servicio=${bookingState.serviceName || 'pendiente'}.`
     : '';
 
+  const now = new Date();
+  const tz = 'America/Guayaquil';
+  const todayISO = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+  const dayName = new Intl.DateTimeFormat('es-EC', { timeZone: tz, weekday: 'long' }).format(now);
+
   return `Eres Almita, la asistente de Alma Spa Wellness Studio en Zamora, Ecuador.
-Horario: lunes a sábado, mañana 9:00-12:00, tarde 15:00-20:00.
+Horario: lunes a sábado, mañana 9:00-12:00, tarde 15:00-20:00. Domingos cerrado.
 Filosofía: bienestar integral cuerpo-mente-espíritu.
+HOY: ${todayISO} (${dayName}).
 
 ${toneNote}
 ${nameNote}
@@ -191,7 +197,14 @@ Intenciones:
 - cancel: quiere cancelar una cita
 - escalate: quiere hablar con una persona
 - chitchat: conversación casual sobre el spa/bienestar
-- unclear: no entiendes el mensaje`.trim();
+- unclear: no entiendes el mensaje
+
+EXTRACCIÓN DE FECHA Y HORA (solo para book_service):
+Cuando la clienta menciona día y/o hora al reservar, extrae:
+- params.date = fecha ISO YYYY-MM-DD (calculada desde HOY: "lunes"→próximo lunes, "mañana"→${todayISO} +1 día, "hoy"→${todayISO}, "viernes"→próximo viernes. Si el día ya pasó esta semana, usa la próxima semana. Domingos NO son válidos→usa lunes siguiente)
+- params.time = hora en formato HH:mm 24h ("5pm"→"17:00", "las 3"→"15:00", "9 de la mañana"→"09:00", "en la mañana"→"09:00", "en la tarde"→"15:00")
+- Si no menciona fecha o hora, NO incluir ese campo en params.
+Ejemplo: "quiero masaje relajante para el lunes a las 5pm" → params: {"service_query":"Masaje Relajante","date":"YYYY-MM-DD","time":"17:00"}`.trim();
 }
 
 async function chat(userMessage, context = {}) {

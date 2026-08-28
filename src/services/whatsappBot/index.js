@@ -429,6 +429,9 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
         if (svc) {
+          if (params.date) {
+            return handleSmartBooking({ tenant, connection, conv, waId, tone, service: svc, date: params.date, time: params.time || null, aiReply });
+          }
           return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
         }
       }
@@ -526,25 +529,7 @@ async function sendMainMenu({ tenant, connection, conv, waId, tone }) {
 }
 
 async function handleSelection({ tenant, connection, conv, waId, tone, selectionId }) {
-  state.setFlowState(waId, { flow: 'selection', tone, unclearCount: 0 });
-
-  if (selectionId === menus.NAV_BACK_MENU) {
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
-  }
-  if (selectionId === menus.MAIN_MENU_IDS.LIST_SERVICES) {
-    return handleListServices({ tenant, connection, conv, waId, tone });
-  }
-  if (selectionId === menus.MAIN_MENU_IDS.BOOK) {
-    return handleBook({ tenant, connection, conv, waId, tone });
-  }
-  if (selectionId === menus.MAIN_MENU_IDS.MY_APPOINTMENT) {
-    return handleMyAppointment({ tenant, connection, conv, waId, tone });
-  }
-  if (selectionId === menus.MAIN_MENU_IDS.ESCALATE) {
-    return handleEscalate({ tenant, connection, conv, waId, tone });
-  }
-
-  // Booking flow selections
+  // Booking flow selections — do NOT reset state (booking data must survive)
   if (selectionId.startsWith(menus.BOOK_DATE_PREFIX)) {
     const date = selectionId.slice(menus.BOOK_DATE_PREFIX.length);
     return handleBookingDateSelected({ tenant, connection, conv, waId, tone, date });
@@ -567,20 +552,41 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
-  if (selectionId.startsWith(menus.CATEGORY_PREFIX)) {
-    const categoryName = selectionId.slice(menus.CATEGORY_PREFIX.length);
-    return handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName });
-  }
-
-  // Service selection — check if we're in booking mode
+  // Service selection — check if we're in booking mode before resetting state
   if (selectionId.startsWith(menus.SERVICE_PREFIX)) {
     const serviceId = selectionId.slice(menus.SERVICE_PREFIX.length);
     const fs = state.getFlowState(waId);
     if (fs?.booking?.step === 'select_service') {
       return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId });
     }
+    state.setFlowState(waId, { flow: 'selection', tone, unclearCount: 0 });
     return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId });
   }
+
+  // Non-booking selections — safe to reset state
+  state.setFlowState(waId, { flow: 'selection', tone, unclearCount: 0 });
+
+  if (selectionId === menus.NAV_BACK_MENU) {
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.LIST_SERVICES) {
+    return handleListServices({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.BOOK) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.MY_APPOINTMENT) {
+    return handleMyAppointment({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.ESCALATE) {
+    return handleEscalate({ tenant, connection, conv, waId, tone });
+  }
+
+  if (selectionId.startsWith(menus.CATEGORY_PREFIX)) {
+    const categoryName = selectionId.slice(menus.CATEGORY_PREFIX.length);
+    return handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName });
+  }
+
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
@@ -592,22 +598,15 @@ async function handleListServices({ tenant, connection, conv, waId, tone }) {
   });
   state.setFlowState(waId, { flow: 'listing_services', tone, unclearCount: 0 });
 
-  if (svcs.length <= 10) {
-    const payload = menus.servicesList(svcs, { tone });
+  const visible = svcs.filter((s) => !menus.HIDDEN_CATEGORIES.has(String(s.category || '').toLowerCase().trim()));
+  if (visible.length <= 10) {
+    const payload = menus.servicesList(visible, { tone });
     const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[lista de ${svcs.length} servicios]` });
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[lista de ${visible.length} servicios]` });
     return;
   }
 
-  const byCat = new Map();
-  for (const s of svcs) {
-    const cat = String(s.category || 'Otros');
-    if (!byCat.has(cat)) byCat.set(cat, 0);
-    byCat.set(cat, byCat.get(cat) + 1);
-  }
-  const categories = [...byCat.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, count]) => ({ name, count }));
+  const categories = buildVisibleCategories(visible);
   const payload = menus.categoryList(categories, { tone });
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías]` });
@@ -671,6 +670,21 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
   state.setFlowState(waId, { flow: 'service_detail', lastServiceId: serviceId, tone, unclearCount: 0 });
 }
 
+// ─── Helpers ──────────────────────────────────────────────────
+
+function buildVisibleCategories(services) {
+  const byCat = new Map();
+  for (const s of services) {
+    const cat = String(s.category || 'Otros');
+    if (menus.HIDDEN_CATEGORIES.has(cat.toLowerCase().trim())) continue;
+    if (!byCat.has(cat)) byCat.set(cat, 0);
+    byCat.set(cat, byCat.get(cat) + 1);
+  }
+  return [...byCat.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, count]) => ({ name, count }));
+}
+
 // ─── Booking flow ──────────────────────────────────────────────
 
 async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
@@ -680,7 +694,8 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
   });
 
-  if (svcs.length === 0) {
+  const visible = svcs.filter((s) => !menus.HIDDEN_CATEGORIES.has(String(s.category || '').toLowerCase().trim()));
+  if (visible.length === 0) {
     const msg = tone === 'tu'
       ? 'Aún no tenemos servicios cargados 😅 Comunícate con recepción 💛'
       : 'Aún no tenemos servicios cargados 😅 Comuníquese con recepción 💛';
@@ -696,24 +711,91 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
     ? '✨ ¡Qué bueno que quieres reservar! Elige el servicio:'
     : '✨ ¡Qué bueno que desea reservar! Elija el servicio:');
 
-  if (svcs.length <= 10) {
-    const payload = menus.servicesList(svcs, { tone, body: intro });
+  if (visible.length <= 10) {
+    const payload = menus.servicesList(visible, { tone, body: intro });
     const r = await transport.sendInteractive(connection, waId, payload);
     await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
   } else {
-    const byCat = new Map();
-    for (const s of svcs) {
-      const cat = String(s.category || 'Otros');
-      if (!byCat.has(cat)) byCat.set(cat, 0);
-      byCat.set(cat, byCat.get(cat) + 1);
-    }
-    const categories = [...byCat.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, count]) => ({ name, count }));
+    const categories = buildVisibleCategories(visible);
     const payload = menus.categoryList(categories, { tone, body: intro });
     const r = await transport.sendInteractive(connection, waId, payload);
     await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías para reserva]` });
   }
+}
+
+async function handleSmartBooking({ tenant, connection, conv, waId, tone, service, date, time, aiReply }) {
+  const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
+  let slots;
+  try {
+    slots = await appointmentService.getAvailability({
+      tenantId: tenant.id,
+      tenantConfig: tenantData?.config,
+      serviceId: service.id,
+      date,
+      modality: 'spa',
+    });
+  } catch (err) {
+    logBot('warn', 'smart booking: error de disponibilidad', { error: err.message, date });
+    return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: service.id });
+  }
+
+  const prev = state.getFlowState(waId) || {};
+
+  if (slots.length === 0) {
+    state.setFlowState(waId, {
+      flow: 'booking',
+      booking: { step: 'select_date', serviceId: service.id, serviceName: service.name },
+      clientName: prev.clientName,
+      tone,
+      unclearCount: 0,
+    });
+    const body = tone === 'tu'
+      ? `😔 No hay horarios ese día para ${service.name}. ¿Probamos otro?`
+      : `😔 No hay horarios ese día para ${service.name}. ¿Probamos otro?`;
+    const payload = menus.datePicker({ tone, body });
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[sin horarios, elegir otro día]' });
+    return;
+  }
+
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { step: 'select_time', serviceId: service.id, serviceName: service.name, date, availableSlots: slots },
+    clientName: prev.clientName,
+    tone,
+    unclearCount: 0,
+  });
+
+  if (time) {
+    const matchedIdx = slots.findIndex((isoStr) => {
+      const d = new Date(isoStr);
+      const slotTime = new Intl.DateTimeFormat('en-GB', {
+        timeZone: menus.SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+      }).format(d);
+      return slotTime === time;
+    });
+
+    if (matchedIdx >= 0) {
+      return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex: matchedIdx });
+    }
+
+    const body = tone === 'tu'
+      ? `😅 No hay horario a las ${time} para ${service.name}, pero tengo estos:`
+      : `😅 No hay horario a las ${time} para ${service.name}, pero tengo estos:`;
+    const payload = slots.length <= 3
+      ? menus.timeSlotButtons(slots, service.name, { tone })
+      : menus.timeSlotList(slots, service.name, { tone, body });
+    if (slots.length <= 3) payload.body = { text: body };
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[horarios alternativos]' });
+    return;
+  }
+
+  const payload = slots.length <= 3
+    ? menus.timeSlotButtons(slots, service.name, { tone })
+    : menus.timeSlotList(slots, service.name, { tone });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${slots.length} horarios para ${date}]` });
 }
 
 async function handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId }) {
@@ -737,15 +819,12 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
     unclearCount: 0,
   });
 
-  const msg = tone === 'tu'
+  const body = tone === 'tu'
     ? `🌟 ${svc.name} — ¡excelente elección! ¿Qué día te queda bien?`
     : `🌟 ${svc.name} — ¡excelente elección! ¿Qué día le queda bien?`;
-  const r = await transport.sendText(connection, waId, msg);
-  await recordBotMessage(tenant.id, conv, r, { body: msg });
-
-  const payload = menus.datePicker({ tone });
-  const r2 = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
+  const payload = menus.datePicker({ tone, body });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[fecha para ${svc.name}]` });
 }
 
 async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date }) {
@@ -798,7 +877,9 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
     unclearCount: 0,
   });
 
-  const payload = menus.timeSlotList(slots, fs.booking.serviceName, { tone });
+  const payload = slots.length <= 3
+    ? menus.timeSlotButtons(slots, fs.booking.serviceName, { tone })
+    : menus.timeSlotList(slots, fs.booking.serviceName, { tone });
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${slots.length} horarios para ${date}]` });
 }
@@ -825,13 +906,14 @@ async function handleBookingTimeSelected({ tenant, connection, conv, waId, tone,
   const client = await lookupClientByWaId(tenant.id, waId);
   const clientName = client?.fullName || fs.clientName;
 
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { ...fs.booking, step: clientName ? 'confirm' : 'ask_name', timeSlot: slot },
+    tone,
+    unclearCount: 0,
+  });
+
   if (!clientName) {
-    state.setFlowState(waId, {
-      flow: 'booking',
-      booking: { ...fs.booking, step: 'ask_name', timeSlot: slot },
-      tone,
-      unclearCount: 0,
-    });
     const msg = menus.askNameText({ tone });
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
@@ -1029,6 +1111,7 @@ module.exports = {
     handleCategoryServices,
     handleServiceDetail,
     handleBook,
+    handleSmartBooking,
     handleBookingServiceSelected,
     handleBookingDateSelected,
     handleBookingTimeSelected,
@@ -1044,5 +1127,7 @@ module.exports = {
     logBotInteraction,
     lookupClientByWaId,
     matchServiceByQuery,
+    buildVisibleCategories,
+    handleSmartBooking,
   },
 };

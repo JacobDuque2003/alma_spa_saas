@@ -14,6 +14,23 @@ const BOOK_CONFIRM_YES = 'bk_yes';
 const BOOK_CONFIRM_NO = 'bk_no';
 const SPA_TZ = 'America/Guayaquil';
 
+const CATEGORY_DISPLAY_NAMES = {
+  corporal: '\u{1F486}‍♀️ Cuerpo y Relajación',
+  facial: '✨ Tratamientos Faciales',
+  terapias: '\u{1F33F} Terapias Holísticas',
+  laser: '⚡ Depilación Láser',
+  ceragem: '\u{1F6CF}️ Camilla Ceragem',
+  yoga: '\u{1F9D8} Aero Yoga',
+  pies: '\u{1F9B6} Cuidado de Pies',
+};
+
+const HIDDEN_CATEGORIES = new Set(['tienda', 'recordatorio']);
+
+function categoryDisplayName(raw) {
+  const key = String(raw).toLowerCase().trim();
+  return CATEGORY_DISPLAY_NAMES[key] || capitalize(raw);
+}
+
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
@@ -86,7 +103,7 @@ function servicesList(services, { tone, body } = {}) {
         description: `$${Number(s.priceUsd).toFixed(2)} · ${s.durationMins || 60} min`.slice(0, 72),
       }));
     if (rows.length) {
-      sections.push({ title: cat.slice(0, 24), rows });
+      sections.push({ title: categoryDisplayName(cat).slice(0, 24), rows });
       totalRows += rows.length;
     }
   }
@@ -105,12 +122,11 @@ function servicesList(services, { tone, body } = {}) {
   };
 }
 
-// Category picker — used when >10 active services. Each row is a category
-// that leads to a second list with the services in that category.
 function categoryList(categories, { tone, body } = {}) {
-  const rows = categories.slice(0, 10).map((c) => ({
+  const visible = categories.filter((c) => !HIDDEN_CATEGORIES.has(String(c.name).toLowerCase().trim()));
+  const rows = visible.slice(0, 10).map((c) => ({
     id: `${CATEGORY_PREFIX}${c.name}`,
-    title: String(c.name).slice(0, 24),
+    title: categoryDisplayName(c.name).slice(0, 24),
     description: `${c.count} servicio${c.count === 1 ? '' : 's'}`.slice(0, 72),
   }));
   const defaultBody = tone === 'tu'
@@ -127,14 +143,13 @@ function categoryList(categories, { tone, body } = {}) {
   };
 }
 
-// Services within a single category (max 10 rows, safe for Meta).
 function servicesInCategory(services, categoryName, { tone } = {}) {
   const rows = services.slice(0, 10).map((s) => ({
     id: `${SERVICE_PREFIX}${s.id}`,
     title: String(s.name).slice(0, 24),
     description: `$${Number(s.priceUsd).toFixed(2)} · ${s.durationMins || 60} min`.slice(0, 72),
   }));
-  const label = String(categoryName).slice(0, 30);
+  const label = categoryDisplayName(categoryName).slice(0, 30);
   return {
     type: 'list',
     body: { text: tone === 'tu'
@@ -143,7 +158,7 @@ function servicesInCategory(services, categoryName, { tone } = {}) {
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver servicios',
-      sections: [{ title: String(categoryName).slice(0, 24), rows }],
+      sections: [{ title: categoryDisplayName(categoryName).slice(0, 24), rows }],
     },
   };
 }
@@ -161,7 +176,7 @@ function backToMenuButton({ tone } = {}) {
   };
 }
 
-function datePicker({ tone } = {}) {
+function datePicker({ tone, body } = {}) {
   const rows = [];
   const now = new Date();
   for (let i = 0; rows.length < 7 && i < 14; i++) {
@@ -181,11 +196,12 @@ function datePicker({ tone } = {}) {
       description: capitalize(fullDay).slice(0, 72),
     });
   }
+  const defaultBody = tone === 'tu'
+    ? '📅 ¿Qué día te queda bien?'
+    : '📅 ¿Qué día le queda bien?';
   return {
     type: 'list',
-    body: { text: tone === 'tu'
-      ? '📅 ¿Qué día te queda bien?'
-      : '📅 ¿Qué día le queda bien?' },
+    body: { text: body || defaultBody },
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Elegir día',
@@ -194,29 +210,78 @@ function datePicker({ tone } = {}) {
   };
 }
 
-function timeSlotList(slots, serviceName, { tone } = {}) {
-  const rows = slots.slice(0, 10).map((isoStr, i) => {
-    const d = new Date(isoStr);
-    const time = new Intl.DateTimeFormat('es-EC', {
-      timeZone: SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(d);
-    return {
+function _formatSlotTime(isoStr) {
+  return new Intl.DateTimeFormat('es-EC', {
+    timeZone: SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(isoStr));
+}
+
+function _slotHour(isoStr) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SPA_TZ, hour: 'numeric', hour12: false,
+  }).formatToParts(new Date(isoStr));
+  const hourPart = parts.find((p) => p.type === 'hour');
+  return parseInt(hourPart?.value || '0', 10);
+}
+
+function timeSlotList(slots, serviceName, { tone, body } = {}) {
+  const morning = [];
+  const afternoon = [];
+  for (let i = 0; i < slots.length && i < 10; i++) {
+    const h = _slotHour(slots[i]);
+    const row = {
       id: `${BOOK_TIME_PREFIX}${i}`,
-      title: time,
+      title: _formatSlotTime(slots[i]),
       description: String(serviceName).slice(0, 72),
     };
-  });
+    if (h < 13) morning.push(row);
+    else afternoon.push(row);
+  }
+
+  const sections = [];
+  if (morning.length) sections.push({ title: '🌅 Mañana', rows: morning });
+  if (afternoon.length) sections.push({ title: '🌆 Tarde', rows: afternoon });
+  if (!sections.length && slots.length > 0) {
+    sections.push({
+      title: 'Horarios',
+      rows: slots.slice(0, 10).map((iso, i) => ({
+        id: `${BOOK_TIME_PREFIX}${i}`,
+        title: _formatSlotTime(iso),
+        description: String(serviceName).slice(0, 72),
+      })),
+    });
+  }
+
   const svcLabel = String(serviceName).slice(0, 50);
+  const defaultBody = tone === 'tu'
+    ? `🕐 Horarios disponibles para ${svcLabel}:`
+    : `🕐 Horarios disponibles para ${svcLabel}:`;
   return {
     type: 'list',
-    body: { text: tone === 'tu'
-      ? `🕐 Horarios disponibles para ${svcLabel}:`
-      : `🕐 Horarios disponibles para ${svcLabel}:` },
+    body: { text: body || defaultBody },
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver horarios',
-      sections: [{ title: 'Horarios', rows }],
+      sections,
     },
+  };
+}
+
+function timeSlotButtons(slots, serviceName, { tone } = {}) {
+  const svcLabel = String(serviceName).slice(0, 50);
+  const buttons = slots.slice(0, 3).map((iso, i) => ({
+    type: 'reply',
+    reply: {
+      id: `${BOOK_TIME_PREFIX}${i}`,
+      title: _formatSlotTime(iso),
+    },
+  }));
+  return {
+    type: 'button',
+    body: { text: tone === 'tu'
+      ? `🕐 Horarios para ${svcLabel}:`
+      : `🕐 Horarios para ${svcLabel}:` },
+    action: { buttons },
   };
 }
 
@@ -251,7 +316,10 @@ module.exports = {
   BOOK_CONFIRM_YES,
   BOOK_CONFIRM_NO,
   SPA_TZ,
+  CATEGORY_DISPLAY_NAMES,
+  HIDDEN_CATEGORIES,
   capitalize,
+  categoryDisplayName,
   mainMenu,
   mainMenuText,
   servicesList,
@@ -260,6 +328,7 @@ module.exports = {
   backToMenuButton,
   datePicker,
   timeSlotList,
+  timeSlotButtons,
   bookingConfirmation,
   askNameText,
 };

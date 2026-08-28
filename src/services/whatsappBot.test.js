@@ -149,8 +149,8 @@ test('"Ver servicios" → lista agrupada por categoría', async () => {
   assert.equal(sent.length, 1);
   assert.equal(sent[0].payload.type, 'list');
   const secs = sent[0].payload.action.sections.map((s) => s.title);
-  assert.ok(secs.includes('facial'));
-  assert.ok(secs.includes('yoga'));
+  assert.ok(secs.some((t) => t.includes('Facial') || t.includes('facial')));
+  assert.ok(secs.some((t) => t.includes('Yoga') || t.includes('yoga')));
 });
 
 test('servicio con imagen → sube y envía image+caption; luego botón volver', async () => {
@@ -390,12 +390,12 @@ test('seleccionar servicio en booking → muestra date picker', async () => {
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_s1' } } },
   });
-  const interactives = sent.filter(s => s.kind === 'interactive');
-  assert.ok(interactives.length >= 1);
-  const datePicker = interactives.find(s => s.payload?.action?.button === 'Elegir día');
-  assert.ok(datePicker, 'debe mostrar date picker');
-  const rows = datePicker.payload.action.sections[0].rows;
+  assert.equal(sent.length, 1, 'debe enviar UN solo mensaje (datePicker con body)');
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(sent[0].payload.action.button, 'Elegir día');
+  const rows = sent[0].payload.action.sections[0].rows;
   assert.ok(rows.every(r => r.id.startsWith('bkd_')));
+  assert.match(sent[0].payload.body.text, /excelente elección/i);
   const st = state.getFlowState(CONV.customerWaId);
   assert.equal(st.booking?.step, 'select_date');
   assert.equal(st.booking?.serviceId, 's1');
@@ -467,15 +467,18 @@ test('date picker genera solo días lun-sáb (sin domingo)', async () => {
   }
 });
 
-test('time slot list respeta máximo 10 rows', async () => {
+test('time slot list respeta máximo 10 rows y agrupa mañana/tarde', async () => {
   const slots = [];
   for (let i = 0; i < 15; i++) {
     slots.push(new Date(`2026-09-01T${String(9 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 === 0 ? '00' : '30'}:00Z`).toISOString());
   }
   const list = menus.timeSlotList(slots, 'Masaje Relajante', { tone: 'tu' });
   assert.equal(list.type, 'list');
-  assert.ok(list.action.sections[0].rows.length <= 10);
-  assert.ok(list.action.sections[0].rows.every(r => r.id.startsWith('bkt_')));
+  const allRows = list.action.sections.flatMap(s => s.rows);
+  assert.ok(allRows.length <= 10);
+  assert.ok(allRows.every(r => r.id.startsWith('bkt_')));
+  const sectionTitles = list.action.sections.map(s => s.title);
+  assert.ok(sectionTitles.length >= 1, 'debe tener al menos una sección');
 });
 
 test('booking confirmation buttons have correct IDs', async () => {
@@ -585,4 +588,212 @@ test('servicesList acepta body personalizado', () => {
     { tone: 'usted', body: '✨ Elige tu servicio para reservar:' }
   );
   assert.equal(payload.body.text, '✨ Elige tu servicio para reservar:');
+});
+
+// ─── Category display names ─────────────────────────────────
+
+test('categoryDisplayName mapea nombres internos a bonitos', () => {
+  assert.match(menus.categoryDisplayName('facial'), /Facial/);
+  assert.match(menus.categoryDisplayName('corporal'), /Cuerpo/);
+  assert.match(menus.categoryDisplayName('yoga'), /Yoga/);
+  assert.equal(menus.categoryDisplayName('Desconocido'), 'Desconocido');
+});
+
+test('categoryList filtra categorías ocultas (tienda, recordatorio)', () => {
+  const cats = [
+    { name: 'facial', count: 3 },
+    { name: 'tienda', count: 2 },
+    { name: 'recordatorio', count: 1 },
+    { name: 'corporal', count: 5 },
+  ];
+  const payload = menus.categoryList(cats, { tone: 'usted' });
+  const rows = payload.action.sections[0].rows;
+  assert.equal(rows.length, 2, 'tienda y recordatorio deben ser filtradas');
+  assert.ok(rows.every(r => !r.id.includes('tienda') && !r.id.includes('recordatorio')));
+});
+
+test('datePicker acepta body personalizado', () => {
+  const picker = menus.datePicker({ tone: 'tu', body: '🌟 Masaje — ¡excelente! ¿Qué día?' });
+  assert.equal(picker.body.text, '🌟 Masaje — ¡excelente! ¿Qué día?');
+});
+
+test('timeSlotButtons genera reply buttons para ≤3 slots', () => {
+  const slots = [
+    '2026-09-01T14:00:00.000Z',
+    '2026-09-01T15:00:00.000Z',
+    '2026-09-01T16:00:00.000Z',
+  ];
+  const payload = menus.timeSlotButtons(slots, 'Masaje Relajante', { tone: 'usted' });
+  assert.equal(payload.type, 'button');
+  assert.equal(payload.action.buttons.length, 3);
+  assert.ok(payload.action.buttons.every(b => b.reply.id.startsWith('bkt_')));
+});
+
+test('timeSlotList agrupa en secciones mañana/tarde', () => {
+  const slots = [
+    '2026-09-01T14:00:00.000Z',
+    '2026-09-01T14:30:00.000Z',
+    '2026-09-01T20:00:00.000Z',
+    '2026-09-01T21:00:00.000Z',
+  ];
+  const list = menus.timeSlotList(slots, 'Masaje', { tone: 'usted' });
+  const titles = list.action.sections.map(s => s.title);
+  assert.ok(titles.some(t => /Mañana/.test(t)) || titles.some(t => /Tarde/.test(t)));
+});
+
+// ─── handleSelection preserves booking state ─────────────────
+
+test('handleSelection preserva booking state durante selección de fecha', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  const bookingState = {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 's1', serviceName: 'Masaje Relajante' },
+    clientName: 'María',
+    tone: 'usted',
+    unclearCount: 0,
+  };
+  state.setFlowState(CONV.customerWaId, bookingState);
+
+  // Mock getAvailability
+  const origGetAvail = require('./appointmentService').getAvailability;
+  require('./appointmentService').getAvailability = async () => [
+    '2026-09-01T14:00:00.000Z',
+    '2026-09-01T15:00:00.000Z',
+  ];
+  // Mock tenant lookup
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  await bot._internals.handleSelection({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    waId: CONV.customerWaId, tone: 'usted', selectionId: 'bkd_2026-09-01',
+  });
+
+  const fs = state.getFlowState(CONV.customerWaId);
+  assert.ok(fs.booking, 'booking state must survive');
+  assert.equal(fs.booking.step, 'select_time');
+  assert.ok(fs.booking.availableSlots, 'availableSlots must be set');
+  assert.equal(fs.booking.serviceId, 's1');
+
+  require('./appointmentService').getAvailability = origGetAvail;
+});
+
+test('handleSelection preserva booking state durante selección de hora', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'María López' } });
+  const slots = ['2026-09-01T14:00:00.000Z', '2026-09-01T15:00:00.000Z'];
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_time', serviceId: 's1', serviceName: 'Masaje Relajante', date: '2026-09-01', availableSlots: slots },
+    clientName: 'María López',
+    tone: 'usted',
+    unclearCount: 0,
+  });
+
+  await bot._internals.handleSelection({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    waId: CONV.customerWaId, tone: 'usted', selectionId: 'bkt_0',
+  });
+
+  const fs = state.getFlowState(CONV.customerWaId);
+  assert.equal(fs.booking?.step, 'confirm');
+  assert.equal(fs.booking?.timeSlot, slots[0]);
+  assert.ok(sent.some(s => s.kind === 'interactive' && s.payload?.type === 'button'));
+});
+
+// ─── Smart booking tests ─────────────────────────────────────
+
+test('handleSmartBooking con servicio+fecha+hora exacta → confirma directo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'María López' } });
+  const slots = ['2026-09-01T20:00:00.000Z'];
+  const origGetAvail = require('./appointmentService').getAvailability;
+  require('./appointmentService').getAvailability = async () => slots;
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  await bot._internals.handleSmartBooking({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    waId: CONV.customerWaId, tone: 'usted',
+    service: { id: 's1', name: 'Masaje Relajante' },
+    date: '2026-09-01', time: '15:00',
+  });
+
+  const fs = state.getFlowState(CONV.customerWaId);
+  assert.equal(fs.booking?.step, 'confirm');
+  assert.ok(sent.some(s => s.kind === 'interactive' && s.payload?.type === 'button'));
+
+  require('./appointmentService').getAvailability = origGetAvail;
+});
+
+test('handleSmartBooking con hora no disponible → muestra alternativas', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  const slots = [
+    '2026-09-01T14:00:00.000Z',
+    '2026-09-01T15:00:00.000Z',
+    '2026-09-01T16:00:00.000Z',
+    '2026-09-01T17:00:00.000Z',
+  ];
+  const origGetAvail = require('./appointmentService').getAvailability;
+  require('./appointmentService').getAvailability = async () => slots;
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  await bot._internals.handleSmartBooking({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    waId: CONV.customerWaId, tone: 'usted',
+    service: { id: 's1', name: 'Masaje Relajante' },
+    date: '2026-09-01', time: '13:00',
+  });
+
+  assert.equal(sent.length, 1, 'un solo mensaje');
+  assert.equal(sent[0].kind, 'interactive');
+  assert.match(sent[0].payload.body.text, /No hay horario/);
+
+  require('./appointmentService').getAvailability = origGetAvail;
+});
+
+test('handleSmartBooking sin horarios → datePicker con mensaje', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  const origGetAvail = require('./appointmentService').getAvailability;
+  require('./appointmentService').getAvailability = async () => [];
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  await bot._internals.handleSmartBooking({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    waId: CONV.customerWaId, tone: 'usted',
+    service: { id: 's1', name: 'Masaje Relajante' },
+    date: '2026-09-01', time: '15:00',
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.action.button, 'Elegir día');
+  assert.match(sent[0].payload.body.text, /No hay horarios/);
+
+  require('./appointmentService').getAvailability = origGetAvail;
+});
+
+// ─── Hidden category filtering ──────────────────────────────
+
+test('handleBook filtra categorías ocultas (tienda, recordatorio)', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = [];
+  for (let i = 0; i < 5; i++) services.push({ id: `s${i}`, name: `Svc ${i}`, category: 'corporal', priceUsd: 20, durationMins: 60, active: true });
+  for (let i = 5; i < 10; i++) services.push({ id: `s${i}`, name: `Svc ${i}`, category: 'facial', priceUsd: 25, durationMins: 45, active: true });
+  for (let i = 10; i < 13; i++) services.push({ id: `s${i}`, name: `Svc ${i}`, category: 'tienda', priceUsd: 10, durationMins: 30, active: true });
+  services.push({ id: 's13', name: 'Recordatorio', category: 'recordatorio', priceUsd: 0, durationMins: 0, active: true });
+  installPrismaMocks({ services });
+
+  await bot._internals.handleBook({ tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted' });
+
+  assert.equal(sent.length, 1);
+  const body = JSON.stringify(sent[0].payload);
+  assert.ok(!body.includes('tienda'), 'tienda no debe aparecer');
+  assert.ok(!body.includes('recordatorio'), 'recordatorio no debe aparecer');
 });
