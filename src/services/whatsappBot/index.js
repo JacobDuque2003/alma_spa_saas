@@ -23,6 +23,7 @@ const state = require('./state');
 const rateLimit = require('./rateLimit');
 const menus = require('./menus');
 const intentCache = require('./intentCache');
+const crmEvents = require('../crmEventBus');
 const { waIdToPhone } = require('../../utils/phone');
 const { SlotUnavailableError } = require('../../utils/errors');
 
@@ -71,6 +72,7 @@ async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', bod
         tenantId,
         conversationId: conv.id,
         direction: 'outbound',
+        senderType: 'bot',
         type,
         status: 'sent',
         waMessageId,
@@ -91,6 +93,14 @@ async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', bod
       conversationId: conv.id,
       type,
       messageIdTail: safeTail(waMessageId, 8),
+    });
+    crmEvents.publish(tenantId, 'conversation.message.created', {
+      tenantId,
+      conversationId: conv.id,
+      messageId: waMessageId,
+      direction: 'outbound',
+      senderType: 'bot',
+      at: new Date().toISOString(),
     });
   } catch (err) {
     logBot('warn', 'no se pudo registrar respuesta', {

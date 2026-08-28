@@ -2,9 +2,21 @@ const express = require('express');
 const authenticate = require('../middleware/authenticate');
 const requirePermission = require('../middleware/requirePermission');
 const inboxService = require('../services/whatsappInboxService');
+const crmEvents = require('../services/crmEventBus');
 
 const router = express.Router();
 router.use(authenticate, requirePermission('crm'));
+
+router.get('/events', (req, res) => {
+  crmEvents.subscribe(req.user.tenantId, res);
+});
+
+router.get('/assignees', async (req, res, next) => {
+  try {
+    const users = await inboxService.listAssignees(req.user);
+    res.json({ items: users });
+  } catch (err) { next(err); }
+});
 
 router.get('/conversations', async (req, res, next) => {
   try {
@@ -53,11 +65,58 @@ router.post('/conversations/:id/mark-read', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post('/conversations/:id/read-state', async (req, res, next) => {
+  try {
+    const conv = await inboxService.setReadState(req.user, req.params.id, Boolean(req.body?.unread));
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({
+      id: conv.id,
+      unreadCount: conv.unreadCount,
+      unreadRestoreCount: conv.unreadRestoreCount,
+      manuallyMarkedUnread: conv.manuallyMarkedUnread,
+      status: conv.status,
+      lastReadAt: conv.lastReadAt,
+    });
+  } catch (err) { next(err); }
+});
+
 router.post('/conversations/:id/reactivate-bot', async (req, res, next) => {
   try {
     const conv = await inboxService.reactivateBot(req.user, req.params.id);
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
     res.json({ id: conv.id, botActive: conv.botActive });
+  } catch (err) { next(err); }
+});
+
+router.post('/conversations/:id/bot/pause', async (req, res, next) => {
+  try {
+    const conv = await inboxService.pauseBot(req.user, req.params.id);
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({ id: conv.id, botActive: conv.botActive, botPausedUntil: conv.botPausedUntil });
+  } catch (err) { next(err); }
+});
+
+router.post('/conversations/:id/bot/resume', async (req, res, next) => {
+  try {
+    const conv = await inboxService.reactivateBot(req.user, req.params.id);
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({ id: conv.id, botActive: conv.botActive, botPausedUntil: conv.botPausedUntil });
+  } catch (err) { next(err); }
+});
+
+router.patch('/conversations/:id/assign', async (req, res, next) => {
+  try {
+    const conv = await inboxService.assignConversation(req.user, req.params.id, req.body?.userId ?? null);
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({ id: conv.id, assignedToUserId: conv.assignedToUserId });
+  } catch (err) { next(err); }
+});
+
+router.post('/conversations/:id/status', async (req, res, next) => {
+  try {
+    const conv = await inboxService.setStatus(req.user, req.params.id, req.body?.status);
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json({ id: conv.id, status: conv.status, archived: conv.archived, botActive: conv.botActive });
   } catch (err) { next(err); }
 });
 

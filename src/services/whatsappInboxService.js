@@ -3,6 +3,7 @@ const { BadRequestError } = require('../utils/errors');
 const { assertTenantScope } = require('../utils/tenantScope');
 const transport = require('./whatsappTransport');
 const botState = require('./whatsappBot/state');
+const crmEvents = require('./crmEventBus');
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TZ_OFFSET_MINUTES = -5 * 60; // America/Guayaquil (UTC-5, sin DST). Fallback si Tenant.config no lo trae.
@@ -50,11 +51,56 @@ async function loadConversationForActor(actor, conversationId) {
           createdAt: true,
         },
       },
+      assignedTo: { select: { id: true, name: true, email: true } },
     },
   });
   if (!conv) return null;
   assertTenantScope(actor, conv.tenantId);
   return conv;
+}
+
+function conversationStatusForList(c) {
+  if (c.archived) return 'archived';
+  if (c.status) return c.status;
+  if (c.unreadCount > 0) return 'pending';
+  return 'open';
+}
+
+function publishConversationEvent(tenantId, event, payload) {
+  crmEvents.publish(tenantId, event, {
+    tenantId,
+    at: new Date().toISOString(),
+    ...payload,
+  });
+}
+
+function compactConversation(c) {
+  if (!c) return null;
+  let botStatus = c.botActive ? 'active' : 'handedOff';
+  if (c.botActive && botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
+  return {
+    id: c.id,
+    customerWaId: c.customerWaId,
+    customerName: c.customerName,
+    clientId: c.clientId,
+    clientName: c.client?.fullName ?? null,
+    client: c.client ?? null,
+    lastMessagePreview: c.lastMessagePreview,
+    lastMessageAt: c.lastMessageAt,
+    unreadCount: c.unreadCount,
+    unreadRestoreCount: c.unreadRestoreCount ?? 0,
+    manuallyMarkedUnread: Boolean(c.manuallyMarkedUnread),
+    status: conversationStatusForList(c),
+    withinWindow: isWithinWindow(c.lastInboundAt),
+    botActive: c.botActive,
+    botPausedUntil: c.botPausedUntil ?? null,
+    botStatus,
+    assignedToUserId: c.assignedToUserId ?? null,
+    assignedTo: c.assignedTo ?? null,
+    labels: c.labels || [],
+    archived: c.archived,
+    createdAt: c.createdAt,
+  };
 }
 
 /**
@@ -65,11 +111,10 @@ async function loadConversationForActor(actor, conversationId) {
 async function listConversations(actor, query) {
   const tenantId = actor.tenantId;
   const limit = Math.min(Number(query.limit) || 30, 100);
-  const where = { tenantId };
-  if (query.unread === 'true') where.unreadCount = { gt: 0 };
+  const baseWhere = { tenantId };
   if (query.q) {
     const search = String(query.q);
-    where.OR = [
+    baseWhere.OR = [
       { customerWaId: { contains: search } },
       { customerName: { contains: search, mode: 'insensitive' } },
       { lastMessagePreview: { contains: search, mode: 'insensitive' } },
@@ -78,12 +123,27 @@ async function listConversations(actor, query) {
       { client: { is: { recordNumber: { contains: search, mode: 'insensitive' } } } },
     ];
   }
+
+  const where = { ...baseWhere };
+  if (query.unread === 'true') where.unreadCount = { gt: 0 };
+  if (query.status && ['open', 'pending', 'resolved', 'archived'].includes(String(query.status))) {
+    where.status = String(query.status) === 'pending'
+      ? { in: ['open', 'pending'] }
+      : String(query.status);
+  } else if (query.includeArchived !== 'true') {
+    where.status = { not: 'archived' };
+  }
   if (query.cursor) {
     const [cursorDate, cursorId] = query.cursor.split('|');
     if (cursorId) {
-      where.OR = [
-        { lastMessageAt: { lt: new Date(cursorDate) } },
-        { lastMessageAt: new Date(cursorDate), id: { lt: cursorId } },
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { lastMessageAt: { lt: new Date(cursorDate) } },
+            { lastMessageAt: new Date(cursorDate), id: { lt: cursorId } },
+          ],
+        },
       ];
     } else {
       where.lastMessageAt = { lt: new Date(cursorDate) };
@@ -122,40 +182,26 @@ async function listConversations(actor, query) {
           createdAt: true,
         },
       },
+      assignedTo: { select: { id: true, name: true, email: true } },
     },
   });
 
+  const [totalCount, pendingCount, resolvedCount] = await Promise.all([
+    prisma.whatsAppConversation.count({ where: { ...baseWhere, status: { not: 'archived' } } }),
+    prisma.whatsAppConversation.count({ where: { ...baseWhere, status: { in: ['open', 'pending'] } } }),
+    prisma.whatsAppConversation.count({ where: { ...baseWhere, status: 'resolved' } }),
+  ]);
 
-  const items = rows.map((c) => {
-    let botStatus = c.botActive ? 'active' : 'handedOff';
-    if (c.botActive && botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
-    return {
-      id: c.id,
-      customerWaId: c.customerWaId,
-      customerName: c.customerName,
-      clientId: c.clientId,
-      clientName: c.client?.fullName ?? null,
-      client: c.client ?? null,
-      lastMessagePreview: c.lastMessagePreview,
-      lastMessageAt: c.lastMessageAt,
-      unreadCount: c.unreadCount,
-      withinWindow: isWithinWindow(c.lastInboundAt),
-      botActive: c.botActive,
-      botStatus, // 'active' | 'escalated' | 'handedOff'
-      labels: c.labels || [],
-      archived: c.archived,
-      createdAt: c.createdAt,
-    };
-  });
+  const items = rows.map(compactConversation);
   const last = rows[rows.length - 1];
   const nextCursor = rows.length === limit ? `${last.lastMessageAt.toISOString()}|${last.id}` : null;
-  return { items, nextCursor };
+  return { items, nextCursor, counts: { all: totalCount, pending: pendingCount, resolved: resolvedCount } };
 }
 
 async function getConversation(actor, conversationId) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
-  return { ...conv, withinWindow: isWithinWindow(conv.lastInboundAt) };
+  return { ...conv, status: conversationStatusForList(conv), withinWindow: isWithinWindow(conv.lastInboundAt) };
 }
 
 async function listMessages(actor, conversationId, query) {
@@ -203,8 +249,9 @@ async function sendManualText(actor, conversationId, text) {
     data: {
       tenantId: conv.tenantId,
       conversationId: conv.id,
-      direction: 'outbound',
-      type: 'text',
+        direction: 'outbound',
+        senderType: 'agent',
+        type: 'text',
       status: 'queued',
       body: text,
       sentByUserId: actor.id,
@@ -223,7 +270,20 @@ async function sendManualText(actor, conversationId, text) {
   const now = new Date();
   await prisma.whatsAppConversation.update({
     where: { id: conv.id },
-    data: { lastOutboundAt: now, lastMessageAt: now, lastMessagePreview: previewOf(text), botActive: false },
+    data: {
+      lastOutboundAt: now,
+      lastMessageAt: now,
+      lastMessagePreview: previewOf(text),
+      botActive: false,
+      status: 'open',
+      assignedToUserId: actor.id,
+    },
+  });
+  publishConversationEvent(conv.tenantId, 'conversation.message.created', {
+    conversationId: conv.id,
+    messageId: updated.id,
+    direction: 'outbound',
+    senderType: 'agent',
   });
   return updated;
 }
@@ -280,6 +340,7 @@ async function sendReminder(actor, conversationId) {
       tenantId: conv.tenantId,
       conversationId: conv.id,
       direction: 'outbound',
+      senderType: 'agent',
       type: 'template',
       status: 'queued',
       templateName: tpl.name,
@@ -304,18 +365,46 @@ async function sendReminder(actor, conversationId) {
   const now = new Date();
   await prisma.whatsAppConversation.update({
     where: { id: conv.id },
-    data: { lastOutboundAt: now, lastMessageAt: now, lastMessagePreview: `[Recordatorio] ${nextPending.service.name}` },
+    data: { lastOutboundAt: now, lastMessageAt: now, lastMessagePreview: `[Recordatorio] ${nextPending.service.name}`, status: 'open', assignedToUserId: actor.id },
+  });
+  publishConversationEvent(conv.tenantId, 'conversation.message.created', {
+    conversationId: conv.id,
+    messageId: updated.id,
+    direction: 'outbound',
+    senderType: 'agent',
   });
   return updated;
 }
 
 async function markRead(actor, conversationId) {
+  return setReadState(actor, conversationId, false);
+}
+
+async function setReadState(actor, conversationId, unread) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
-  return prisma.whatsAppConversation.update({
-    where: { id: conv.id },
-    data: { unreadCount: 0, lastReadAt: new Date() },
+  const nextUnread = Boolean(unread);
+  const restoreCount = Math.max(Number(conv.unreadRestoreCount || 0), Number(conv.unreadCount || 0), nextUnread ? 1 : 0);
+  const data = nextUnread
+    ? {
+        unreadCount: restoreCount,
+        unreadRestoreCount: restoreCount,
+        manuallyMarkedUnread: true,
+        status: 'pending',
+      }
+    : {
+        unreadCount: 0,
+        unreadRestoreCount: restoreCount,
+        manuallyMarkedUnread: false,
+        lastReadAt: new Date(),
+      };
+  const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+  publishConversationEvent(conv.tenantId, nextUnread ? 'conversation.marked_unread' : 'conversation.marked_read', {
+    conversationId: conv.id,
+    unreadCount: updated.unreadCount,
+    status: updated.status,
   });
+  return updated;
 }
 
 async function updateConversation(actor, conversationId, changes) {
@@ -331,6 +420,13 @@ async function updateConversation(actor, conversationId, changes) {
   }
   if (changes.archived !== undefined) data.archived = !!changes.archived;
   if (changes.botActive !== undefined) data.botActive = !!changes.botActive;
+  if (changes.status !== undefined) {
+    if (!['open', 'pending', 'resolved', 'archived'].includes(String(changes.status))) {
+      throw new BadRequestError('status inválido');
+    }
+    data.status = String(changes.status);
+    data.archived = String(changes.status) === 'archived';
+  }
   if (changes.unreadCount !== undefined) {
     const unreadCount = Number(changes.unreadCount);
     if (!Number.isInteger(unreadCount) || unreadCount < 0 || unreadCount > 999) {
@@ -339,16 +435,92 @@ async function updateConversation(actor, conversationId, changes) {
     data.unreadCount = unreadCount;
     if (unreadCount === 0) data.lastReadAt = new Date();
   }
-  return prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+  const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+  publishConversationEvent(conv.tenantId, 'conversation.updated', { conversationId: conv.id });
+  return updated;
 }
 
 async function reactivateBot(actor, conversationId) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
   botState.clearFlowState(conv.customerWaId);
-  return prisma.whatsAppConversation.update({
+  const updated = await prisma.whatsAppConversation.update({
     where: { id: conv.id },
-    data: { botActive: true, botState: null },
+    data: { botActive: true, botPausedUntil: null, botState: null },
+  });
+  publishConversationEvent(conv.tenantId, 'conversation.bot.updated', { conversationId: conv.id, botActive: true });
+  return updated;
+}
+
+async function pauseBot(actor, conversationId) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  const updated = await prisma.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: { botActive: false, botPausedUntil: null },
+  });
+  publishConversationEvent(conv.tenantId, 'conversation.bot.updated', { conversationId: conv.id, botActive: false });
+  return updated;
+}
+
+async function setStatus(actor, conversationId, status) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  if (!['open', 'pending', 'resolved', 'archived'].includes(String(status))) {
+    throw new BadRequestError('status inválido');
+  }
+  const data = {
+    status: String(status),
+    archived: String(status) === 'archived',
+  };
+  if (status === 'resolved') {
+    data.unreadCount = 0;
+    data.manuallyMarkedUnread = false;
+    data.botActive = true;
+    data.botPausedUntil = null;
+    data.botState = null;
+    botState.clearFlowState(conv.customerWaId);
+  }
+  const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+  publishConversationEvent(conv.tenantId, 'conversation.status.updated', {
+    conversationId: conv.id,
+    status: updated.status,
+  });
+  return updated;
+}
+
+async function assignConversation(actor, conversationId, userId) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  let assignedToUserId = null;
+  if (userId) {
+    const user = await prisma.user.findFirst({
+      where: { id: String(userId), tenantId: conv.tenantId, active: true },
+      select: { id: true },
+    });
+    if (!user) throw new BadRequestError('Usuario inválido para asignar');
+    assignedToUserId = user.id;
+  }
+  const updated = await prisma.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: { assignedToUserId },
+  });
+  publishConversationEvent(conv.tenantId, 'conversation.assigned', {
+    conversationId: conv.id,
+    assignedToUserId,
+  });
+  return updated;
+}
+
+async function listAssignees(actor) {
+  return prisma.user.findMany({
+    where: {
+      tenantId: actor.tenantId,
+      active: true,
+      role: { in: ['dueno', 'personal'] },
+    },
+    select: { id: true, name: true, email: true, role: true },
+    orderBy: [{ role: 'asc' }, { name: 'asc' }],
   });
 }
 
@@ -358,10 +530,15 @@ async function setLabels(actor, conversationId, labels) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
   const filtered = [...new Set(labels.filter((l) => VALID_LABELS.includes(l)))];
-  return prisma.whatsAppConversation.update({
+  const updated = await prisma.whatsAppConversation.update({
     where: { id: conv.id },
     data: { labels: filtered },
   });
+  publishConversationEvent(conv.tenantId, 'conversation.tags.updated', {
+    conversationId: conv.id,
+    labels: filtered,
+  });
+  return updated;
 }
 
 async function listNotes(actor, conversationId) {
@@ -380,7 +557,7 @@ async function createNote(actor, conversationId, content) {
   if (typeof content !== 'string' || content.trim() === '') {
     throw new BadRequestError('El contenido de la nota es requerido');
   }
-  return prisma.whatsAppNote.create({
+  const note = await prisma.whatsAppNote.create({
     data: {
       tenantId: conv.tenantId,
       conversationId: conv.id,
@@ -389,6 +566,8 @@ async function createNote(actor, conversationId, content) {
     },
     include: { author: { select: { id: true, name: true } } },
   });
+  publishConversationEvent(conv.tenantId, 'conversation.notes.updated', { conversationId: conv.id });
+  return note;
 }
 
 async function deleteNote(actor, noteId) {
@@ -396,6 +575,7 @@ async function deleteNote(actor, noteId) {
   if (!note) return null;
   assertTenantScope(actor, note.tenantId);
   await prisma.whatsAppNote.delete({ where: { id: noteId } });
+  publishConversationEvent(note.tenantId, 'conversation.notes.updated', { conversationId: note.conversationId });
   return { deleted: true };
 }
 
@@ -406,8 +586,13 @@ module.exports = {
   sendManualText,
   sendReminder,
   markRead,
+  setReadState,
   updateConversation,
   reactivateBot,
+  pauseBot,
+  setStatus,
+  assignConversation,
+  listAssignees,
   setLabels,
   listNotes,
   createNote,

@@ -124,6 +124,7 @@ test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status p
       convQuery = args.where;
       return [{ id: 'conv1', customerWaId: '593999', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, client: { id: 'cli1', fullName: 'A' } }];
     },
+    count: async () => 1,
   };
   const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { filter: 'sin_confirmar_hoy' });
   assert.equal(apptQuery.status, 'pendiente', 'debe filtrar por status pendiente en Appointment');
@@ -139,6 +140,7 @@ test('listConversations: botStatus usa botActive del registro (no N+1 query)', a
       { id: 'c1', customerWaId: '593111', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, labels: ['consulta'], archived: false, createdAt: new Date(), client: { id: 'cli1', fullName: 'Ana', whatsapp: '+593111', recordNumber: 'A-001' } },
       { id: 'c2', customerWaId: '593222', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: false, labels: [], archived: false, createdAt: new Date(), client: null },
     ],
+    count: async () => 2,
   };
   const { items } = await inbox.listConversations({ tenantId: 't1', role: 'personal' }, {});
   assert.equal(items[0].botStatus, 'active');
@@ -153,6 +155,7 @@ test('listConversations: unread=true filtra conversaciones con mensajes pendient
   let convWhere = null;
   prisma.whatsAppConversation = {
     findMany: async (args) => { convWhere = args.where; return []; },
+    count: async () => 0,
   };
   await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { unread: 'true' });
   assert.deepEqual(convWhere.unreadCount, { gt: 0 });
@@ -162,6 +165,7 @@ test('listConversations: filter=bot_active filtra por botActive true', async () 
   let convWhere = null;
   prisma.whatsAppConversation = {
     findMany: async (args) => { convWhere = args.where; return []; },
+    count: async () => 0,
   };
   await inbox.listConversations({ tenantId: 't1', role: 'personal' }, { filter: 'bot_active' });
   assert.equal(convWhere.botActive, true);

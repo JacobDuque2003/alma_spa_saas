@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import {
-  Loader2, Send, Settings, X, ArrowLeft, Bot, UserRound, Search,
+  Loader2, Send, ArrowLeft, Bot, UserRound, Search,
   MessageSquare, StickyNote, Tag, Phone, Calendar, Hash, ChevronRight,
-  Plus, Trash2, RefreshCw,
+  Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -21,13 +21,12 @@ const LABEL_CONFIG = {
 };
 
 const FILTERS = [
-  { id: "all",        label: "Todos" },
-  { id: "pending",    label: "Pendientes" },
-  { id: "bot_active", label: "Bot activo" },
-  { id: "bot_off",    label: "Resueltos" },
+  { id: "all",      label: "Todos" },
+  { id: "pending",  label: "Pendientes" },
+  { id: "resolved", label: "Resueltos" },
 ];
 
-const LIVE_REFRESH_MS = 5_000;
+const LIVE_REFRESH_MS = 30_000;
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
@@ -59,6 +58,8 @@ export default function CRMPage() {
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
   const [conversations, setConversations] = useState([]);
+  const [counts, setCounts] = useState({ all: 0, pending: 0, resolved: 0 });
+  const [assignees, setAssignees] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -89,14 +90,14 @@ export default function CRMPage() {
     try {
       const data = await authFetch("/crm/conversations", {
         query: {
-          ...(filter === "pending" ? { unread: "true" } : {}),
-          ...(filter === "bot_active" ? { filter: "bot_active" } : {}),
-          ...(filter === "bot_off" ? { filter: "bot_off" } : {}),
+          ...(filter === "pending" ? { status: "pending" } : {}),
+          ...(filter === "resolved" ? { status: "resolved" } : {}),
           ...(q ? { q } : {}),
         },
       });
       const items = data.items || [];
       setConversations(items);
+      setCounts(data.counts || { all: items.length, pending: 0, resolved: 0 });
       if (!isMobile) {
         setSelectedId((cur) => {
           if (!cur) return items[0]?.id || null;
@@ -118,6 +119,12 @@ export default function CRMPage() {
     const interval = setInterval(() => fetchConversations(true), LIVE_REFRESH_MS);
     return () => { clearTimeout(t); clearInterval(interval); };
   }, [fetchConversations]);
+
+  useEffect(() => {
+    authFetch("/crm/assignees")
+      .then((data) => setAssignees(data.items || []))
+      .catch(() => setAssignees([]));
+  }, []);
 
   const fetchConversation = useCallback(async (silent = false) => {
     if (!selectedId) return;
@@ -161,6 +168,39 @@ export default function CRMPage() {
   }, [selectedId]);
 
   useEffect(() => { fetchNotes(); }, [fetchNotes]);
+
+  useEffect(() => {
+    const source = new EventSource("/api/crm/events");
+    const refreshFromEvent = (event) => {
+      if (event.type === "crm.ping" || event.type === "crm.connected") return;
+      let payload = {};
+      try { payload = JSON.parse(event.data || "{}"); } catch { payload = {}; }
+      fetchConversations(true);
+      if (payload.conversationId && payload.conversationId === selectedId) {
+        fetchConversation(true);
+        if (event.type === "conversation.notes.updated") fetchNotes();
+      }
+    };
+    const eventNames = [
+      "conversation.message.created",
+      "conversation.status.updated",
+      "conversation.marked_read",
+      "conversation.marked_unread",
+      "conversation.bot.updated",
+      "conversation.assigned",
+      "conversation.tags.updated",
+      "conversation.notes.updated",
+      "conversation.updated",
+    ];
+    eventNames.forEach((name) => source.addEventListener(name, refreshFromEvent));
+    source.onerror = () => {
+      // El polling de respaldo sigue activo; no mostramos alerta para no ensuciar la Bandeja.
+    };
+    return () => {
+      eventNames.forEach((name) => source.removeEventListener(name, refreshFromEvent));
+      source.close();
+    };
+  }, [fetchConversations, fetchConversation, fetchNotes, selectedId]);
 
   useEffect(() => { lastMsgIdRef.current = null; }, [selectedId]);
 
@@ -209,9 +249,12 @@ export default function CRMPage() {
   async function reactivateBot() {
     if (!selectedId) return;
     try {
-      await authFetch(`/crm/conversations/${selectedId}/reactivate-bot`, { method: "POST" });
+      const updated = await authFetch(`/crm/conversations/${selectedId}/bot/resume`, { method: "POST" });
       toast.success("Bot reactivado");
-      await Promise.all([fetchConversation(), fetchConversations()]);
+      setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated, botStatus: "active" } : cur);
+      setConversations((prev) => prev.map((item) => (
+        item.id === selectedId ? { ...item, ...updated, botStatus: "active" } : item
+      )));
     } catch (err) {
       toast.error(err.message || "No se pudo reactivar el bot");
     }
@@ -229,7 +272,9 @@ export default function CRMPage() {
         body: { labels: next },
       });
       setSelected((s) => ({ ...s, labels: next }));
-      fetchConversations();
+      setConversations((prev) => prev.map((item) => (
+        item.id === selectedId ? { ...item, labels: next } : item
+      )));
     } catch (err) {
       toast.error(err.message);
     }
@@ -261,14 +306,70 @@ export default function CRMPage() {
   async function markUnread() {
     if (!selectedId) return;
     try {
-      await authFetch(`/crm/conversations/${selectedId}`, {
-        method: "PATCH",
-        body: { unreadCount: 1 },
+      const updated = await authFetch(`/crm/conversations/${selectedId}/read-state`, {
+        method: "POST",
+        body: { unread: true },
       });
       toast.success("Marcada como no leída");
-      fetchConversations();
+      setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated } : cur);
+      setConversations((prev) => prev.map((item) => (
+        item.id === selectedId ? { ...item, ...updated } : item
+      )));
     } catch (err) {
       toast.error(err.message);
+    }
+  }
+
+  async function changeStatus(status) {
+    if (!selectedId) return;
+    try {
+      const updated = await authFetch(`/crm/conversations/${selectedId}/status`, {
+        method: "POST",
+        body: { status },
+      });
+      toast.success(status === "resolved" ? "Conversación resuelta" : "Conversación reabierta");
+      setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated } : cur);
+      setConversations((prev) => prev
+        .map((item) => item.id === selectedId ? { ...item, ...updated } : item)
+        .filter((item) => (
+          filter === "all"
+          || (filter === "pending" ? ["open", "pending"].includes(item.status) : item.status === filter)
+        )));
+      fetchConversations(true);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
+  async function pauseBot() {
+    if (!selectedId) return;
+    try {
+      const updated = await authFetch(`/crm/conversations/${selectedId}/bot/pause`, { method: "POST" });
+      toast.success("Bot pausado");
+      setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated } : cur);
+      setConversations((prev) => prev.map((item) => (
+        item.id === selectedId ? { ...item, ...updated, botStatus: "handedOff" } : item
+      )));
+    } catch (err) {
+      toast.error(err.message || "No se pudo pausar el bot");
+    }
+  }
+
+  async function assignConversation(userId) {
+    if (!selectedId) return;
+    const assignee = assignees.find((u) => u.id === userId) || null;
+    try {
+      const updated = await authFetch(`/crm/conversations/${selectedId}/assign`, {
+        method: "PATCH",
+        body: { userId: userId || null },
+      });
+      const patch = { ...updated, assignedTo: assignee };
+      setSelected((cur) => cur?.id === selectedId ? { ...cur, ...patch } : cur);
+      setConversations((prev) => prev.map((item) => (
+        item.id === selectedId ? { ...item, ...patch } : item
+      )));
+    } catch (err) {
+      toast.error(err.message || "No se pudo asignar");
     }
   }
 
@@ -311,6 +412,26 @@ export default function CRMPage() {
             {c.lastMessagePreview || "Sin mensajes"}
           </p>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {c.status === "open" && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-semibold">
+                <CircleDot size={10} /> Abierto
+              </span>
+            )}
+            {c.status === "pending" && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold">
+                <CircleDot size={10} /> Pendiente
+              </span>
+            )}
+            {c.status === "resolved" && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold">
+                <CheckCircle2 size={10} /> Resuelto
+              </span>
+            )}
+            {c.assignedTo?.name && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cream text-bronze text-[10px] font-medium">
+                <UserCheck size={10} /> {c.assignedTo.name.split(" ")[0]}
+              </span>
+            )}
             {c.botActive === false && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bronze-deep/10 text-bronze-deep text-[10px] font-medium">
                 <UserRound size={10} /> Humano
@@ -347,8 +468,18 @@ export default function CRMPage() {
 
   function renderMessageBubble(m) {
     const isOutbound = m.direction === "outbound";
-    const isBot = isOutbound && !m.sentByUserId;
-    const isHuman = isOutbound && !!m.sentByUserId;
+    const isBot = m.senderType === "bot" || (isOutbound && !m.sentByUserId);
+    const isHuman = m.senderType === "agent" || (isOutbound && !!m.sentByUserId);
+    const mediaLabels = {
+      image: "Mensaje con imagen",
+      audio: "Mensaje de audio",
+      document: "Documento adjunto",
+      video: "Video recibido",
+      sticker: "Sticker",
+      location: "Ubicación compartida",
+      interactive: "Mensaje interactivo",
+      template: "Plantilla enviada",
+    };
 
     return (
       <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
@@ -375,7 +506,7 @@ export default function CRMPage() {
             </div>
           )}
           <p className="whitespace-pre-wrap leading-relaxed">
-            {m.body || (m.type === "template" ? "Recordatorio enviado" : `Mensaje ${m.type === "image" ? "con imagen" : ""}`)}
+            {m.body || mediaLabels[m.type] || "Mensaje recibido"}
           </p>
           <p className="text-right text-[10px] text-warm-gray mt-1.5">
             {timeStr(m.createdAt)} {m.status ? `· ${m.status}` : ""}
@@ -421,6 +552,9 @@ export default function CRMPage() {
                 `}
               >
                 {f.label}
+                <span className={`ml-1 ${filter === f.id ? "text-white/85" : "text-warm-gray"}`}>
+                  ({counts[f.id] ?? 0})
+                </span>
               </button>
             ))}
           </div>
@@ -627,6 +761,22 @@ export default function CRMPage() {
               </span>
             )}
           </div>
+          <div className="mt-4 grid gap-2">
+            <label className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider">
+              Responsable
+            </label>
+            <select
+              value={selected.assignedToUserId || ""}
+              onChange={(e) => assignConversation(e.target.value)}
+              className="w-full rounded-xl border border-border bg-cream/50 px-3 py-2 text-sm text-bronze-deep
+                         focus:outline-none focus:ring-2 focus:ring-gold/40"
+            >
+              <option value="">Sin asignar</option>
+              {assignees.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -731,7 +881,35 @@ export default function CRMPage() {
 
         {/* Actions */}
         <div className="p-4 border-t border-border flex flex-col gap-2">
-          {!selected.botActive && (
+          {selected.status === "resolved" ? (
+            <button
+              onClick={() => changeStatus("open")}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
+                         bg-cream border border-border text-bronze text-sm font-semibold
+                         hover:bg-glow/40 transition-colors duration-150"
+            >
+              <CircleDot size={14} /> Reabrir conversación
+            </button>
+          ) : (
+            <button
+              onClick={() => changeStatus("resolved")}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
+                         bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold
+                         hover:bg-emerald-100 transition-colors duration-150"
+            >
+              <CheckCircle2 size={14} /> Resolver
+            </button>
+          )}
+          {selected.botActive ? (
+            <button
+              onClick={pauseBot}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
+                         bg-cream border border-border text-bronze text-sm font-semibold
+                         hover:bg-glow/40 transition-colors duration-150"
+            >
+              <Bot size={14} /> Pausar bot
+            </button>
+          ) : (
             <button
               onClick={reactivateBot}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl

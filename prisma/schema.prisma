@@ -65,6 +65,7 @@ model User {
   ledgerEntries        ClientLedgerEntry[] @relation("LedgerEntriesCreated")
   whatsappMessagesSent WhatsAppMessage[]   @relation("WhatsAppMessagesSent")
   whatsappNotesAuthored WhatsAppNote[]    @relation("WhatsAppNotesAuthored")
+  whatsappConversationsAssigned WhatsAppConversation[] @relation("WhatsAppConversationsAssigned")
 
   @@index([tenantId, role, active, canAttendAppointments])
 }
@@ -413,6 +414,20 @@ enum WhatsAppMessageStatus {
   failed
 }
 
+enum WhatsAppConversationStatus {
+  open
+  pending
+  resolved
+  archived
+}
+
+enum WhatsAppSenderType {
+  customer
+  agent
+  bot
+  system
+}
+
 model WhatsAppConnection {
   id              String             @id @default(cuid())
   tenantId        String             @unique
@@ -448,9 +463,14 @@ model WhatsAppConversation {
   lastMessageAt      DateTime  @default(now())
   lastMessagePreview String?
   unreadCount        Int       @default(0)
+  unreadRestoreCount Int       @default(0)
+  manuallyMarkedUnread Boolean @default(false)
   lastReadAt         DateTime?
   archived           Boolean   @default(false)
+  status             WhatsAppConversationStatus @default(open)
+  assignedToUserId   String?
   botActive          Boolean   @default(true)
+  botPausedUntil     DateTime?
   botState           Json?
   labels             String[]  @default([])
   createdAt          DateTime  @default(now())
@@ -458,12 +478,15 @@ model WhatsAppConversation {
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
   client             Client?             @relation(fields: [clientId], references: [id])
+  assignedTo         User?               @relation("WhatsAppConversationsAssigned", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   messages           WhatsAppMessage[]
   botInteractionLogs BotInteractionLog[]
   notes              WhatsAppNote[]
 
   @@unique([tenantId, customerWaId])
   @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@index([tenantId, status, lastMessageAt(sort: Desc)])
+  @@index([tenantId, assignedToUserId])
   @@index([tenantId, clientId])
 }
 
@@ -472,6 +495,7 @@ model WhatsAppMessage {
   tenantId       String
   conversationId String
   direction      WhatsAppDirection
+  senderType     WhatsAppSenderType      @default(customer)
   type           WhatsAppMessageType   @default(text)
   status         WhatsAppMessageStatus
   waMessageId    String?               @unique

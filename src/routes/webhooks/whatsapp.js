@@ -5,6 +5,7 @@ const transport = require('../../services/whatsappTransport');
 const { previewOf } = require('../../services/whatsappInboxService');
 const { waIdToPhone } = require('../../utils/phone');
 const bot = require('../../services/whatsappBot');
+const crmEvents = require('../../services/crmEventBus');
 
 const router = express.Router({ mergeParams: true });
 
@@ -244,6 +245,8 @@ async function processInboundMessage(tenant, message, contacts) {
       lastMessageAt: waTs,
       lastMessagePreview: previewOf(bodyText ?? `[${message.type}]`),
       unreadCount: 0,
+      unreadRestoreCount: 0,
+      status: 'pending',
     },
   });
 
@@ -253,6 +256,7 @@ async function processInboundMessage(tenant, message, contacts) {
         tenantId: tenant.id,
         conversationId: conv.id,
         direction: 'inbound',
+        senderType: 'customer',
         type: mapType(message.type),
         status: 'received',
         waMessageId,
@@ -284,7 +288,17 @@ async function processInboundMessage(tenant, message, contacts) {
       lastMessageAt: waTs,
       lastMessagePreview: previewOf(bodyText ?? `[${message.type}]`),
       unreadCount: { increment: 1 },
+      unreadRestoreCount: { increment: 1 },
+      status: 'pending',
     },
+  });
+  crmEvents.publish(tenant.id, 'conversation.message.created', {
+    tenantId: tenant.id,
+    conversationId: updatedConv.id,
+    messageId: waMessageId,
+    direction: 'inbound',
+    senderType: 'customer',
+    at: new Date().toISOString(),
   });
 
   try {
