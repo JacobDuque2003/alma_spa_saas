@@ -73,13 +73,17 @@ export default function CRMPage() {
   const mobileChat = useAnimatedMount(isMobile && mobileView === "chat", 220);
   const mobilePanel = useAnimatedMount(isMobile && mobileView === "panel", 220);
   const messagesEndRef = useRef(null);
+  const lastMsgIdRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const [quickReplies] = useState(QUICK_REPLIES_DEFAULT);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
 
   // ─── Data fetching ──────────────────────────────────────────
-  const fetchConversations = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
+  const fetchConversations = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setLoadError("");
+    }
     try {
       const data = await authFetch("/crm/conversations", {
         query: {
@@ -93,20 +97,22 @@ export default function CRMPage() {
       setConversations(items);
       if (!isMobile) setSelectedId((cur) => cur || items[0]?.id || null);
     } catch (err) {
-      setLoadError(err.message);
-      setConversations([]);
+      if (!silent) {
+        setLoadError(err.message);
+        setConversations([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filter, q, isMobile]);
 
   useEffect(() => {
-    const t = setTimeout(fetchConversations, 200);
-    const interval = setInterval(fetchConversations, 30_000);
+    const t = setTimeout(() => fetchConversations(), 200);
+    const interval = setInterval(() => fetchConversations(true), 30_000);
     return () => { clearTimeout(t); clearInterval(interval); };
   }, [fetchConversations]);
 
-  const fetchConversation = useCallback(async () => {
+  const fetchConversation = useCallback(async (silent = false) => {
     if (!selectedId) return;
     try {
       const [conv, msgs] = await Promise.all([
@@ -115,15 +121,17 @@ export default function CRMPage() {
       ]);
       setSelected(conv);
       setMessages(msgs.items || []);
-      authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" }).catch(() => null);
+      if (!silent) {
+        authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" }).catch(() => null);
+      }
     } catch (err) {
-      toast.error(err.message);
+      if (!silent) toast.error(err.message);
     }
   }, [selectedId, toast]);
 
   useEffect(() => {
     fetchConversation();
-    const interval = setInterval(fetchConversation, 30_000);
+    const interval = setInterval(() => fetchConversation(true), 30_000);
     return () => clearInterval(interval);
   }, [fetchConversation]);
 
@@ -137,8 +145,18 @@ export default function CRMPage() {
 
   useEffect(() => { fetchNotes(); }, [fetchNotes]);
 
+  useEffect(() => { lastMsgIdRef.current = null; }, [selectedId]);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const lastId = messages[messages.length - 1]?.id;
+    if (!lastId || lastId === lastMsgIdRef.current) return;
+    const container = messagesContainerRef.current;
+    const isNearBottom = !container
+      || container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    if (isNearBottom || lastMsgIdRef.current === null) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    lastMsgIdRef.current = lastId;
   }, [messages]);
 
   // ─── Actions ─────────────────────────────────────────────────
@@ -479,7 +497,7 @@ export default function CRMPage() {
         )}
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
           {messages.map((m) => <MessageBubble key={m.id} m={m} />)}
           <div ref={messagesEndRef} />
         </div>

@@ -231,6 +231,12 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
       conversationId: conv.id,
       aiDisponible: aiClient.isAvailable(),
     });
+
+    // Explicit menu keyword → show menu immediately (no AI call)
+    if (/^(men[uú]|opciones|inicio|volver)$/i.test(bodyText.trim())) {
+      return sendMainMenu({ tenant, connection, conv, waId, tone });
+    }
+
     return handleTextMessage({ tenant, connection, conv, waId, tone, bodyText });
   }
 
@@ -354,15 +360,25 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply, params }) {
   switch (intent) {
     case 'menu':
-    case 'greeting':
+      return sendMainMenu({ tenant, connection, conv, waId, tone });
+
+    case 'greeting': {
+      // First interaction (history only has current message) → show greeting menu
+      const history = state.getHistory(waId);
+      if (history.length <= 1 && !aiReply) {
+        return sendMainMenu({ tenant, connection, conv, waId, tone });
+      }
+      // Subsequent greetings → AI reply only (no menu)
       if (aiReply) {
         const r = await transport.sendText(connection, waId, aiReply);
         await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+        return;
       }
       return sendMainMenu({ tenant, connection, conv, waId, tone });
+    }
 
     case 'list_services':
-      return handleListServices({ tenant, connection, conv, waId, tone, aiReply });
+      return handleListServices({ tenant, connection, conv, waId, tone });
 
     case 'book':
     case 'book_start':
@@ -372,10 +388,6 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
         if (svc) {
-          if (aiReply) {
-            const r = await transport.sendText(connection, waId, aiReply);
-            await recordBotMessage(tenant.id, conv, r, { body: aiReply });
-          }
           return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
         }
       }
@@ -394,6 +406,7 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       if (aiReply) {
         const r = await transport.sendText(connection, waId, aiReply);
         await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+        return;
       }
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
@@ -433,9 +446,11 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
     return handleEscalate({ tenant, connection, conv, waId, tone });
   }
 
+  // ONE response: AI reply if available, menu as fallback
   if (aiReply) {
     const r = await transport.sendText(connection, waId, aiReply);
     await recordBotMessage(tenant.id, conv, r, { body: aiReply });
+    return;
   }
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
@@ -515,12 +530,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
-async function handleListServices({ tenant, connection, conv, waId, tone, aiReply }) {
-  if (aiReply) {
-    const r = await transport.sendText(connection, waId, aiReply);
-    await recordBotMessage(tenant.id, conv, r, { body: aiReply });
-  }
-
+async function handleListServices({ tenant, connection, conv, waId, tone }) {
   const svcs = await prisma.service.findMany({
     where: { tenantId: tenant.id, active: true },
     select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
@@ -631,13 +641,11 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
   const intro = aiReply || (tone === 'tu'
     ? '✨ ¡Qué bueno que quieres reservar! Elige el servicio:'
     : '✨ ¡Qué bueno que desea reservar! Elija el servicio:');
-  const r = await transport.sendText(connection, waId, intro);
-  await recordBotMessage(tenant.id, conv, r, { body: intro });
 
   if (svcs.length <= 10) {
-    const payload = menus.servicesList(svcs, { tone });
-    const r2 = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de servicio para reserva]' });
+    const payload = menus.servicesList(svcs, { tone, body: intro });
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
   } else {
     const byCat = new Map();
     for (const s of svcs) {
@@ -648,9 +656,9 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
     const categories = [...byCat.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([name, count]) => ({ name, count }));
-    const payload = menus.categoryList(categories, { tone });
-    const r2 = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: `[${categories.length} categorías para reserva]` });
+    const payload = menus.categoryList(categories, { tone, body: intro });
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías para reserva]` });
   }
 }
 

@@ -306,7 +306,7 @@ test('escalate incluye "recepción" y emojis', async () => {
 
 // ─── Booking flow tests ───────────────────────────────────────
 
-test('"Reservar cita" → muestra servicios en modo reserva (NUNCA link externo)', async () => {
+test('"Reservar cita" → muestra servicios en modo reserva (NUNCA link externo, UN solo mensaje)', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -318,10 +318,11 @@ test('"Reservar cita" → muestra servicios en modo reserva (NUNCA link externo)
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book' } } },
   });
-  assert.ok(sent.some(s => s.kind === 'interactive'));
-  const textMsgs = sent.filter(s => s.kind === 'text');
-  assert.ok(textMsgs.every(s => !/https?:\/\//.test(s.body)), 'NUNCA debe enviar links externos');
-  assert.match(textMsgs[0].body, /reservar/i);
+  assert.equal(sent.length, 1, 'debe enviar UN solo mensaje interactivo');
+  assert.equal(sent[0].kind, 'interactive');
+  assert.match(sent[0].payload.body.text, /reservar/i, 'cuerpo de la lista debe mencionar reserva');
+  const allBodies = sent.map(s => s.body || s.payload?.body?.text || '').join(' ');
+  assert.ok(!/https?:\/\//.test(allBodies), 'NUNCA debe enviar links externos');
   const st = state.getFlowState(CONV.customerWaId);
   assert.equal(st.booking?.step, 'select_service');
 });
@@ -458,4 +459,86 @@ test('capitalize helper', () => {
   assert.equal(menus.capitalize('hola'), 'Hola');
   assert.equal(menus.capitalize(''), '');
   assert.equal(menus.capitalize(null), '');
+});
+
+// ─── Single-response rule tests ──────────────────────────────
+
+test('routeIntent greeting (subsequent) → solo texto IA, NO menú después', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  // First message to create history
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'hola' } } });
+  const countAfterFirst = sent.length;
+  // Route a second greeting intent with AI reply
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'usted', intent: 'greeting', aiReply: '¡Hola de nuevo!',
+  });
+  const newMsgs = sent.slice(countAfterFirst);
+  assert.equal(newMsgs.length, 1, 'solo 1 respuesta');
+  assert.equal(newMsgs[0].kind, 'text');
+  assert.equal(newMsgs[0].body, '¡Hola de nuevo!');
+});
+
+test('routeIntent list_services → solo la lista interactiva, NO texto IA aparte', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+    ],
+  });
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'usted', intent: 'list_services', aiReply: 'Tenemos masajes y faciales.',
+  });
+  assert.equal(sent.length, 1, 'solo 1 mensaje');
+  assert.equal(sent[0].kind, 'interactive');
+});
+
+test('routeIntent unclear con AI reply → solo texto IA, NO menú después', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'usted', intent: 'unclear', aiReply: 'No entendí bien, ¿puede repetir?',
+  });
+  assert.equal(sent.length, 1, 'solo 1 respuesta');
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /No entendí/);
+});
+
+test('routeIntent service_info con AI reply → solo texto IA, NO lista después', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ services: [] });
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'usted', intent: 'service_info', aiReply: 'Nuestros masajes duran 60 minutos.',
+  });
+  assert.equal(sent.length, 1, 'solo 1 respuesta');
+  assert.equal(sent[0].kind, 'text');
+});
+
+test('palabra clave "menú" muestra menú sin llamar IA', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'menú' } },
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.match(sent[0].payload.body.text, /Almita/);
+});
+
+test('servicesList acepta body personalizado', () => {
+  const payload = menus.servicesList(
+    [{ id: 's1', name: 'Masaje', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true }],
+    { tone: 'usted', body: '✨ Elige tu servicio para reservar:' }
+  );
+  assert.equal(payload.body.text, '✨ Elige tu servicio para reservar:');
 });

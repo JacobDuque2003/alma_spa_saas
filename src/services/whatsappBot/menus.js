@@ -52,7 +52,7 @@ function mainMenu({ tone } = {}) {
 
 // Flat service list — only used when total active services ≤ 10 (Meta's
 // hard limit is 10 rows across all sections in an interactive list).
-function servicesList(services, { tone } = {}) {
+function servicesList(services, { tone, body } = {}) {
   const byCat = new Map();
   for (const s of services) {
     if (!s.active) continue;
@@ -79,11 +79,12 @@ function servicesList(services, { tone } = {}) {
     }
   }
 
+  const defaultBody = tone === 'tu'
+    ? '💆‍♀️ Estos son nuestros servicios. Toca uno para ver más:'
+    : '💆‍♀️ Estos son nuestros servicios. Toque uno para ver más:';
   return {
     type: 'list',
-    body: { text: tone === 'tu'
-      ? '💆‍♀️ Estos son nuestros servicios. Toca uno para ver más:'
-      : '💆‍♀️ Estos son nuestros servicios. Toque uno para ver más:' },
+    body: { text: body || defaultBody },
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver servicios',
@@ -94,17 +95,18 @@ function servicesList(services, { tone } = {}) {
 
 // Category picker — used when >10 active services. Each row is a category
 // that leads to a second list with the services in that category.
-function categoryList(categories, { tone } = {}) {
+function categoryList(categories, { tone, body } = {}) {
   const rows = categories.slice(0, 10).map((c) => ({
     id: `${CATEGORY_PREFIX}${c.name}`,
     title: String(c.name).slice(0, 24),
     description: `${c.count} servicio${c.count === 1 ? '' : 's'}`.slice(0, 72),
   }));
+  const defaultBody = tone === 'tu'
+    ? '💆‍♀️ Tenemos varios servicios. Elige una categoría:'
+    : '💆‍♀️ Tenemos varios servicios. Elija una categoría:';
   return {
     type: 'list',
-    body: { text: tone === 'tu'
-      ? '💆‍♀️ Tenemos varios servicios. Elige una categoría:'
-      : '💆‍♀️ Tenemos varios servicios. Elija una categoría:' },
+    body: { text: body || defaultBody },
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver categorías',
