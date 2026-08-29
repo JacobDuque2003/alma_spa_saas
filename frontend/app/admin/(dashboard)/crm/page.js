@@ -98,7 +98,7 @@ export default function CRMPage() {
   const [loadError, setLoadError] = useState("");
   const [notes, setNotes] = useState([]);
   const [noteText, setNoteText] = useState("");
-  const [showPanel, setShowPanel] = useState("info"); // info | notes
+  const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
   const [labelConfigMode, setLabelConfigMode] = useState(false);
   const [labelDraft, setLabelDraft] = useState({ key: "", text: "", tone: "blue" });
   const [editingLabelKey, setEditingLabelKey] = useState(null);
@@ -313,6 +313,8 @@ export default function CRMPage() {
     setChatSearchIndex(0);
     setChatSearchOpen(false);
     setShowAssignees(false);
+    setLabelDropdownOpen(false);
+    setLabelConfigMode(false);
     setShowQuickReplies(false);
     setQuickReplyConfigMode(false);
   }, [selectedId]);
@@ -1207,38 +1209,44 @@ export default function CRMPage() {
           </div>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex border-b border-border">
-          {[
-            { id: "info", icon: Tag, label: "Etiquetas" },
-            { id: "notes", icon: StickyNote, label: "Notas" },
-          ].map((tab) => (
+        {/* Status actions */}
+        <div className="border-b border-border p-4">
+          <div className="grid grid-cols-2 gap-2">
             <button
-              key={tab.id}
-              onClick={() => setShowPanel(tab.id)}
-              className={`
-                flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium
-                border-b-2 transition-colors duration-150
-                ${showPanel === tab.id
-                  ? "border-gold text-gold"
-                  : "border-transparent text-warm-gray hover:text-bronze"
-                }
-              `}
+              onClick={() => changeStatus(isResolved ? "open" : "resolved")}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
+                isResolved
+                  ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
+                  : "bg-cream border-border text-bronze hover:bg-emerald-50 hover:text-emerald-700"
+              }`}
             >
-              <tab.icon size={13} /> {tab.label}
+              <CheckCircle2 size={14} /> Resolver
             </button>
-          ))}
+            <button
+              onClick={markUnread}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
+                isUnreadActive
+                  ? "bg-sky-500 border-sky-500 text-white shadow-sm"
+                  : "bg-cream border-border text-bronze hover:bg-sky-50 hover:text-sky-700"
+              }`}
+            >
+              <RefreshCw size={14} /> No leído
+            </button>
+          </div>
         </div>
 
         {/* Panel content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {showPanel === "info" && (
-            <div>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider">Etiquetas</p>
+          <div className="space-y-4">
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
+                  <Tag size={12} /> Etiquetas
+                </p>
                 <button
                   onClick={() => {
                     setLabelConfigMode((v) => !v);
+                    setLabelDropdownOpen(true);
                     setEditingLabelKey(null);
                     setLabelDraft({ key: "", text: "", tone: "blue" });
                   }}
@@ -1253,110 +1261,135 @@ export default function CRMPage() {
                 </button>
               </div>
 
-              {!labelConfigMode ? (
-                <div className="flex flex-wrap gap-2">
-                  {labelDefs.map((label) => {
-                    const key = label.key;
-                    const cfg = labelConfig[key] || LABEL_TONES.neutral;
-                    const active = labels.includes(key);
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => toggleLabel(key)}
-                        className={`
-                          inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium
-                          transition-all duration-150
-                          ${active
-                            ? `${cfg.bg} ${cfg.fg} border-current`
-                            : "bg-cream/60 text-warm-gray border-border hover:bg-cream"
-                          }
-                        `}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
-                        {label.text}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="grid gap-3">
-                  <div className="grid gap-1.5">
-                    {labelDefs.map((label) => {
-                      const cfg = labelConfig[label.key] || LABEL_TONES.neutral;
-                      return (
-                        <div
-                          key={label.key}
-                          className="flex items-center gap-2 rounded-xl bg-cream/50 p-2"
-                        >
-                          <span className={`inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${cfg.bg} ${cfg.fg}`}>
-                            <span className={`h-2 w-2 rounded-full ${cfg.dot}`} />
-                            <span className="truncate">{label.text}</span>
-                          </span>
-                          <button
-                            onClick={() => startEditingLabel(label)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-white hover:text-bronze"
-                            title="Editar etiqueta"
-                          >
-                            <Edit3 size={12} />
-                          </button>
-                          <button
-                            onClick={() => removeLabel(label.key)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-red-50 hover:text-red-500"
-                            title="Eliminar etiqueta"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="rounded-2xl border border-border bg-cream/40 p-3">
-                    <input
-                      value={labelDraft.text}
-                      onChange={(e) => setLabelDraft((d) => ({ ...d, text: e.target.value }))}
-                      placeholder="Nombre de etiqueta"
-                      className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    />
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {Object.entries(LABEL_TONES).map(([tone, cfg]) => (
-                        <button
-                          key={tone}
-                          onClick={() => setLabelDraft((d) => ({ ...d, tone }))}
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${cfg.bg} ${cfg.fg} ${
-                            labelDraft.tone === tone ? cfg.ring : "border-transparent"
-                          }`}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                          {cfg.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        onClick={saveLabelDraft}
-                        className="flex-1 rounded-xl bg-bronze px-3 py-2 text-xs font-semibold text-white hover:bg-bronze-deep"
-                      >
-                        {editingLabelKey ? "Guardar cambios" : "Crear etiqueta"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingLabelKey(null);
-                          setLabelDraft({ key: "", text: "", tone: "blue" });
-                        }}
-                        className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
-                      >
-                        Limpiar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+              <div className="rounded-2xl border border-border bg-cream/35">
+                <button
+                  onClick={() => setLabelDropdownOpen((v) => !v)}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-bronze-deep">
+                    {labels.length
+                      ? labels.map((key) => labelConfig[key]?.text || key).join(", ")
+                      : "Seleccionar etiquetas"}
+                  </span>
+                  <span className="flex flex-shrink-0 items-center gap-2">
+                    {labels.length > 0 && (
+                      <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold text-bronze">
+                        {labels.length}
+                      </span>
+                    )}
+                    <ChevronDown size={14} className={`text-warm-gray transition-transform ${labelDropdownOpen ? "rotate-180" : ""}`} />
+                  </span>
+                </button>
 
-          {showPanel === "notes" && (
-            <div>
-              <p className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider mb-3">Notas internas</p>
+                {labelDropdownOpen && (
+                  <div className="border-t border-border p-3">
+                    {!labelConfigMode ? (
+                      <div className="flex flex-wrap gap-2">
+                        {labelDefs.map((label) => {
+                          const key = label.key;
+                          const cfg = labelConfig[key] || LABEL_TONES.neutral;
+                          const active = labels.includes(key);
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => toggleLabel(key)}
+                              className={`
+                                inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium
+                                transition-all duration-150
+                                ${active
+                                  ? `${cfg.bg} ${cfg.fg} border-current`
+                                  : "bg-white text-warm-gray border-border hover:bg-cream"
+                                }
+                              `}
+                            >
+                              <span className={`w-2 h-2 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
+                              {label.text}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="grid gap-3">
+                        <div className="grid gap-1.5">
+                          {labelDefs.map((label) => {
+                            const cfg = labelConfig[label.key] || LABEL_TONES.neutral;
+                            return (
+                              <div
+                                key={label.key}
+                                className="flex items-center gap-2 rounded-xl bg-white/70 p-2"
+                              >
+                                <span className={`inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${cfg.bg} ${cfg.fg}`}>
+                                  <span className={`h-2 w-2 rounded-full ${cfg.dot}`} />
+                                  <span className="truncate">{label.text}</span>
+                                </span>
+                                <button
+                                  onClick={() => startEditingLabel(label)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-cream hover:text-bronze"
+                                  title="Editar etiqueta"
+                                >
+                                  <Edit3 size={12} />
+                                </button>
+                                <button
+                                  onClick={() => removeLabel(label.key)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-red-50 hover:text-red-500"
+                                  title="Eliminar etiqueta"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="rounded-2xl border border-border bg-white/70 p-3">
+                          <input
+                            value={labelDraft.text}
+                            onChange={(e) => setLabelDraft((d) => ({ ...d, text: e.target.value }))}
+                            placeholder="Nombre de etiqueta"
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
+                          />
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {Object.entries(LABEL_TONES).map(([tone, cfg]) => (
+                              <button
+                                key={tone}
+                                onClick={() => setLabelDraft((d) => ({ ...d, tone }))}
+                                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${cfg.bg} ${cfg.fg} ${
+                                  labelDraft.tone === tone ? cfg.ring : "border-transparent"
+                                }`}
+                              >
+                                <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                                {cfg.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              onClick={saveLabelDraft}
+                              className="flex-1 rounded-xl bg-bronze px-3 py-2 text-xs font-semibold text-white hover:bg-bronze-deep"
+                            >
+                              {editingLabelKey ? "Guardar cambios" : "Crear etiqueta"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingLabelKey(null);
+                                setLabelDraft({ key: "", text: "", tone: "blue" });
+                              }}
+                              className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
+                            >
+                              Limpiar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section>
+              <p className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
+                <StickyNote size={12} /> Notas internas
+              </p>
               <div className="flex gap-2 mb-4">
                 <input
                   value={noteText}
@@ -1397,38 +1430,16 @@ export default function CRMPage() {
                   ))}
                 </div>
               )}
-            </div>
-          )}
+            </section>
+          </div>
         </div>
 
-        {/* Actions */}
+        {/* Reminder */}
         <div className="border-t border-border p-4">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => changeStatus(isResolved ? "open" : "resolved")}
-              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
-                isResolved
-                  ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
-                  : "bg-cream border-border text-bronze hover:bg-emerald-50 hover:text-emerald-700"
-              }`}
-            >
-              <CheckCircle2 size={14} /> Resolver
-            </button>
-            <button
-              onClick={markUnread}
-              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
-                isUnreadActive
-                  ? "bg-sky-500 border-sky-500 text-white shadow-sm"
-                  : "bg-cream border-border text-bronze hover:bg-sky-50 hover:text-sky-700"
-              }`}
-            >
-              <RefreshCw size={14} /> No leído
-            </button>
-          </div>
           <button
             onClick={sendReminder}
             disabled={sending}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-bronze px-4 py-2.5 text-sm font-semibold text-white
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-bronze px-4 py-2.5 text-sm font-semibold text-white
                        hover:bg-bronze-deep transition-colors duration-150 disabled:opacity-50"
           >
             <Send size={14} /> Enviar recordatorio
