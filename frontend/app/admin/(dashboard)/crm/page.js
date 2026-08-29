@@ -962,7 +962,7 @@ export default function CRMPage() {
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-cream/40">
         {/* Chat header */}
-        <div className="relative z-50 flex items-center justify-between gap-2 overflow-visible border-b border-border bg-white/80 px-4 py-3 backdrop-blur-sm">
+        <div className="relative z-[100] flex items-center justify-between gap-2 overflow-visible border-b border-border bg-white/90 px-4 py-3 shadow-sm backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {isMobile && (
               <button
@@ -980,13 +980,13 @@ export default function CRMPage() {
               <div className="text-xs text-warm-gray">{selected.customerWaId}</div>
             </div>
           </div>
-          <div ref={headerMenuRef} className="relative z-[70] flex flex-shrink-0 items-center gap-2">
+          <div ref={headerMenuRef} className="relative z-[120] flex flex-shrink-0 items-center gap-2">
             <button
               onClick={selected.botActive ? pauseBot : reactivateBot}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-150 ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold shadow-sm transition-colors duration-150 ${
                 selected.botActive
-                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                  : "bg-bronze text-white hover:bg-bronze-deep"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-border bg-white text-bronze-deep hover:bg-cream"
               }`}
             >
               {selected.botActive ? <Bot size={12} /> : <RefreshCw size={12} />}
@@ -998,14 +998,14 @@ export default function CRMPage() {
                   setShowAssignees((v) => !v);
                   setChatSearchOpen(false);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-white text-bronze-deep text-[11px] font-semibold hover:bg-cream transition-colors"
+                className="inline-flex h-8 min-w-[112px] items-center justify-center gap-1.5 rounded-full border border-border bg-white px-3 text-[12px] font-semibold text-bronze-deep shadow-sm transition-colors hover:bg-cream"
               >
                 <UserCheck size={12} />
                 {selected.assignedTo?.name?.split(" ")[0] || "Asignar"}
                 <ChevronDown size={12} />
               </button>
               {showAssignees && (
-                <div className="absolute right-0 top-full z-[80] mt-2 w-56 rounded-2xl border border-border bg-white p-2 shadow-xl">
+                <div className="absolute right-0 top-full z-[140] mt-2 w-56 rounded-2xl border border-border bg-white p-2 shadow-xl">
                   <button
                     onClick={() => { assignConversation(""); setShowAssignees(false); }}
                     className="w-full rounded-xl px-3 py-2 text-left text-xs text-warm-gray hover:bg-cream"
@@ -1034,15 +1034,15 @@ export default function CRMPage() {
                   setChatSearchOpen((v) => !v);
                   setShowAssignees(false);
                 }}
-                className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors ${
-                  chatSearchOpen ? "bg-gold text-white border-gold" : "bg-white text-bronze border-border hover:bg-cream"
+                className={`flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors ${
+                  chatSearchOpen ? "border-gold bg-gold text-white" : "border-border bg-white text-bronze hover:bg-cream"
                 }`}
                 title="Buscar en esta conversación"
               >
                 <Search size={14} />
               </button>
               {chatSearchOpen && (
-                <div className="absolute right-0 top-full z-[80] mt-2 w-72 rounded-2xl border border-border bg-white p-3 shadow-xl">
+                <div className="absolute right-0 top-full z-[140] mt-2 w-72 rounded-2xl border border-border bg-white p-3 shadow-xl">
                   <input
                     autoFocus
                     value={chatSearch}
@@ -1297,7 +1297,7 @@ export default function CRMPage() {
 
     return (
       <div className={`
-        flex flex-col h-full bg-white
+        flex flex-col h-full bg-[#f8fbff]
         ${isMobile ? "w-full" : "w-[300px] flex-shrink-0 border-l border-border"}
       `}>
         {isMobile && (
@@ -1310,9 +1310,9 @@ export default function CRMPage() {
         )}
 
         {/* Client card */}
-        <div className="p-4 border-b border-border">
+        <div className="mx-3 mt-3 rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="w-11 h-11 rounded-full bg-gold text-white flex items-center justify-center text-base font-semibold">
+            <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gold text-base font-semibold text-white shadow-sm">
               {initials(name)}
             </span>
             <div className="min-w-0">
@@ -1341,35 +1341,46 @@ export default function CRMPage() {
         </div>
 
         {/* Status actions */}
-        <div className="border-b border-border p-4">
+        <div className="mx-3 mt-2 rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-warm-gray">Acciones</p>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => changeStatus(isResolved ? "open" : "resolved")}
-              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
+              className={`flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition-colors duration-150 ${
                 isResolved
                   ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
-                  : "bg-cream border-border text-bronze hover:bg-emerald-50 hover:text-emerald-700"
+                  : "bg-[#f7f9fe] border-[#e6edf7] text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
               }`}
             >
-              <CheckCircle2 size={14} /> Resolver
+              <CheckCircle2 size={18} />
+              <span>Resolver</span>
             </button>
             <button
               onClick={markUnread}
-              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ${
+              className={`flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition-colors duration-150 ${
                 isUnreadActive
                   ? "bg-sky-500 border-sky-500 text-white shadow-sm"
-                  : "bg-cream border-border text-bronze hover:bg-sky-50 hover:text-sky-700"
+                  : "bg-[#f7f9fe] border-[#e6edf7] text-slate-600 hover:bg-sky-50 hover:text-sky-700"
               }`}
             >
-              <RefreshCw size={14} /> No leído
+              <RefreshCw size={18} />
+              <span>No leído</span>
             </button>
           </div>
+          <button
+            onClick={sendReminder}
+            disabled={sending}
+            className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-bronze px-3 text-sm font-semibold text-white
+                       shadow-sm transition-colors duration-150 hover:bg-bronze-deep disabled:opacity-50"
+          >
+            <Send size={14} /> Enviar recordatorio
+          </button>
         </div>
 
         {/* Panel content */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-4">
-            <section>
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="space-y-2.5">
+            <section className="rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
                   <Tag size={12} /> Etiquetas
@@ -1517,7 +1528,7 @@ export default function CRMPage() {
               </div>
             </section>
 
-            <section>
+            <section className="rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
               <p className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
                 <StickyNote size={12} /> Notas internas
               </p>
@@ -1565,17 +1576,6 @@ export default function CRMPage() {
           </div>
         </div>
 
-        {/* Reminder */}
-        <div className="border-t border-border p-4">
-          <button
-            onClick={sendReminder}
-            disabled={sending}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-bronze px-4 py-2.5 text-sm font-semibold text-white
-                       hover:bg-bronze-deep transition-colors duration-150 disabled:opacity-50"
-          >
-            <Send size={14} /> Enviar recordatorio
-          </button>
-        </div>
       </div>
     );
   }
