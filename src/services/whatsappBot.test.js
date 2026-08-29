@@ -798,6 +798,88 @@ test('handleBook filtra categorías ocultas (tienda, recordatorio)', async () =>
   assert.ok(!body.includes('recordatorio'), 'recordatorio no debe aparecer');
 });
 
+// ─── P4: text confirm/cancel in booking confirm step ────────────────
+
+test('P4: "confirmo" text triggers booking confirmation', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  prisma.$transaction = async (fn) => fn(prisma);
+  const origResolve = require('./appointmentService').resolveAndCreateAppointment;
+  require('./appointmentService').resolveAndCreateAppointment = async () => ({});
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT, connection: CONN, conv: CONV,
+      incoming: { type: 'text', text: { body: 'confirmo' } },
+    });
+    assert.ok(sent.some(s => s.kind === 'text' && /reserva|confirmada|agenda/i.test(s.body)), 'should confirm booking');
+  } finally {
+    require('./appointmentService').resolveAndCreateAppointment = origResolve;
+  }
+});
+
+test('P4: "Sí" with accent triggers booking confirmation', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  prisma.$transaction = async (fn) => fn(prisma);
+  const origResolve = require('./appointmentService').resolveAndCreateAppointment;
+  require('./appointmentService').resolveAndCreateAppointment = async () => ({});
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT, connection: CONN, conv: CONV,
+      incoming: { type: 'text', text: { body: 'Sí' } },
+    });
+    assert.ok(sent.some(s => s.kind === 'text' && /reserva|confirmada|agenda/i.test(s.body)), 'should confirm booking');
+  } finally {
+    require('./appointmentService').resolveAndCreateAppointment = origResolve;
+  }
+});
+
+test('P4: "no gracias" text cancels booking', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'no gracias' } },
+  });
+  assert.ok(sent.some(s => s.kind === 'text' && /cancelé la reserva/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'interactive'));
+});
+
+test('P4: unrecognized text in confirm step falls through to normal flow', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'hola quiero otro servicio' } },
+  });
+  assert.ok(sent.length > 0, 'should respond with something (menu or AI)');
+  assert.ok(!sent.some(s => s.kind === 'text' && /cancelé la reserva/.test(s.body)), 'should NOT cancel');
+});
+
 // ─── Guard: bot must not call methods missing from appointmentService ────
 test('bot only calls methods that appointmentService actually exports', () => {
   const fs = require('node:fs');
