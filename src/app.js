@@ -70,6 +70,16 @@ app.get('/health', async (req, res) => {
     res.status(503).json({ status: 'degraded', db: 'unreachable' });
   }
 });
+
+const BOOT_TIME = new Date().toISOString();
+app.get('/version', (_req, res) => {
+  const sha = process.env.RAILWAY_GIT_COMMIT_SHA;
+  res.json({
+    commit: sha ? sha.slice(0, 7) : 'desconocido',
+    deployedAt: BOOT_TIME,
+    nodeEnv: process.env.NODE_ENV || 'development',
+  });
+});
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/services', serviceRoutes);

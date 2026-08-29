@@ -29,6 +29,7 @@ const { SlotUnavailableError } = require('../../utils/errors');
 
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
+const DIAG_WAID = '593993629256'; // TEMPORAL — quitar tras resolver P1
 
 function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
@@ -1058,6 +1059,18 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
         : 'Hubo un problema al crear su reserva 😅 Le paso con recepción 💛';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
+
+      // TEMPORAL — eco de error solo para el número de diagnóstico
+      if (waId === DIAG_WAID) {
+        const stackLines = err?.stack ? String(err.stack).split('\n').slice(0, 4).join('\n') : '';
+        const raw = `[DIAG] ${err?.message || 'sin mensaje'}\n${stackLines}`;
+        const safe = raw.replace(/(?:ANTHROPIC_API_KEY|DATABASE_URL|WHATSAPP_ACCESS_TOKEN|WHATSAPP_APP_SECRET)=[^\s]*/gi, '[REDACTED]');
+        const diagMsg = safe.slice(0, 900);
+        try {
+          await transport.sendText(connection, waId, diagMsg);
+        } catch (_) { /* no bloquear si falla el eco */ }
+      }
+
       return handleEscalate({ tenant, connection, conv, waId, tone });
     }
   }
