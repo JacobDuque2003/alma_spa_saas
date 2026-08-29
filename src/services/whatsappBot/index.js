@@ -1118,7 +1118,7 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
     timeZone: 'America/Guayaquil', weekday: 'long', day: '2-digit', month: 'long',
     hour: '2-digit', minute: '2-digit',
   });
-  const estado = next.status === 'confirmado' ? 'confirmada' : 'pendiente de confirmar';
+  const estado = (next.status === 'confirmado' || next.status === 'pendiente_bot') ? 'confirmada' : 'pendiente de confirmar';
   const msg = tone === 'tu'
     ? `📋 Tu próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesitas cambiar algo, avísanos 💛`
     : `📋 Su próxima cita:\n\n${next.service?.name}\n${fecha}\nCabina: ${next.room?.name || '—'}\nEstado: ${estado}\n\nSi necesita cambiar algo, avísenos 💛`;

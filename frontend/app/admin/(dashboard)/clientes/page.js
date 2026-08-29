@@ -1467,6 +1467,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
   const inputSt = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none", boxSizing: "border-box" };
   const statusInfo = {
     pendiente: { label: "Reservó, falta confirmar", color: "#A89A87", bg: "rgba(168,154,135,0.14)" },
+    pendiente_bot: { label: "Confirmada por clienta vía WhatsApp", color: "#8C6E50", bg: "rgba(201,168,118,0.15)" },
     confirmado: { label: "Asistió / confirmada", color: "#6F7F45", bg: "rgba(111,127,69,0.12)" },
     cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
     no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },

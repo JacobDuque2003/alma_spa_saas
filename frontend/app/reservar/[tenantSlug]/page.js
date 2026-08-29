@@ -287,7 +287,7 @@ function SuccessView({ result }) {
           <CardContent className="space-y-2 pt-4">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Estado</span>
-              <Badge>{appt.status}</Badge>
+              <Badge>{appt.status === "pendiente_bot" ? "Confirmada" : appt.status === "pendiente" ? "Pendiente" : appt.status === "confirmado" ? "Confirmada" : appt.status === "cancelado" ? "Cancelada" : appt.status}</Badge>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Hora</span>

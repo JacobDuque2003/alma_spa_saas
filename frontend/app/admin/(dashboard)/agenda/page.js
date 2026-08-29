@@ -14,12 +14,14 @@ import { formatEcuadorPhone, phoneSearchText } from "@/lib/phone-format";
 const HOURS = [8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19];
 const STATUS_COLORS = {
   pendiente: { bg: "rgba(168,154,135,0.2)", border: "#A89A87", text: "#A89A87" },
+  pendiente_bot: { bg: "rgba(201,168,118,0.15)", border: "#C9A876", text: "#8C6E50" },
   confirmado: { bg: "rgba(201,168,118,0.2)", border: "transparent", text: "#8C6E50" },
   cancelado: { bg: "rgba(194,84,80,0.1)", border: "#C25450", text: "#C25450" },
   no_show: { bg: "rgba(194,84,80,0.10)", border: "#C25450", text: "#B85A56" },
 };
 const STATUS_LABELS = {
   pendiente: "Sin confirmar",
+  pendiente_bot: "Confirmada por clienta",
   confirmado: "Confirmado",
   cancelado: "Cancelado",
   no_show: "No asistió",
@@ -123,7 +125,7 @@ function matchesAgendaSearch(appt, query) {
   ].filter(Boolean).join(" ").toLocaleLowerCase("es-EC").includes(q);
 }
 
-const OPEN_APPOINTMENT_STATUSES = new Set(["pendiente", "confirmado"]);
+const OPEN_APPOINTMENT_STATUSES = new Set(["pendiente", "pendiente_bot", "confirmado"]);
 
 function addMinutesToDate(date, mins) {
   return new Date(date.getTime() + Number(mins || 0) * 60_000);
@@ -1600,9 +1602,17 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
               <>
                 <div style={{ borderTop: "1px solid rgba(168,154,135,0.3)", margin: "18px 0" }} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {appt.status === "pendiente_bot" && (
+                    <p style={{ fontSize: 13, color: "#8C6E50", margin: "0 0 8px", lineHeight: 1.4 }}>
+                      Confirmada por la clienta vía WhatsApp — pendiente de tu aprobación
+                    </p>
+                  )}
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {appt.status !== "confirmado" && (
+                    {appt.status !== "confirmado" && appt.status !== "pendiente_bot" && (
                       <button disabled={saving} onClick={() => changeStatus("confirmado")} style={pillBtn("rgba(201,168,118,0.2)", "#8C6E50", "1px solid rgba(201,168,118,0.4)")}>Confirmar</button>
+                    )}
+                    {appt.status === "pendiente_bot" && (
+                      <button disabled={saving} onClick={() => changeStatus("confirmado")} style={pillBtn("rgba(201,168,118,0.2)", "#8C6E50", "1px solid rgba(201,168,118,0.4)")}>Aprobar cita</button>
                     )}
                     <button disabled={saving} onClick={() => changeStatus("cancelado")} style={pillBtn("rgba(194,84,80,0.1)", "#C25450", "1px solid rgba(194,84,80,0.3)")}>Cancelar cita</button>
                     <button disabled={saving} onClick={() => changeStatus("no_show")} style={pillBtn("rgba(168,154,135,0.15)", "#A89A87", "1px solid rgba(168,154,135,0.4)")}>No asistió</button>

@@ -880,6 +880,25 @@ test('P4: unrecognized text in confirm step falls through to normal flow', async
   assert.ok(!sent.some(s => s.kind === 'text' && /cancelé la reserva/.test(s.body)), 'should NOT cancel');
 });
 
+// ─── P7: pendiente_bot shows "confirmada" to client ────────────────
+
+test('P7: handleMyAppointment shows "confirmada" for pendiente_bot status', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const futureDate = new Date(Date.now() + 86400000).toISOString();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  prisma.appointment.findFirst = async () => ({
+    id: 'a1', status: 'pendiente_bot', startsAt: futureDate,
+    service: { name: 'Masaje relajante' }, room: { name: 'Cabina 1' },
+  });
+  state.setFlowState(CONV.customerWaId, { flow: 'menu', tone: 'usted' });
+  await bot._internals.handleMyAppointment({ tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted' });
+  const reply = sent.find(s => s.kind === 'text' && /próxima cita/.test(s.body));
+  assert.ok(reply, 'should send appointment info');
+  assert.ok(/confirmada/i.test(reply.body), 'should say confirmada, not pendiente de confirmar');
+  assert.ok(!/pendiente de confirmar/i.test(reply.body), 'should NOT say pendiente de confirmar');
+});
+
 // ─── Guard: bot must not call methods missing from appointmentService ────
 test('bot only calls methods that appointmentService actually exports', () => {
   const fs = require('node:fs');
