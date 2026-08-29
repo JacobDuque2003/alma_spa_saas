@@ -850,7 +850,7 @@ export default function CRMPage() {
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-cream/40">
         {/* Chat header */}
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border bg-white/80 backdrop-blur-sm">
+        <div className="relative z-50 flex items-center justify-between gap-2 overflow-visible border-b border-border bg-white/80 px-4 py-3 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {isMobile && (
               <button
@@ -868,7 +868,7 @@ export default function CRMPage() {
               <div className="text-xs text-warm-gray">{selected.customerWaId}</div>
             </div>
           </div>
-          <div ref={headerMenuRef} className="flex items-center gap-2 flex-shrink-0">
+          <div ref={headerMenuRef} className="relative z-[70] flex flex-shrink-0 items-center gap-2">
             <button
               onClick={selected.botActive ? pauseBot : reactivateBot}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-150 ${
@@ -893,7 +893,7 @@ export default function CRMPage() {
                 <ChevronDown size={12} />
               </button>
               {showAssignees && (
-                <div className="absolute right-0 top-full z-20 mt-2 w-56 rounded-2xl border border-border bg-white p-2 shadow-xl">
+                <div className="absolute right-0 top-full z-[80] mt-2 w-56 rounded-2xl border border-border bg-white p-2 shadow-xl">
                   <button
                     onClick={() => { assignConversation(""); setShowAssignees(false); }}
                     className="w-full rounded-xl px-3 py-2 text-left text-xs text-warm-gray hover:bg-cream"
@@ -930,7 +930,7 @@ export default function CRMPage() {
                 <Search size={14} />
               </button>
               {chatSearchOpen && (
-                <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-2xl border border-border bg-white p-3 shadow-xl">
+                <div className="absolute right-0 top-full z-[80] mt-2 w-72 rounded-2xl border border-border bg-white p-3 shadow-xl">
                   <input
                     autoFocus
                     value={chatSearch}
@@ -976,7 +976,7 @@ export default function CRMPage() {
         )}
 
         {/* Messages */}
-        <div className="relative flex-1 min-h-0">
+        <div className="relative z-0 flex-1 min-h-0">
           <div
             ref={messagesContainerRef}
             onScroll={handleMessagesScroll}
