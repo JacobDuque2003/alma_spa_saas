@@ -6,7 +6,8 @@ import {
   Loader2, Send, ArrowLeft, Bot, UserRound, Search,
   MessageSquare, StickyNote, Tag, Phone, Calendar, Hash, ChevronRight,
   Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
-  ChevronDown, ArrowDown, Edit3, Settings,
+  ChevronDown, ArrowDown, Edit3, Settings, Paperclip, Download, FileText,
+  ImageIcon, Volume2, Video,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -39,6 +40,7 @@ const FILTERS = [
 ];
 
 const LIVE_REFRESH_MS = 30_000;
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "WA";
@@ -115,6 +117,7 @@ export default function CRMPage() {
   const messagesEndRef = useRef(null);
   const lastMsgIdRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const fileInputRef = useRef(null);
   const headerMenuRef = useRef(null);
   const quickRepliesRef = useRef(null);
   const [quickReplies, setQuickReplies] = useState(QUICK_REPLIES_DEFAULT);
@@ -369,6 +372,46 @@ export default function CRMPage() {
       await Promise.all([fetchConversation(), fetchConversations()]);
     } catch (err) {
       toast.error(err.message || "No se pudo enviar");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function sendAttachment(file) {
+    if (!file || !selectedId) return;
+    if (!selected?.withinWindow) {
+      toast.error("Han pasado más de 24h. Para escribir usa una plantilla/recordatorio.");
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error("El archivo supera el límite de 8MB");
+      return;
+    }
+    setSending(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      await authFetch(`/crm/conversations/${selectedId}/media`, {
+        method: "POST",
+        body: {
+          dataUrl,
+          filename: file.name,
+          caption: body.trim(),
+        },
+      });
+      setBody("");
+      toast.success("Adjunto enviado");
+      await Promise.all([fetchConversation(), fetchConversations()]);
+    } catch (err) {
+      toast.error(err.message || "No se pudo enviar el adjunto");
     } finally {
       setSending(false);
     }
@@ -636,6 +679,65 @@ export default function CRMPage() {
     );
   }
 
+  function isPlaceholderBody(value = "") {
+    return /^\[(imagen|audio|video|documento|sticker|ubicación|interactivo|mensaje)\]$/i.test(String(value).trim());
+  }
+
+  function renderMediaContent(m) {
+    if (!m.mediaId) return null;
+    const mediaUrl = `/api/proxy/crm/messages/${m.id}/media`;
+    const label = m.body && !isPlaceholderBody(m.body) ? m.body : "Abrir archivo";
+
+    if (m.type === "image" || m.type === "sticker") {
+      return (
+        <a href={mediaUrl} target="_blank" rel="noreferrer" className="mb-2 block overflow-hidden rounded-xl border border-border/70 bg-white/40">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={mediaUrl} alt={label} className="max-h-72 w-full object-cover" />
+        </a>
+      );
+    }
+
+    if (m.type === "audio") {
+      return (
+        <div className="mb-2 rounded-xl border border-border/70 bg-white/50 p-2">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-bronze">
+            <Volume2 size={13} /> Audio
+          </div>
+          <audio controls src={mediaUrl} className="w-full" />
+        </div>
+      );
+    }
+
+    if (m.type === "video") {
+      return (
+        <div className="mb-2 overflow-hidden rounded-xl border border-border/70 bg-white/50">
+          <div className="flex items-center gap-1.5 px-2 pt-2 text-xs font-semibold text-bronze">
+            <Video size={13} /> Video
+          </div>
+          <video controls src={mediaUrl} className="mt-2 max-h-72 w-full bg-black" />
+        </div>
+      );
+    }
+
+    return (
+      <a
+        href={mediaUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="mb-2 flex items-center gap-2 rounded-xl border border-border/70 bg-white/60 p-3 text-bronze-deep transition-colors hover:bg-white"
+      >
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze">
+          <FileText size={16} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold">{label}</span>
+          <span className="block text-[10px] text-warm-gray">Documento adjunto</span>
+        </span>
+        <Download size={15} className="flex-shrink-0" />
+      </a>
+    );
+  }
+
   // ─── Render helpers ──────────────────────────────────────────
   function renderConversationCard(c) {
     const isSelected = c.id === selectedId;
@@ -718,7 +820,9 @@ export default function CRMPage() {
           </div>
         </div>
         {c.unreadCount > 0 && (
-          <span className="mt-2 w-2.5 h-2.5 rounded-full bg-gold flex-shrink-0" />
+          <span className="mt-1 flex min-w-5 h-5 flex-shrink-0 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm">
+            {c.unreadCount > 99 ? "99+" : c.unreadCount}
+          </span>
         )}
       </button>
     );
@@ -763,9 +867,17 @@ export default function CRMPage() {
               )}
             </div>
           )}
-          <p className="whitespace-pre-wrap leading-relaxed">
-            {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
-          </p>
+          {renderMediaContent(m)}
+          {m.type === "image" && !m.mediaId && (
+            <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/50 p-2 text-xs text-bronze">
+              <ImageIcon size={14} /> Imagen pendiente
+            </div>
+          )}
+          {(!m.mediaId || (m.body && !isPlaceholderBody(m.body))) && (
+            <p className="whitespace-pre-wrap leading-relaxed">
+              {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
+            </p>
+          )}
           <p className="text-right text-[10px] text-warm-gray mt-1.5">
             {timeStr(m.createdAt)} {m.status ? `· ${m.status}` : ""}
           </p>
@@ -1117,6 +1229,17 @@ export default function CRMPage() {
 
         {/* Input */}
         <div className="flex items-center gap-2 px-4 py-3 border-t border-border bg-white/80 backdrop-blur-sm">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/jpeg,image/png,image/webp,audio/*,video/mp4,video/3gpp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) sendAttachment(file);
+            }}
+          />
           <button
             data-quick-replies-trigger
             onClick={() => {
@@ -1131,6 +1254,14 @@ export default function CRMPage() {
             `}
           >
             {"✨"}
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!selected.withinWindow || sending}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze transition-colors hover:bg-glow/40 disabled:opacity-40"
+            title="Adjuntar archivo"
+          >
+            <Paperclip size={16} />
           </button>
           <input
             className="flex-1 px-4 py-2.5 rounded-full border border-border bg-white text-sm text-bronze-deep

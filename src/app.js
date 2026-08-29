@@ -57,6 +57,14 @@ app.use('/services', express.json({
   limit: '1mb',
 }));
 
+// Adjuntos de la bandeja CRM: se envían como data URL base64 desde el frontend
+// y luego el backend los sube a Meta. El límite queda acotado a CRM para no
+// aflojar el resto de la API.
+app.use('/crm', express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; },
+  limit: '12mb',
+}));
+
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
   limit: '256kb',

@@ -45,6 +45,23 @@ function summarizePayload(body) {
   return { entries: entries.length, changes, messages, statuses };
 }
 
+function bodyFromIncomingMedia(message) {
+  if (!message) return null;
+  if (message.type === 'text') return message.text?.body ?? null;
+  if (message.type === 'image') return message.image?.caption || '[imagen]';
+  if (message.type === 'audio') return '[audio]';
+  if (message.type === 'video') return message.video?.caption || '[video]';
+  if (message.type === 'document') return message.document?.caption || message.document?.filename || '[documento]';
+  if (message.type === 'sticker') return '[sticker]';
+  if (message.type === 'location') return '[ubicación]';
+  if (message.type === 'interactive') {
+    return message.interactive?.button_reply?.title
+      || message.interactive?.list_reply?.title
+      || '[interactivo]';
+  }
+  return `[${message.type || 'mensaje'}]`;
+}
+
 async function loadTenantOrDrop(req, res) {
   const tenant = await prisma.tenant.findUnique({ where: { slug: req.params.tenantSlug } });
   if (!tenant || !tenant.active) { res.sendStatus(404); return null; }
@@ -223,7 +240,7 @@ async function processInboundMessage(tenant, message, contacts) {
   });
 
   const contactName = Array.isArray(contacts) ? contacts.find((c) => c?.wa_id === fromWaId)?.profile?.name ?? null : null;
-  const bodyText = message.type === 'text' ? message.text?.body ?? null : null;
+  const bodyText = bodyFromIncomingMedia(message);
   const waTs = message.timestamp ? new Date(Number(message.timestamp) * 1000) : new Date();
 
   const client = await prisma.client.findFirst({

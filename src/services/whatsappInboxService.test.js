@@ -16,6 +16,10 @@ function mockTransport(overrides = {}) {
   }));
   transport.sendText = overrides.sendText || (async () => ({ ok: true, data: { messages: [{ id: 'wamid.NEW' }] } }));
   transport.sendTemplate = overrides.sendTemplate || (async () => ({ ok: true, data: { messages: [{ id: 'wamid.NEW' }] } }));
+  transport.uploadMedia = overrides.uploadMedia || (async () => ({ ok: true, mediaId: 'media.UPLOADED', data: { id: 'media.UPLOADED' } }));
+  transport.sendMediaByMediaId = overrides.sendMediaByMediaId || (async () => ({ ok: true, data: { messages: [{ id: 'wamid.MEDIA' }] } }));
+  transport.getMediaInfo = overrides.getMediaInfo || (async () => ({ ok: true, data: { url: 'https://media.test/file', mime_type: 'image/png' } }));
+  transport.downloadMedia = overrides.downloadMedia || (async () => ({ ok: true, buffer: Buffer.from('media'), mimeType: 'image/png' }));
 }
 
 test('sendManualText: FUERA de la ventana de 24h → 422 WINDOW_CLOSED', async () => {
@@ -201,6 +205,125 @@ test('sendManualText: auto desactiva botActive', async () => {
   };
   await inbox.sendManualText({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', 'hola');
   assert.equal(updateData.botActive, false, 'sendManualText debe desactivar el bot');
+});
+
+test('sendManualMedia: sube adjunto, lo envía por WhatsApp y actualiza conversación', async () => {
+  let uploadedArgs = null;
+  let sentArgs = null;
+  let updateData = null;
+  mockTransport({
+    uploadMedia: async (conn, buffer, mimeType, filename) => {
+      uploadedArgs = { conn, buffer, mimeType, filename };
+      return { ok: true, mediaId: 'media.IMG' };
+    },
+    sendMediaByMediaId: async (conn, toWaId, type, mediaId, options) => {
+      sentArgs = { conn, toWaId, type, mediaId, options };
+      return { ok: true, data: { messages: [{ id: 'wamid.IMG' }] } };
+    },
+  });
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999', lastInboundAt: new Date(Date.now() - 60_000) }),
+    update: async ({ data }) => { updateData = data; return {}; },
+  };
+  prisma.whatsAppMessage = {
+    create: async ({ data }) => ({ id: 'm1', ...data }),
+    update: async ({ data }) => ({ id: 'm1', ...data }),
+  };
+
+  const msg = await inbox.sendManualMedia(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    'c1',
+    {
+      dataUrl: `data:image/png;base64,${Buffer.from('png').toString('base64')}`,
+      filename: 'foto consulta.png',
+      caption: 'Mira esta referencia',
+    }
+  );
+
+  assert.equal(uploadedArgs.mimeType, 'image/png');
+  assert.equal(uploadedArgs.filename, 'foto consulta.png');
+  assert.equal(uploadedArgs.buffer.toString(), 'png');
+  assert.equal(sentArgs.toWaId, '593999');
+  assert.equal(sentArgs.type, 'image');
+  assert.equal(sentArgs.mediaId, 'media.IMG');
+  assert.equal(sentArgs.options.caption, 'Mira esta referencia');
+  assert.equal(msg.status, 'sent');
+  assert.equal(msg.mediaId, 'media.IMG');
+  assert.equal(updateData.botActive, false);
+  assert.equal(updateData.lastMessagePreview, 'Mira esta referencia');
+});
+
+test('sendManualMedia: rechaza archivos no permitidos', async () => {
+  mockTransport();
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999', lastInboundAt: new Date(Date.now() - 60_000) }),
+  };
+
+  await assert.rejects(
+    () => inbox.sendManualMedia(
+      { id: 'u1', tenantId: 't1', role: 'personal' },
+      'c1',
+      { dataUrl: `data:application/x-msdownload;base64,${Buffer.from('bad').toString('base64')}`, filename: 'virus.exe' }
+    ),
+    (err) => err.status === 400 && /no permitido/i.test(err.message)
+  );
+});
+
+test('sendManualMedia: no simula caption en audios porque WhatsApp no lo soporta', async () => {
+  let sentArgs = null;
+  let updateData = null;
+  mockTransport({
+    uploadMedia: async () => ({ ok: true, mediaId: 'media.AUDIO' }),
+    sendMediaByMediaId: async (conn, toWaId, type, mediaId, options) => {
+      sentArgs = { conn, toWaId, type, mediaId, options };
+      return { ok: true, data: { messages: [{ id: 'wamid.AUDIO' }] } };
+    },
+  });
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999', lastInboundAt: new Date(Date.now() - 60_000) }),
+    update: async ({ data }) => { updateData = data; return {}; },
+  };
+  prisma.whatsAppMessage = {
+    create: async ({ data }) => ({ id: 'm1', ...data }),
+    update: async ({ data }) => ({ id: 'm1', ...data }),
+  };
+
+  await inbox.sendManualMedia(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    'c1',
+    {
+      dataUrl: `data:audio/ogg;base64,${Buffer.from('audio').toString('base64')}`,
+      filename: 'nota-voz.ogg',
+      caption: 'Este texto no viaja con audio',
+    }
+  );
+
+  assert.equal(sentArgs.type, 'audio');
+  assert.equal(sentArgs.options.caption, undefined);
+  assert.equal(updateData.lastMessagePreview, 'nota-voz.ogg');
+});
+
+test('getMessageMedia: descarga archivo de WhatsApp respetando tenant', async () => {
+  mockTransport({
+    getMediaInfo: async (conn, mediaId) => {
+      assert.equal(conn.tenantId, 't1');
+      assert.equal(mediaId, 'media.IN');
+      return { ok: true, data: { url: 'https://media.test/inbound', mime_type: 'application/pdf' } };
+    },
+    downloadMedia: async (conn, url) => {
+      assert.equal(conn.tenantId, 't1');
+      assert.equal(url, 'https://media.test/inbound');
+      return { ok: true, buffer: Buffer.from('pdf-data'), mimeType: 'application/pdf' };
+    },
+  });
+  prisma.whatsAppMessage = {
+    findUnique: async () => ({ id: 'm1', tenantId: 't1', type: 'document', body: 'receta.pdf', mediaId: 'media.IN' }),
+  };
+
+  const media = await inbox.getMessageMedia({ id: 'u1', tenantId: 't1', role: 'personal' }, 'm1');
+  assert.equal(media.mimeType, 'application/pdf');
+  assert.equal(media.filename, 'receta.pdf');
+  assert.equal(media.buffer.toString(), 'pdf-data');
 });
 
 test('setLabels: filtra etiquetas inválidas', async () => {

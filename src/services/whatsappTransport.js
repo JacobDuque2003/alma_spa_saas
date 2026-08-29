@@ -80,12 +80,47 @@ async function postToMeta(conn, path, body) {
   return { ok: false, status: lastErr?.status ?? 0, errorTitle: lastErr?.message ?? 'Fallo de red' };
 }
 
+async function getFromMeta(conn, path) {
+  const token = getAccessTokenForSend(conn);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${META_GRAPH_URL}/${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) return { ok: true, data: await res.json() };
+    let detail; try { detail = (await res.json())?.error; } catch (_) { detail = undefined; }
+    return { ok: false, status: res.status, errorCode: detail?.code, errorTitle: detail?.message };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, status: err.status || 0, errorTitle: sanitizeError(err).message };
+  }
+}
+
 async function sendText(conn, toWaId, text) {
   return postToMeta(conn, `${conn.phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
     to: toWaId,
     type: 'text',
     text: { body: text },
+  });
+}
+
+async function sendMediaByMediaId(conn, toWaId, type, mediaId, options = {}) {
+  const safeType = ['image', 'document', 'audio', 'video', 'sticker'].includes(type) ? type : 'document';
+  const payload = {
+    id: mediaId,
+    ...(options.caption && ['image', 'document', 'video'].includes(safeType) ? { caption: options.caption } : {}),
+    ...(options.filename && safeType === 'document' ? { filename: options.filename } : {}),
+  };
+  return postToMeta(conn, `${conn.phoneNumberId}/messages`, {
+    messaging_product: 'whatsapp',
+    to: toWaId,
+    type: safeType,
+    [safeType]: payload,
   });
 }
 
@@ -110,12 +145,12 @@ async function sendImageByMediaId(conn, toWaId, mediaId, caption) {
   });
 }
 
-async function uploadMedia(conn, buffer, mimeType) {
+async function uploadMedia(conn, buffer, mimeType, filename = null) {
   const token = getAccessTokenForSend(conn);
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('type', mimeType);
-  form.append('file', new Blob([buffer], { type: mimeType }), `image.${mimeType.split('/')[1] || 'jpg'}`);
+  form.append('file', new Blob([buffer], { type: mimeType }), filename || `archivo.${mimeType.split('/')[1] || 'bin'}`);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
@@ -133,6 +168,36 @@ async function uploadMedia(conn, buffer, mimeType) {
     }
     const data = await res.json();
     return { ok: true, mediaId: data.id };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, status: err.status || 0, errorTitle: sanitizeError(err).message };
+  }
+}
+
+async function getMediaInfo(conn, mediaId) {
+  return getFromMeta(conn, mediaId);
+}
+
+async function downloadMedia(conn, mediaUrl) {
+  const token = getAccessTokenForSend(conn);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+  try {
+    const res = await fetch(mediaUrl, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      return { ok: false, status: res.status, errorTitle: `Meta media download ${res.status}` };
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return {
+      ok: true,
+      buffer: Buffer.from(arrayBuffer),
+      mimeType: res.headers.get('content-type') || 'application/octet-stream',
+    };
   } catch (err) {
     clearTimeout(timer);
     return { ok: false, status: err.status || 0, errorTitle: sanitizeError(err).message };
@@ -161,6 +226,9 @@ module.exports = {
   sendTemplate,
   sendInteractive,
   sendImageByMediaId,
+  sendMediaByMediaId,
   uploadMedia,
+  getMediaInfo,
+  downloadMedia,
   sanitizeError,
 };

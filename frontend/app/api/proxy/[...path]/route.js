@@ -17,6 +17,9 @@ function isBinaryContentType(ct) {
     lower.startsWith("audio/") ||
     lower.startsWith("video/") ||
     lower.startsWith("application/pdf") ||
+    lower.startsWith("application/msword") ||
+    lower.startsWith("application/vnd.ms-") ||
+    lower.startsWith("application/vnd.openxmlformats-officedocument") ||
     lower.startsWith("application/octet-stream")
   );
 }
@@ -98,6 +101,8 @@ async function proxyRequest(req, { params }) {
     if (backendCC) responseHeaders["Cache-Control"] = backendCC;
     const etag = res.headers.get("ETag");
     if (etag) responseHeaders["ETag"] = etag;
+    const contentDisposition = res.headers.get("Content-Disposition");
+    if (contentDisposition) responseHeaders["Content-Disposition"] = contentDisposition;
   } else {
     // JSON/texto: datos de clientes, reservas y permisos nunca deben
     // guardarse en cachés del navegador ni de proxies intermedios.

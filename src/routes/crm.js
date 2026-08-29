@@ -69,9 +69,28 @@ router.get('/conversations/:id/messages', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/messages/:id/media', async (req, res, next) => {
+  try {
+    const media = await inboxService.getMessageMedia(req.user, req.params.id);
+    if (!media) return res.status(404).json({ error: 'Mensaje no encontrado' });
+    res.set('Content-Type', media.mimeType);
+    res.set('Cache-Control', 'private, max-age=300');
+    res.set('Content-Disposition', `inline; filename="${String(media.filename).replace(/"/g, '')}"`);
+    res.send(media.buffer);
+  } catch (err) { next(err); }
+});
+
 router.post('/conversations/:id/messages', async (req, res, next) => {
   try {
     const msg = await inboxService.sendManualText(req.user, req.params.id, req.body?.body);
+    if (!msg) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.status(201).json(msg);
+  } catch (err) { next(err); }
+});
+
+router.post('/conversations/:id/media', async (req, res, next) => {
+  try {
+    const msg = await inboxService.sendManualMedia(req.user, req.params.id, req.body);
     if (!msg) return res.status(404).json({ error: 'Conversación no encontrada' });
     res.status(201).json(msg);
   } catch (err) { next(err); }

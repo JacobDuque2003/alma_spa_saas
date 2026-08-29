@@ -23,6 +23,27 @@ const DEFAULT_QUICK_REPLIES = [
   { key: 'agendar', icon: '💆', title: 'Agendar', text: 'Claro, podemos ayudarte a agendar una cita. ¿Qué día y horario te queda mejor?' },
   { key: 'cumple', icon: '🎂', title: 'Cumple', text: '¡Feliz cumpleaños! En Alma Spa tenemos un detalle especial para ti.' },
 ];
+const MAX_CRM_MEDIA_BYTES = 8 * 1024 * 1024;
+const ALLOWED_MEDIA_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'audio/aac',
+  'audio/amr',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/ogg',
+  'audio/webm',
+  'video/mp4',
+  'video/3gpp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+];
 
 function isWithinWindow(lastInboundAt) {
   if (!lastInboundAt) return false;
@@ -33,6 +54,55 @@ function previewOf(text) {
   if (!text) return null;
   const clean = String(text).replace(/\s+/g, ' ').trim();
   return clean.length > 120 ? clean.slice(0, 120) + '…' : clean;
+}
+
+function sanitizeFilename(name = 'archivo') {
+  const clean = String(name || 'archivo')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  return clean || 'archivo';
+}
+
+function mediaTypeFromMime(mimeType) {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('video/')) return 'video';
+  return 'document';
+}
+
+function decodeMediaDataUrl(dataUrl) {
+  const match = /^data:([^;,]+);base64,([a-z0-9+/=\s]+)$/i.exec(String(dataUrl || ''));
+  if (!match) throw new BadRequestError('Archivo inválido');
+  const mimeType = match[1].toLowerCase();
+  if (!ALLOWED_MEDIA_TYPES.includes(mimeType)) {
+    throw new BadRequestError('Tipo de archivo no permitido para WhatsApp');
+  }
+  const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+  if (!buffer.length) throw new BadRequestError('El archivo está vacío');
+  if (buffer.length > MAX_CRM_MEDIA_BYTES) {
+    throw new BadRequestError('El archivo supera el límite de 8MB');
+  }
+  return { buffer, mimeType };
+}
+
+function bodyFromIncomingMedia(message) {
+  if (!message) return null;
+  if (message.type === 'text') return message.text?.body ?? null;
+  if (message.type === 'image') return message.image?.caption || '[imagen]';
+  if (message.type === 'audio') return '[audio]';
+  if (message.type === 'video') return message.video?.caption || '[video]';
+  if (message.type === 'document') return message.document?.caption || message.document?.filename || '[documento]';
+  if (message.type === 'sticker') return '[sticker]';
+  if (message.type === 'location') return '[ubicación]';
+  if (message.type === 'interactive') {
+    return message.interactive?.button_reply?.title
+      || message.interactive?.list_reply?.title
+      || '[interactivo]';
+  }
+  return `[${message.type || 'mensaje'}]`;
 }
 
 function slugLabel(text, fallback = 'etiqueta') {
@@ -357,6 +427,39 @@ async function listMessages(actor, conversationId, query) {
   };
 }
 
+async function getMessageMedia(actor, messageId) {
+  const message = await prisma.whatsAppMessage.findUnique({
+    where: { id: messageId },
+    select: {
+      id: true,
+      tenantId: true,
+      type: true,
+      body: true,
+      mediaId: true,
+    },
+  });
+  if (!message) return null;
+  assertTenantScope(actor, message.tenantId);
+  if (!message.mediaId) throw new BadRequestError('Este mensaje no tiene archivo adjunto');
+
+  const conn = await transport.loadActiveConnection(message.tenantId);
+  if (!conn) throw new BadRequestError('WhatsApp no está conectado para este tenant');
+
+  const info = await transport.getMediaInfo(conn, message.mediaId);
+  if (!info.ok || !info.data?.url) {
+    throw new BadRequestError(info.errorTitle || 'No se pudo obtener el archivo desde WhatsApp');
+  }
+  const downloaded = await transport.downloadMedia(conn, info.data.url);
+  if (!downloaded.ok) {
+    throw new BadRequestError(downloaded.errorTitle || 'No se pudo descargar el archivo desde WhatsApp');
+  }
+  return {
+    buffer: downloaded.buffer,
+    mimeType: info.data.mime_type || downloaded.mimeType || 'application/octet-stream',
+    filename: sanitizeFilename(message.body || `whatsapp-${message.type || 'archivo'}`),
+  };
+}
+
 async function sendManualText(actor, conversationId, text) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
@@ -400,6 +503,84 @@ async function sendManualText(actor, conversationId, text) {
       lastOutboundAt: now,
       lastMessageAt: now,
       lastMessagePreview: previewOf(text),
+      botActive: false,
+      status: 'open',
+      assignedToUserId: actor.id,
+    },
+  });
+  publishConversationEvent(conv.tenantId, 'conversation.message.created', {
+    conversationId: conv.id,
+    messageId: updated.id,
+    direction: 'outbound',
+    senderType: 'agent',
+  });
+  return updated;
+}
+
+async function sendManualMedia(actor, conversationId, payload = {}) {
+  const conv = await loadConversationForActor(actor, conversationId);
+  if (!conv) return null;
+  if (!isWithinWindow(conv.lastInboundAt)) {
+    const err = new BadRequestError('WINDOW_CLOSED: pasaron más de 24h desde el último mensaje del cliente. Usá el recordatorio (plantilla).');
+    err.status = 422;
+    throw err;
+  }
+
+  const { buffer, mimeType } = decodeMediaDataUrl(payload.dataUrl);
+  const filename = sanitizeFilename(payload.filename || 'archivo');
+  const caption = String(payload.caption || '').trim().slice(0, 1024);
+  const type = mediaTypeFromMime(mimeType);
+  const supportsCaption = ['image', 'document', 'video'].includes(type);
+  const displayBody = (supportsCaption ? caption : '') || filename || `[${type}]`;
+
+  const conn = await transport.loadActiveConnection(conv.tenantId);
+  if (!conn) throw new BadRequestError('WhatsApp no está conectado para este tenant');
+
+  const message = await prisma.whatsAppMessage.create({
+    data: {
+      tenantId: conv.tenantId,
+      conversationId: conv.id,
+      direction: 'outbound',
+      senderType: 'agent',
+      type,
+      status: 'queued',
+      body: displayBody,
+      sentByUserId: actor.id,
+    },
+  });
+
+  const uploaded = await transport.uploadMedia(conn, buffer, mimeType, filename);
+  if (!uploaded.ok) {
+    const failed = await prisma.whatsAppMessage.update({
+      where: { id: message.id },
+      data: {
+        status: 'failed',
+        errorCode: String(uploaded.status ?? ''),
+        errorTitle: String(uploaded.errorTitle ?? '').slice(0, 250),
+      },
+    });
+    return failed;
+  }
+
+  const send = await transport.sendMediaByMediaId(conn, conv.customerWaId, type, uploaded.mediaId, {
+    caption: supportsCaption ? caption || undefined : undefined,
+    filename: type === 'document' ? filename : undefined,
+  });
+  const finalState = send.ok
+    ? { status: 'sent', waMessageId: send.data?.messages?.[0]?.id ?? null, mediaId: uploaded.mediaId }
+    : { status: 'failed', mediaId: uploaded.mediaId, errorCode: String(send.errorCode ?? send.status ?? ''), errorTitle: String(send.errorTitle ?? '').slice(0, 250) };
+
+  const updated = await prisma.whatsAppMessage.update({
+    where: { id: message.id },
+    data: finalState,
+  });
+  const now = new Date();
+  await prisma.whatsAppConversation.update({
+    where: { id: conv.id },
+    data: {
+      lastOutboundAt: now,
+      lastMessageAt: now,
+      lastMessagePreview: previewOf(displayBody),
       botActive: false,
       status: 'open',
       assignedToUserId: actor.id,
@@ -711,7 +892,9 @@ module.exports = {
   listConversations,
   getConversation,
   listMessages,
+  getMessageMedia,
   sendManualText,
+  sendManualMedia,
   sendReminder,
   markRead,
   setReadState,
