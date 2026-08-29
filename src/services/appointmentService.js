@@ -557,6 +557,7 @@ async function updateStatus(actor, id, status) {
 
 module.exports = {
   getAvailability,
+  resolveAndCreateAppointment,
   createPublicBooking,
   getBookingByToken,
   cancelBookingByToken,

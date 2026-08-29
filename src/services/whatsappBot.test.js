@@ -797,3 +797,17 @@ test('handleBook filtra categorías ocultas (tienda, recordatorio)', async () =>
   assert.ok(!body.includes('tienda'), 'tienda no debe aparecer');
   assert.ok(!body.includes('recordatorio'), 'recordatorio no debe aparecer');
 });
+
+// ─── Guard: bot must not call methods missing from appointmentService ────
+test('bot only calls methods that appointmentService actually exports', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const realExports = Object.keys(require('./appointmentService'));
+  const src = fs.readFileSync(path.join(__dirname, 'whatsappBot', 'index.js'), 'utf8');
+  const calls = [...src.matchAll(/appointmentService\.(\w+)\s*\(/g)].map(m => m[1]);
+  assert.ok(calls.length > 0, 'should find at least one appointmentService call in bot source');
+  for (const method of calls) {
+    assert.ok(realExports.includes(method),
+      `bot calls appointmentService.${method}() but it is NOT exported — add it to module.exports in appointmentService.js`);
+  }
+});

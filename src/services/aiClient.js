@@ -160,7 +160,7 @@ function buildChatSystemPrompt(context = {}) {
   const todayISO = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
   const dayName = new Intl.DateTimeFormat('es-EC', { timeZone: tz, weekday: 'long' }).format(now);
 
-  return `Eres Almita, la asistente de Alma Spa Wellness Studio en Zamora, Ecuador.
+  return `Eres Almita, la asistente de Alma Spa Holística en Zamora, Ecuador.
 Horario: lunes a sábado, mañana 9:00-12:00, tarde 15:00-20:00. Domingos cerrado.
 Filosofía: bienestar integral cuerpo-mente-espíritu.
 HOY: ${todayISO} (${dayName}).
