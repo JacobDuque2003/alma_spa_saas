@@ -2,6 +2,24 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.1] - 2026-08-28
+
+### Agregado
+- Respuestas rapidas configurables por tenant en CRM WhatsApp (`GET/PUT /crm/quick-replies`), guardadas en `Tenant.config.crm.quickReplies`.
+- Modo de configuracion con engrane para respuestas rapidas: crear, editar y eliminar sin usar boton "+ Mas".
+- Modo de configuracion con engrane para etiquetas: crear, editar y eliminar sin contaminar la vista normal.
+
+### Cambiado
+- La Bandeja CRM queda mas minimalista: chips en vista normal, controles superiores sin superposicion, asignacion/busqueda cerrandose entre si y cierre de menus al hacer clic afuera.
+- Seleccionar etiquetas ya no fuerza una recarga visual completa de la bandeja; el evento actualiza solo la conversacion afectada.
+- El icono de respuesta rapida se normaliza para evitar cortes raros de emojis.
+
+### Verificado
+- Backend: `npm test` -> 389/389 tests.
+- Frontend: `npm run lint` -> 0 errores (3 warnings antiguos fuera de CRM).
+- Frontend: `npm run build` -> verde.
+- Produccion: backend `/health` 200 y frontend `/admin/crm` 200.
+
 ## [0.10.0] - 2026-07-16
 
 ### Agregado (Fase 5C/5D - Clientes + CRM + Reportes + Personal + Configuracion)

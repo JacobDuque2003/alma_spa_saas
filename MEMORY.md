@@ -1,6 +1,16 @@
 # Memoria del proyecto — Alma Spa Backend
 
 > Contexto vivo para retomar el trabajo entre sesiones. Ver también `docs/` (producto, arquitectura, roadmap) y el brief completo de Etapa 4 en `CLAUDE.md` de la carpeta `PROYECTOS/`.
+## Actualizacion 2026-08-28 - Bandeja WhatsApp CRM estilo conversacion
+
+Se pulio la pestaña `/admin/crm` para acercarla al comportamiento esperado tipo WhatsApp/FibraNet sin contaminar visualmente la pantalla diaria.
+
+Cambios principales: conversaciones en vivo por SSE/polling con scroll al ultimo mensaje, chips/filtros mas limpios, acciones "Resolver" y "No leido" mutuamente excluyentes visualmente, boton para bajar al final del chat, busqueda dentro de la conversacion, asignacion desde el header, cierre de menus al hacer clic afuera, y reduccion de recargas visuales al seleccionar etiquetas.
+
+Configuracion operativa: las etiquetas y las respuestas rapidas ahora se administran desde un engrane. En uso normal solo se ven chips/respuestas; al entrar al modo configuracion se pueden crear, editar y eliminar. Las respuestas rapidas se guardan por tenant en `Tenant.config.crm.quickReplies`; las etiquetas en `Tenant.config.crm.labels`. Se agregaron endpoints protegidos `GET/PUT /crm/quick-replies`.
+
+Verificacion: `npm test` backend 389/389, `npm run lint` frontend sin errores (solo warnings antiguos fuera de CRM), `npm run build` frontend verde, y produccion responde 200 en backend `/health` y frontend `/admin/crm`.
+
 ## Actualizacion 2026-08-26 - Paginas legales publicas para Meta/WhatsApp
 
 Se agregaron tres paginas publicas en el frontend para completar los requisitos de publicacion de Meta Developers / WhatsApp Cloud API:
