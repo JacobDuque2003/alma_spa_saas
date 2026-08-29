@@ -243,9 +243,11 @@ async function chat(userMessage, context = {}) {
       const outputTokens = usage.output_tokens || 0;
 
       let parsed;
+      let parseOk = false;
       try {
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        parseOk = parsed !== null;
       } catch {
         parsed = null;
       }
@@ -262,6 +264,8 @@ async function chat(userMessage, context = {}) {
         replyText,
         params,
         needsData,
+        rawText: String(text).slice(0, 400),
+        parseOk,
         model: MODEL,
         inputTokens,
         outputTokens,

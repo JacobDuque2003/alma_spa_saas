@@ -367,10 +367,24 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
       userMessage: bodyText, intent: null, reply: null,
       aiResult: { ...aiResult, latencyMs },
     });
+    logBot('info', 'cayó a menú', { intent: null, hasReply: false, desdeHandler: 'handleTextMessage:aiFailed' });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
   const enrichedAi = { ...aiResult, latencyMs };
+
+  logBot('info', 'IA respondió', {
+    tenant: tenant.slug,
+    conversationId: conv.id,
+    intent: aiResult.intent,
+    hasReply: Boolean(aiResult.replyText),
+    params: Object.keys(aiResult.params || {}),
+    rawAiText: String(aiResult.rawText || '').slice(0, 400),
+    parseOk: Boolean(aiResult.parseOk),
+    latencyMs,
+    costUsd: Number((aiResult.costUsd || 0).toFixed(4)),
+  });
+
   intentCache.set(bodyText, aiResult.intent, aiResult.replyText);
 
   await logBotInteraction(tenant.id, conv, {
@@ -401,12 +415,14 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply, params }) {
   switch (intent) {
     case 'menu':
+      logBot('info', 'cayó a menú', { intent, hasReply: Boolean(aiReply), desdeHandler: 'routeIntent:menu' });
       return sendMainMenu({ tenant, connection, conv, waId, tone });
 
     case 'greeting': {
       // First interaction (history only has current message) → show greeting menu
       const history = state.getHistory(waId);
       if (history.length <= 1 && !aiReply) {
+        logBot('info', 'cayó a menú', { intent, hasReply: false, desdeHandler: 'routeIntent:greeting:first' });
         return sendMainMenu({ tenant, connection, conv, waId, tone });
       }
       // Subsequent greetings → AI reply only (no menu)
@@ -415,6 +431,7 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
         await recordBotMessage(tenant.id, conv, r, { body: aiReply });
         return;
       }
+      logBot('info', 'cayó a menú', { intent, hasReply: false, desdeHandler: 'routeIntent:greeting:noReply' });
       return sendMainMenu({ tenant, connection, conv, waId, tone });
     }
 
@@ -496,6 +513,7 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
     await recordBotMessage(tenant.id, conv, r, { body: aiReply });
     return;
   }
+  logBot('info', 'cayó a menú', { intent: 'unclear', hasReply: false, desdeHandler: 'handleUnclear:noReply' });
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 

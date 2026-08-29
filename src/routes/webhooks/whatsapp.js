@@ -318,7 +318,14 @@ async function processInboundMessage(tenant, message, contacts) {
       });
     }
   } catch (err) {
-    console.warn('[BOT] handleInboundMessage falló:', transport.sanitizeError(err));
+    const sanitized = transport.sanitizeError(err);
+    logWebhook('error', 'handleInboundMessage lanzó excepción', {
+      handler: 'processInboundMessage',
+      error: sanitized?.message || String(sanitized),
+      stack: err?.stack ? String(err.stack).split('\n').slice(0, 5).join(' | ') : null,
+      conversationId: updatedConv?.id ?? null,
+      waIdTail: safeTail(fromWaId),
+    });
   }
 }
 
