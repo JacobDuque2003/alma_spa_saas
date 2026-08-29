@@ -218,6 +218,42 @@ test('setLabels: filtra etiquetas inválidas', async () => {
   assert.deepEqual(result.labels, ['consulta', 'queja']);
 });
 
+test('saveLabelDefinitions: permite dejar la lista de etiquetas vacía', async () => {
+  let updateData = null;
+  prisma.tenant = {
+    findUnique: async () => ({ id: 't1', config: { crm: { labels: inbox.DEFAULT_LABELS } } }),
+    update: async ({ data }) => { updateData = data; return { id: 't1' }; },
+  };
+
+  const result = await inbox.saveLabelDefinitions({ id: 'u1', tenantId: 't1', role: 'personal' }, []);
+
+  assert.deepEqual(result, []);
+  assert.deepEqual(updateData.config.crm.labels, []);
+});
+
+test('saveQuickReplies: normaliza respuestas rápidas y permite lista vacía', async () => {
+  let updateData = null;
+  prisma.tenant = {
+    findUnique: async () => ({ id: 't1', config: { crm: { quickReplies: inbox.DEFAULT_QUICK_REPLIES } } }),
+    update: async ({ data }) => { updateData = data; return { id: 't1' }; },
+  };
+
+  const saved = await inbox.saveQuickReplies(
+    { id: 'u1', tenantId: 't1', role: 'personal' },
+    [{ icon: '🌿 largo', title: '  Bienvenida nueva  ', text: ' Hola bonita ' }]
+  );
+  assert.deepEqual(saved, [{
+    key: 'bienvenida_nueva',
+    icon: '🌿',
+    title: 'Bienvenida nueva',
+    text: 'Hola bonita',
+  }]);
+  assert.deepEqual(updateData.config.crm.quickReplies, saved);
+
+  const empty = await inbox.saveQuickReplies({ id: 'u1', tenantId: 't1', role: 'personal' }, []);
+  assert.deepEqual(empty, []);
+});
+
 test('updateConversation: permite marcar no leído y leído con unreadCount controlado', async () => {
   const updates = [];
   prisma.whatsAppConversation = {

@@ -32,6 +32,20 @@ router.put('/labels', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/quick-replies', async (req, res, next) => {
+  try {
+    const quickReplies = await inboxService.listQuickReplies(req.user);
+    res.json({ items: quickReplies });
+  } catch (err) { next(err); }
+});
+
+router.put('/quick-replies', async (req, res, next) => {
+  try {
+    const quickReplies = await inboxService.saveQuickReplies(req.user, req.body?.quickReplies);
+    res.json({ items: quickReplies });
+  } catch (err) { next(err); }
+});
+
 router.get('/conversations', async (req, res, next) => {
   try {
     const result = await inboxService.listConversations(req.user, req.query);

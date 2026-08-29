@@ -16,6 +16,13 @@ const DEFAULT_LABELS = [
   { key: 'queja', text: 'Queja', tone: 'red' },
   { key: 'nueva_clienta', text: 'Nueva clienta', tone: 'sky' },
 ];
+const DEFAULT_QUICK_REPLIES = [
+  { key: 'saludo', icon: '👋', title: 'Saludo', text: 'Hola, gracias por escribir a Alma Spa. ¿En qué podemos ayudarte?' },
+  { key: 'confirmar', icon: '✅', title: 'Confirmar', text: 'Perfecto, tu cita queda confirmada. Te esperamos con mucho gusto.' },
+  { key: 'horario', icon: '🕐', title: 'Horario', text: 'Nuestro horario es de lunes a sábado de 9:00 a 19:00.' },
+  { key: 'agendar', icon: '💆', title: 'Agendar', text: 'Claro, podemos ayudarte a agendar una cita. ¿Qué día y horario te queda mejor?' },
+  { key: 'cumple', icon: '🎂', title: 'Cumple', text: '¡Feliz cumpleaños! En Alma Spa tenemos un detalle especial para ti.' },
+];
 
 function isWithinWindow(lastInboundAt) {
   if (!lastInboundAt) return false;
@@ -39,7 +46,7 @@ function slugLabel(text, fallback = 'etiqueta') {
 }
 
 function normalizeLabelDefinitions(input) {
-  const rows = Array.isArray(input) && input.length > 0 ? input : DEFAULT_LABELS;
+  const rows = Array.isArray(input) ? input : DEFAULT_LABELS;
   const used = new Set();
   return rows.slice(0, 24).map((row, index) => {
     const text = String(row?.text || '').trim().slice(0, 36) || `Etiqueta ${index + 1}`;
@@ -49,6 +56,25 @@ function normalizeLabelDefinitions(input) {
     const tone = LABEL_TONES.includes(row?.tone) ? row.tone : DEFAULT_LABELS[index]?.tone || 'neutral';
     return { key, text, tone };
   });
+}
+
+function normalizeQuickReplies(input) {
+  const rows = Array.isArray(input) ? input : DEFAULT_QUICK_REPLIES;
+  const used = new Set();
+  return rows.slice(0, 20).map((row, index) => {
+    const title = String(row?.title || '').trim().slice(0, 40) || `Respuesta ${index + 1}`;
+    const text = String(row?.text || '').trim().slice(0, 800);
+    const icon = Array.from(String(row?.icon || '💬').trim()).slice(0, 2).join('').trim() || '💬';
+    let key = slugLabel(row?.key || title, `respuesta_${index + 1}`);
+    if (used.has(key)) key = `${key}_${index + 1}`.slice(0, 48);
+    used.add(key);
+    return {
+      key,
+      icon,
+      title,
+      text,
+    };
+  }).filter((row) => row.text);
 }
 
 async function listLabelDefinitions(actor) {
@@ -83,6 +109,40 @@ async function saveLabelDefinitions(actor, labels) {
     labels: nextLabels,
   });
   return nextLabels;
+}
+
+async function listQuickReplies(actor) {
+  if (!actor?.tenantId || !prisma.tenant?.findUnique) return DEFAULT_QUICK_REPLIES;
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: actor.tenantId },
+    select: { config: true },
+  });
+  return normalizeQuickReplies(tenant?.config?.crm?.quickReplies);
+}
+
+async function saveQuickReplies(actor, quickReplies) {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: actor.tenantId },
+    select: { config: true },
+  });
+  if (!tenant) throw new BadRequestError('Tenant no encontrado');
+  const nextQuickReplies = normalizeQuickReplies(quickReplies);
+  const existing = tenant.config || {};
+  const nextConfig = {
+    ...existing,
+    crm: {
+      ...(existing.crm || {}),
+      quickReplies: nextQuickReplies,
+    },
+  };
+  await prisma.tenant.update({
+    where: { id: actor.tenantId },
+    data: { config: nextConfig },
+  });
+  publishConversationEvent(actor.tenantId, 'conversation.quick_replies.config.updated', {
+    quickReplies: nextQuickReplies,
+  });
+  return nextQuickReplies;
 }
 
 /**
@@ -663,6 +723,8 @@ module.exports = {
   listAssignees,
   listLabelDefinitions,
   saveLabelDefinitions,
+  listQuickReplies,
+  saveQuickReplies,
   setLabels,
   listNotes,
   createNote,
@@ -672,4 +734,5 @@ module.exports = {
   todayRangeForTenant,
   VALID_LABELS,
   DEFAULT_LABELS,
+  DEFAULT_QUICK_REPLIES,
 };

@@ -6,7 +6,7 @@ import {
   Loader2, Send, ArrowLeft, Bot, UserRound, Search,
   MessageSquare, StickyNote, Tag, Phone, Calendar, Hash, ChevronRight,
   Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
-  ChevronDown, ArrowDown, Edit3,
+  ChevronDown, ArrowDown, Edit3, Settings,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -75,11 +75,11 @@ function labelMapFrom(items) {
 }
 
 const QUICK_REPLIES_DEFAULT = [
-  { icon: "👋", title: "Saludo", text: "Hola, gracias por escribir a Alma Spa. ¿En qué podemos ayudarte?" },
-  { icon: "✅", title: "Confirmar", text: "Perfecto, tu cita queda confirmada. Te esperamos con mucho gusto." },
-  { icon: "🕐", title: "Horario", text: "Nuestro horario es de lunes a sábado de 9:00 a 19:00." },
-  { icon: "💆", title: "Agendar", text: "Claro, podemos ayudarte a agendar una cita. ¿Qué día y horario te queda mejor?" },
-  { icon: "🎂", title: "Cumple", text: "¡Feliz cumpleaños! En Alma Spa tenemos un detalle especial para ti." },
+  { key: "saludo", icon: "👋", title: "Saludo", text: "Hola, gracias por escribir a Alma Spa. ¿En qué podemos ayudarte?" },
+  { key: "confirmar", icon: "✅", title: "Confirmar", text: "Perfecto, tu cita queda confirmada. Te esperamos con mucho gusto." },
+  { key: "horario", icon: "🕐", title: "Horario", text: "Nuestro horario es de lunes a sábado de 9:00 a 19:00." },
+  { key: "agendar", icon: "💆", title: "Agendar", text: "Claro, podemos ayudarte a agendar una cita. ¿Qué día y horario te queda mejor?" },
+  { key: "cumple", icon: "🎂", title: "Cumple", text: "¡Feliz cumpleaños! En Alma Spa tenemos un detalle especial para ti." },
 ];
 
 export default function CRMPage() {
@@ -98,8 +98,8 @@ export default function CRMPage() {
   const [loadError, setLoadError] = useState("");
   const [notes, setNotes] = useState([]);
   const [noteText, setNoteText] = useState("");
-  const [showPanel, setShowPanel] = useState("info"); // info | notes | labels
-  const [showLabelEditor, setShowLabelEditor] = useState(false);
+  const [showPanel, setShowPanel] = useState("info"); // info | notes
+  const [labelConfigMode, setLabelConfigMode] = useState(false);
   const [labelDraft, setLabelDraft] = useState({ key: "", text: "", tone: "blue" });
   const [editingLabelKey, setEditingLabelKey] = useState(null);
   const [showAssignees, setShowAssignees] = useState(false);
@@ -115,8 +115,13 @@ export default function CRMPage() {
   const messagesEndRef = useRef(null);
   const lastMsgIdRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const [quickReplies] = useState(QUICK_REPLIES_DEFAULT);
+  const headerMenuRef = useRef(null);
+  const quickRepliesRef = useRef(null);
+  const [quickReplies, setQuickReplies] = useState(QUICK_REPLIES_DEFAULT);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [quickReplyConfigMode, setQuickReplyConfigMode] = useState(false);
+  const [quickReplyDraft, setQuickReplyDraft] = useState({ key: "", icon: "💬", title: "", text: "" });
+  const [editingQuickReplyKey, setEditingQuickReplyKey] = useState(null);
   const labelConfig = useMemo(() => labelMapFrom(labelDefs), [labelDefs]);
   const selectedName = selected?.client?.fullName || selected?.customerName || selected?.customerWaId || "";
   const chatMatches = useMemo(() => {
@@ -188,6 +193,12 @@ export default function CRMPage() {
       .catch(() => setLabelDefs(DEFAULT_LABELS));
   }, []);
 
+  useEffect(() => {
+    authFetch("/crm/quick-replies")
+      .then((data) => setQuickReplies(data.items?.length ? data.items : QUICK_REPLIES_DEFAULT))
+      .catch(() => setQuickReplies(QUICK_REPLIES_DEFAULT));
+  }, []);
+
   const fetchConversation = useCallback(async (silent = false) => {
     if (!selectedId) return;
     try {
@@ -241,6 +252,19 @@ export default function CRMPage() {
         if (payload.labels?.length) setLabelDefs(payload.labels);
         return;
       }
+      if (event.type === "conversation.quick_replies.config.updated") {
+        if (payload.quickReplies?.length) setQuickReplies(payload.quickReplies);
+        return;
+      }
+      if (event.type === "conversation.tags.updated" && payload.conversationId) {
+        setConversations((prev) => prev.map((item) => (
+          item.id === payload.conversationId ? { ...item, labels: payload.labels || [] } : item
+        )));
+        if (payload.conversationId === selectedId) {
+          setSelected((cur) => cur?.id === selectedId ? { ...cur, labels: payload.labels || [] } : cur);
+        }
+        return;
+      }
       fetchConversations(true);
       if (payload.conversationId && payload.conversationId === selectedId) {
         fetchConversation(true);
@@ -258,6 +282,7 @@ export default function CRMPage() {
       "conversation.notes.updated",
       "conversation.updated",
       "conversation.labels.config.updated",
+      "conversation.quick_replies.config.updated",
     ];
     eventNames.forEach((name) => source.addEventListener(name, refreshFromEvent));
     source.onerror = () => {
@@ -288,7 +313,30 @@ export default function CRMPage() {
     setChatSearchIndex(0);
     setChatSearchOpen(false);
     setShowAssignees(false);
+    setShowQuickReplies(false);
+    setQuickReplyConfigMode(false);
   }, [selectedId]);
+
+  useEffect(() => {
+    function onPointerDown(event) {
+      const target = event.target;
+      if (headerMenuRef.current && !headerMenuRef.current.contains(target)) {
+        setShowAssignees(false);
+        setChatSearchOpen(false);
+      }
+      if (
+        showQuickReplies
+        && quickRepliesRef.current
+        && !quickRepliesRef.current.contains(target)
+        && !target.closest?.("[data-quick-replies-trigger]")
+      ) {
+        setShowQuickReplies(false);
+        setQuickReplyConfigMode(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showQuickReplies]);
 
   useEffect(() => {
     if (!chatMatches.length) return;
@@ -486,7 +534,6 @@ export default function CRMPage() {
       await saveLabelsConfig(next);
       setLabelDraft({ key: "", text: "", tone: "blue" });
       setEditingLabelKey(null);
-      setShowLabelEditor(false);
       toast.success(editingLabelKey ? "Etiqueta actualizada" : "Etiqueta agregada");
     } catch (err) {
       toast.error(err.message || "No se pudo guardar la etiqueta");
@@ -496,7 +543,7 @@ export default function CRMPage() {
   function startEditingLabel(label) {
     setEditingLabelKey(label.key);
     setLabelDraft({ key: label.key, text: label.text, tone: label.tone || "neutral" });
-    setShowLabelEditor(true);
+    setLabelConfigMode(true);
   }
 
   async function removeLabel(key) {
@@ -507,6 +554,62 @@ export default function CRMPage() {
       }
     } catch (err) {
       toast.error(err.message || "No se pudo eliminar la etiqueta");
+    }
+  }
+
+  async function saveQuickRepliesConfig(nextQuickReplies) {
+    const clean = nextQuickReplies
+      .filter((reply) => reply.title?.trim() && reply.text?.trim())
+      .slice(0, 20);
+    const saved = await authFetch("/crm/quick-replies", {
+      method: "PUT",
+      body: { quickReplies: clean },
+    });
+    setQuickReplies(saved.items || clean);
+    return saved.items || clean;
+  }
+
+  async function saveQuickReplyDraft() {
+    const title = quickReplyDraft.title.trim();
+    const text = quickReplyDraft.text.trim();
+    if (!title || !text) return;
+    const key = editingQuickReplyKey || slugLabel(title);
+    const next = editingQuickReplyKey
+      ? quickReplies.map((reply) => reply.key === editingQuickReplyKey
+        ? { ...reply, icon: quickReplyDraft.icon || "💬", title, text }
+        : reply)
+      : [...quickReplies, { key, icon: quickReplyDraft.icon || "💬", title, text }];
+    try {
+      await saveQuickRepliesConfig(next);
+      setQuickReplyDraft({ key: "", icon: "💬", title: "", text: "" });
+      setEditingQuickReplyKey(null);
+      toast.success(editingQuickReplyKey ? "Respuesta actualizada" : "Respuesta creada");
+    } catch (err) {
+      toast.error(err.message || "No se pudo guardar la respuesta");
+    }
+  }
+
+  function startEditingQuickReply(reply) {
+    setEditingQuickReplyKey(reply.key);
+    setQuickReplyDraft({
+      key: reply.key,
+      icon: reply.icon || "💬",
+      title: reply.title || "",
+      text: reply.text || "",
+    });
+    setQuickReplyConfigMode(true);
+  }
+
+  async function removeQuickReply(key) {
+    if (!key) return;
+    try {
+      await saveQuickRepliesConfig(quickReplies.filter((reply) => reply.key !== key));
+      if (editingQuickReplyKey === key) {
+        setEditingQuickReplyKey(null);
+        setQuickReplyDraft({ key: "", icon: "💬", title: "", text: "" });
+      }
+    } catch (err) {
+      toast.error(err.message || "No se pudo eliminar la respuesta");
     }
   }
 
@@ -763,7 +866,7 @@ export default function CRMPage() {
               <div className="text-xs text-warm-gray">{selected.customerWaId}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div ref={headerMenuRef} className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={selected.botActive ? pauseBot : reactivateBot}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-150 ${
@@ -777,7 +880,10 @@ export default function CRMPage() {
             </button>
             <div className="relative">
               <button
-                onClick={() => setShowAssignees((v) => !v)}
+                onClick={() => {
+                  setShowAssignees((v) => !v);
+                  setChatSearchOpen(false);
+                }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-white text-bronze-deep text-[11px] font-semibold hover:bg-cream transition-colors"
               >
                 <UserCheck size={12} />
@@ -810,7 +916,10 @@ export default function CRMPage() {
             </div>
             <div className="relative">
               <button
-                onClick={() => setChatSearchOpen((v) => !v)}
+                onClick={() => {
+                  setChatSearchOpen((v) => !v);
+                  setShowAssignees(false);
+                }}
                 className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors ${
                   chatSearchOpen ? "bg-gold text-white border-gold" : "bg-white text-bronze border-border hover:bg-cream"
                 }`}
@@ -887,30 +996,132 @@ export default function CRMPage() {
 
         {/* Quick replies popover */}
         {showQuickReplies && (
-          <div className="mx-4 mb-2 p-3 rounded-2xl bg-white/95 border border-border shadow-lg backdrop-blur-sm">
-            <p className="text-[11px] font-semibold text-bronze-deep mb-2">Respuestas rápidas</p>
-            <div className="grid gap-1.5">
-              {quickReplies.map((r, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setBody(r.text); setShowQuickReplies(false); }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-cream/50 hover:bg-cream text-left transition-colors"
-                >
-                  <span className="w-8 h-8 rounded-full bg-glow/40 flex items-center justify-center text-sm">{r.icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-bronze-deep">{r.title}</div>
-                    <div className="text-[11px] text-bronze truncate">{r.text}</div>
-                  </div>
-                </button>
-              ))}
+          <div
+            ref={quickRepliesRef}
+            className="mx-4 mb-2 rounded-2xl border border-border bg-white/95 p-3 shadow-lg backdrop-blur-sm"
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-bronze-deep">Respuestas rápidas</p>
+              <button
+                onClick={() => {
+                  setQuickReplyConfigMode((v) => !v);
+                  setEditingQuickReplyKey(null);
+                  setQuickReplyDraft({ key: "", icon: "💬", title: "", text: "" });
+                }}
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                  quickReplyConfigMode
+                    ? "bg-gold text-white"
+                    : "bg-cream text-bronze hover:bg-glow/40"
+                }`}
+                title="Configurar respuestas rápidas"
+              >
+                <Settings size={13} />
+              </button>
             </div>
+
+            {!quickReplyConfigMode ? (
+              <div className="grid gap-1.5">
+                {quickReplies.map((r, i) => (
+                  <button
+                    key={r.key || i}
+                    onClick={() => { setBody(r.text); setShowQuickReplies(false); }}
+                    className="flex items-center gap-2.5 rounded-xl bg-cream/50 p-2.5 text-left transition-colors hover:bg-cream"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-glow/40 text-sm">{r.icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-semibold text-bronze-deep">{r.title}</div>
+                      <div className="truncate text-[11px] text-bronze">{r.text}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <div className="max-h-52 overflow-y-auto pr-1">
+                  {quickReplies.map((r, i) => (
+                    <div
+                      key={r.key || i}
+                      className="mb-1.5 flex items-center gap-2 rounded-xl bg-cream/50 p-2"
+                    >
+                      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-sm">{r.icon}</span>
+                      <button
+                        onClick={() => startEditingQuickReply(r)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div className="truncate text-xs font-semibold text-bronze-deep">{r.title}</div>
+                        <div className="truncate text-[11px] text-bronze">{r.text}</div>
+                      </button>
+                      <button
+                        onClick={() => startEditingQuickReply(r)}
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-white hover:text-bronze"
+                        title="Editar respuesta"
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                      <button
+                        onClick={() => removeQuickReply(r.key)}
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-red-50 hover:text-red-500"
+                        title="Eliminar respuesta"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-2xl border border-border bg-cream/30 p-3">
+                  <div className="grid grid-cols-[54px_1fr] gap-2">
+                    <input
+                      value={quickReplyDraft.icon}
+                      onChange={(e) => setQuickReplyDraft((d) => ({ ...d, icon: Array.from(e.target.value).slice(0, 2).join("") }))}
+                      className="rounded-xl border border-border bg-white px-3 py-2 text-center text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                      aria-label="Icono"
+                    />
+                    <input
+                      value={quickReplyDraft.title}
+                      onChange={(e) => setQuickReplyDraft((d) => ({ ...d, title: e.target.value }))}
+                      placeholder="Nombre"
+                      className="rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    />
+                  </div>
+                  <textarea
+                    value={quickReplyDraft.text}
+                    onChange={(e) => setQuickReplyDraft((d) => ({ ...d, text: e.target.value }))}
+                    placeholder="Texto de la respuesta"
+                    rows={2}
+                    className="mt-2 w-full resize-none rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={saveQuickReplyDraft}
+                      className="flex-1 rounded-xl bg-bronze px-3 py-2 text-xs font-semibold text-white hover:bg-bronze-deep"
+                    >
+                      {editingQuickReplyKey ? "Guardar cambios" : "Crear respuesta"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingQuickReplyKey(null);
+                        setQuickReplyDraft({ key: "", icon: "💬", title: "", text: "" });
+                      }}
+                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Input */}
         <div className="flex items-center gap-2 px-4 py-3 border-t border-border bg-white/80 backdrop-blur-sm">
           <button
-            onClick={() => setShowQuickReplies(!showQuickReplies)}
+            data-quick-replies-trigger
+            onClick={() => {
+              setShowQuickReplies((v) => !v);
+              setShowAssignees(false);
+              setChatSearchOpen(false);
+            }}
             className={`
               w-9 h-9 rounded-full flex items-center justify-center text-sm flex-shrink-0
               transition-colors duration-150
@@ -1027,61 +1238,30 @@ export default function CRMPage() {
                 <p className="text-[11px] font-semibold text-warm-gray uppercase tracking-wider">Etiquetas</p>
                 <button
                   onClick={() => {
-                    setShowLabelEditor((v) => !v);
+                    setLabelConfigMode((v) => !v);
                     setEditingLabelKey(null);
                     setLabelDraft({ key: "", text: "", tone: "blue" });
                   }}
-                  className="inline-flex items-center gap-1 rounded-full bg-cream px-2.5 py-1 text-[11px] font-semibold text-bronze hover:bg-glow/40"
+                  className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                    labelConfigMode
+                      ? "bg-gold text-white"
+                      : "bg-cream text-bronze hover:bg-glow/40"
+                  }`}
+                  title="Configurar etiquetas"
                 >
-                  <Plus size={12} /> Más
+                  <Settings size={13} />
                 </button>
               </div>
-              {showLabelEditor && (
-                <div className="mb-3 rounded-2xl border border-border bg-cream/40 p-3">
-                  <input
-                    value={labelDraft.text}
-                    onChange={(e) => setLabelDraft((d) => ({ ...d, text: e.target.value }))}
-                    placeholder="Nombre de etiqueta"
-                    className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {Object.entries(LABEL_TONES).map(([tone, cfg]) => (
+
+              {!labelConfigMode ? (
+                <div className="flex flex-wrap gap-2">
+                  {labelDefs.map((label) => {
+                    const key = label.key;
+                    const cfg = labelConfig[key] || LABEL_TONES.neutral;
+                    const active = labels.includes(key);
+                    return (
                       <button
-                        key={tone}
-                        onClick={() => setLabelDraft((d) => ({ ...d, tone }))}
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${cfg.bg} ${cfg.fg} ${
-                          labelDraft.tone === tone ? cfg.ring : "border-transparent"
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                        {cfg.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={saveLabelDraft}
-                      className="flex-1 rounded-xl bg-bronze px-3 py-2 text-xs font-semibold text-white hover:bg-bronze-deep"
-                    >
-                      {editingLabelKey ? "Guardar" : "Agregar"}
-                    </button>
-                    <button
-                      onClick={() => { setShowLabelEditor(false); setEditingLabelKey(null); }}
-                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {labelDefs.map((label) => {
-                  const key = label.key;
-                  const cfg = labelConfig[key] || LABEL_TONES.neutral;
-                  const active = labels.includes(key);
-                  return (
-                    <span key={key} className="group inline-flex items-center">
-                      <button
+                        key={key}
                         onClick={() => toggleLabel(key)}
                         className={`
                           inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium
@@ -1095,24 +1275,81 @@ export default function CRMPage() {
                         <span className={`w-2 h-2 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
                         {label.text}
                       </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  <div className="grid gap-1.5">
+                    {labelDefs.map((label) => {
+                      const cfg = labelConfig[label.key] || LABEL_TONES.neutral;
+                      return (
+                        <div
+                          key={label.key}
+                          className="flex items-center gap-2 rounded-xl bg-cream/50 p-2"
+                        >
+                          <span className={`inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${cfg.bg} ${cfg.fg}`}>
+                            <span className={`h-2 w-2 rounded-full ${cfg.dot}`} />
+                            <span className="truncate">{label.text}</span>
+                          </span>
+                          <button
+                            onClick={() => startEditingLabel(label)}
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-white hover:text-bronze"
+                            title="Editar etiqueta"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                          <button
+                            onClick={() => removeLabel(label.key)}
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-red-50 hover:text-red-500"
+                            title="Eliminar etiqueta"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="rounded-2xl border border-border bg-cream/40 p-3">
+                    <input
+                      value={labelDraft.text}
+                      onChange={(e) => setLabelDraft((d) => ({ ...d, text: e.target.value }))}
+                      placeholder="Nombre de etiqueta"
+                      className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    />
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {Object.entries(LABEL_TONES).map(([tone, cfg]) => (
+                        <button
+                          key={tone}
+                          onClick={() => setLabelDraft((d) => ({ ...d, tone }))}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${cfg.bg} ${cfg.fg} ${
+                            labelDraft.tone === tone ? cfg.ring : "border-transparent"
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                          {cfg.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex gap-2">
                       <button
-                        onClick={() => startEditingLabel(label)}
-                        className="-ml-1 hidden h-7 w-7 items-center justify-center rounded-full border border-border bg-white text-warm-gray shadow-sm hover:text-bronze group-hover:inline-flex"
-                        title="Editar etiqueta"
+                        onClick={saveLabelDraft}
+                        className="flex-1 rounded-xl bg-bronze px-3 py-2 text-xs font-semibold text-white hover:bg-bronze-deep"
                       >
-                        <Edit3 size={11} />
+                        {editingLabelKey ? "Guardar cambios" : "Crear etiqueta"}
                       </button>
-                    </span>
-                  );
-                })}
-              </div>
-              {editingLabelKey && (
-                <button
-                  onClick={() => removeLabel(editingLabelKey)}
-                  className="mt-3 text-[11px] font-semibold text-red-500 hover:text-red-600"
-                >
-                  Eliminar etiqueta seleccionada
-                </button>
+                      <button
+                        onClick={() => {
+                          setEditingLabelKey(null);
+                          setLabelDraft({ key: "", text: "", tone: "blue" });
+                        }}
+                        className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
