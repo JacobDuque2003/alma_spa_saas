@@ -174,7 +174,7 @@ test('servicio con imagen → sube y envía image+caption; luego botón volver',
   });
   const kinds = sent.map((s) => s.kind);
   assert.deepEqual(kinds, ['uploadMedia', 'image', 'interactive']);
-  assert.match(sent[1].caption, /🌟.*Aero yoga/);
+  assert.match(sent[1].caption, /🌿.*Aero yoga/);
   assert.match(sent[1].caption, /Yoga en telas\./);
 });
 
@@ -210,7 +210,7 @@ test('"Mi cita" sin cliente → "No encontré citas" + menú', async () => {
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_my_appointment' } } },
   });
-  assert.match(sent[0].body, /No encontré citas a su nombre/);
+  assert.match(sent[0].body, /No encontré reservas a su nombre/);
   assert.equal(sent[1].kind, 'interactive');
 });
 
@@ -234,7 +234,7 @@ test('"Mi cita" con cita próxima → devuelve detalles', async () => {
   const body = sent[0].body;
   assert.match(body, /Aero yoga/);
   assert.match(body, /Cabina 8 - YOGA/);
-  assert.match(body, /confirmada/);
+  assert.match(body, /confirmada/i);
 });
 
 test('"Hablar con recepción" marca escalada + envía confirmación', async () => {
@@ -272,7 +272,7 @@ test('rate limit — aviso en msg 21, silencio después', async () => {
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'hola 21' } } });
   const warned = sent.slice(countBefore);
   assert.equal(warned.length, 1);
-  assert.match(warned[0].body, /muchos mensajes seguidos/);
+  assert.match(warned[0].body, /Un momento, por favor/);
   const countAfterWarn = sent.length;
   for (let i = 0; i < 5; i += 1) {
     await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'x' } } });
@@ -331,7 +331,7 @@ test('texto libre sin IA y con state previo → "no logré entender" + menú', a
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'quiero algo raro' } } });
   const newMessages = sent.slice(afterFirst);
   assert.equal(newMessages.length, 2);
-  assert.match(newMessages[0].body, /No logré entender/);
+  assert.match(newMessages[0].body, /No entendí/);
   assert.equal(newMessages[1].kind, 'interactive');
 });
 
@@ -364,7 +364,7 @@ test('"Reservar cita" → muestra servicios en modo reserva (NUNCA link externo,
   });
   assert.equal(sent.length, 1, 'debe enviar UN solo mensaje interactivo');
   assert.equal(sent[0].kind, 'interactive');
-  assert.match(sent[0].payload.body.text, /reservar/i, 'cuerpo de la lista debe mencionar reserva');
+  assert.match(sent[0].payload.body.text, /momento|servicio/i, 'cuerpo de la lista debe mencionar momento o servicio');
   const allBodies = sent.map(s => s.body || s.payload?.body?.text || '').join(' ');
   assert.ok(!/https?:\/\//.test(allBodies), 'NUNCA debe enviar links externos');
   const st = state.getFlowState(CONV.customerWaId);
@@ -419,7 +419,7 @@ test('seleccionar servicio fuera de booking → muestra detalle normal', async (
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_s1' } } },
   });
   const textMsgs = sent.filter(s => s.kind === 'text');
-  assert.ok(textMsgs.some(s => /🌟.*Masaje/.test(s.body)));
+  assert.ok(textMsgs.some(s => /Masaje/.test(s.body)));
 });
 
 test('booking confirm_no → cancela y vuelve a menú', async () => {
@@ -435,7 +435,7 @@ test('booking confirm_no → cancela y vuelve a menú', async () => {
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { button_reply: { id: 'bk_no' } } },
   });
-  assert.ok(sent.some(s => s.kind === 'text' && /cancelé la reserva/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'text' && /cancelé (tu|su) reserva/.test(s.body)));
   assert.ok(sent.some(s => s.kind === 'interactive'));
 });
 
@@ -859,7 +859,7 @@ test('P4: "no gracias" text cancels booking', async () => {
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'text', text: { body: 'no gracias' } },
   });
-  assert.ok(sent.some(s => s.kind === 'text' && /cancelé la reserva/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'text' && /cancelé (tu|su) reserva/.test(s.body)));
   assert.ok(sent.some(s => s.kind === 'interactive'));
 });
 
@@ -893,7 +893,7 @@ test('P7: handleMyAppointment shows "confirmada" for pendiente_bot status', asyn
   });
   state.setFlowState(CONV.customerWaId, { flow: 'menu', tone: 'usted' });
   await bot._internals.handleMyAppointment({ tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted' });
-  const reply = sent.find(s => s.kind === 'text' && /próxima cita/.test(s.body));
+  const reply = sent.find(s => s.kind === 'text' && /próximo espacio/.test(s.body));
   assert.ok(reply, 'should send appointment info');
   assert.ok(/confirmada/i.test(reply.body), 'should say confirmada, not pendiente de confirmar');
   assert.ok(!/pendiente de confirmar/i.test(reply.body), 'should NOT say pendiente de confirmar');

@@ -37,8 +37,8 @@ function capitalize(s) {
 
 function greeting(tone) {
   return tone === 'tu'
-    ? '✨ ¡Hola! Soy Almita, tu asistente de Alma Spa 🌿'
-    : '✨ ¡Hola! Soy Almita, su asistente de Alma Spa 🌿';
+    ? '✨ *¡Hola! Soy Almita, tu asistente en Alma Spa*'
+    : '✨ *¡Hola! Soy Almita, su asistente en Alma Spa*';
 }
 
 function verbYouCan(tone) {
@@ -109,8 +109,8 @@ function servicesList(services, { tone, body } = {}) {
   }
 
   const defaultBody = tone === 'tu'
-    ? '💆‍♀️ Estos son nuestros servicios. Toca uno para ver más:'
-    : '💆‍♀️ Estos son nuestros servicios. Toque uno para ver más:';
+    ? '🌿 *Nuestros servicios* — toca uno para ver más'
+    : '🌿 *Nuestros servicios* — toque uno para ver más';
   return {
     type: 'list',
     body: { text: body || defaultBody },
@@ -130,8 +130,8 @@ function categoryList(categories, { tone, body } = {}) {
     description: `${c.count} servicio${c.count === 1 ? '' : 's'}`.slice(0, 72),
   }));
   const defaultBody = tone === 'tu'
-    ? '💆‍♀️ Tenemos varios servicios. Elige una categoría:'
-    : '💆‍♀️ Tenemos varios servicios. Elija una categoría:';
+    ? '🌿 *Nuestros servicios* — elige una categoría'
+    : '🌿 *Nuestros servicios* — elija una categoría';
   return {
     type: 'list',
     body: { text: body || defaultBody },
@@ -153,8 +153,8 @@ function servicesInCategory(services, categoryName, { tone } = {}) {
   return {
     type: 'list',
     body: { text: tone === 'tu'
-      ? `✨ Servicios de ${label}. Toca uno para ver más:`
-      : `✨ Servicios de ${label}. Toque uno para ver más:` },
+      ? `*${label}* — toca uno para ver más`
+      : `*${label}* — toque uno para ver más` },
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver servicios',
@@ -253,9 +253,7 @@ function timeSlotList(slots, serviceName, { tone, body } = {}) {
   }
 
   const svcLabel = String(serviceName).slice(0, 50);
-  const defaultBody = tone === 'tu'
-    ? `🕐 Horarios disponibles para ${svcLabel}:`
-    : `🕐 Horarios disponibles para ${svcLabel}:`;
+  const defaultBody = `🕐 *Horarios para* _${svcLabel}_`;
   return {
     type: 'list',
     body: { text: body || defaultBody },
@@ -278,18 +276,17 @@ function timeSlotButtons(slots, serviceName, { tone } = {}) {
   }));
   return {
     type: 'button',
-    body: { text: tone === 'tu'
-      ? `🕐 Horarios para ${svcLabel}:`
-      : `🕐 Horarios para ${svcLabel}:` },
+    body: { text: `🕐 *Horarios para* _${svcLabel}_` },
     action: { buttons },
   };
 }
 
 function bookingConfirmation(summary, { tone } = {}) {
+  const header = tone === 'tu' ? '✨ *¿Confirmo tu espacio?*' : '✨ *¿Confirmo su espacio?*';
   return {
     type: 'button',
-    body: { text: `📋 ¿Confirmo esta cita?\n\n${summary}\n\n${
-      tone === 'tu' ? 'Presiona Sí para confirmar 💛' : 'Presione Sí para confirmar 💛'
+    body: { text: `${header}\n\n${summary}\n\n${
+      tone === 'tu' ? 'Presiona *Sí* para confirmar 💛' : 'Presione *Sí* para confirmar 💛'
     }` },
     action: {
       buttons: [
@@ -302,8 +299,8 @@ function bookingConfirmation(summary, { tone } = {}) {
 
 function askNameText({ tone } = {}) {
   return tone === 'tu'
-    ? '💛 Para completar tu reserva, ¿me dices tu nombre completo?'
-    : '💛 Para completar su reserva, ¿me dice su nombre completo?';
+    ? '💛 *Para apartar tu espacio*, ¿me dices tu nombre completo?'
+    : '💛 *Para apartar su espacio*, ¿me dice su nombre completo?';
 }
 
 module.exports = {
