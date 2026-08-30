@@ -29,6 +29,7 @@ const { SlotUnavailableError } = require('../../utils/errors');
 
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
+const HIDDEN_SERVICE_NAMES = new Set(['cumpleanos', 'cumpleaños', 'valoracion', 'valoración']);
 
 function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
@@ -136,9 +137,44 @@ function detectDeterministicIntent(text) {
   if (/^(hola|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
+  if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda)\b/.test(t)) return 'book_start';
+  if (/\bhacer una reserva\b/.test(t)) return 'book_start';
   if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
   if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
   return null;
+}
+
+function normalizeSearchText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isBotVisibleService(service) {
+  const category = normalizeSearchText(service?.category);
+  const name = normalizeSearchText(service?.name);
+  return service?.active !== false
+    && !menus.HIDDEN_CATEGORIES.has(category)
+    && !HIDDEN_SERVICE_NAMES.has(name);
+}
+
+async function loadVisibleServicesForBot(tenantId, { category } = {}) {
+  const where = { tenantId, active: true };
+  if (category) where.category = category;
+  const services = await prisma.service.findMany({
+    where,
+    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
+    orderBy: category ? { name: 'asc' } : [{ category: 'asc' }, { name: 'asc' }],
+  });
+  const visible = services.filter(isBotVisibleService);
+  if (category) {
+    const expected = String(category);
+    return visible.filter((service) => String(service.category || '') === expected);
+  }
+  return visible;
 }
 
 async function getDailyCostForConversation(tenantId, conversationId) {
@@ -180,22 +216,17 @@ async function lookupClientByWaId(tenantId, waId) {
 }
 
 async function loadServicesForAI(tenantId) {
-  return prisma.service.findMany({
-    where: { tenantId, active: true },
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
-  });
+  return loadVisibleServicesForBot(tenantId);
 }
 
 async function matchServiceByQuery(tenantId, query) {
   if (!query) return null;
-  const q = String(query).toLowerCase().trim();
-  const services = await prisma.service.findMany({
-    where: { tenantId, active: true },
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true },
-  });
-  return services.find(s => String(s.name).toLowerCase().includes(q))
-    || services.find(s => q.includes(String(s.name).toLowerCase().slice(0, 6)))
+  const q = normalizeSearchText(query);
+  if (!q) return null;
+  const services = await loadVisibleServicesForBot(tenantId);
+  return services.find(s => normalizeSearchText(s.name).includes(q))
+    || services.find(s => q.includes(normalizeSearchText(s.name)))
+    || services.find(s => q.includes(normalizeSearchText(s.name).slice(0, 6)))
     || null;
 }
 
@@ -320,6 +351,13 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return sendMainMenu({ tenant, connection, conv, waId, tone });
+    }
+  }
+
+  if (flowState.booking && flowState.booking.step !== 'ask_name') {
+    const requestedService = await matchServiceByQuery(tenant.id, bodyText);
+    if (requestedService) {
+      return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: requestedService.id });
     }
   }
 
@@ -502,16 +540,20 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
 
     case 'service_info':
     case 'suggest_service': {
+      if (params?.service_query) {
+        const svc = await matchServiceByQuery(tenant.id, params.service_query);
+        if (svc) {
+          const fs = state.getFlowState(waId) || {};
+          if (fs?.booking) {
+            return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
+          }
+          return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: svc.id });
+        }
+      }
       if (aiReply) {
         const r = await transport.sendText(connection, waId, aiReply);
         await recordBotMessage(tenant.id, conv, r, { body: aiReply });
         return;
-      }
-      if (params?.service_query) {
-        const svc = await matchServiceByQuery(tenant.id, params.service_query);
-        if (svc) {
-          return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: svc.id });
-        }
       }
       return handleListServices({ tenant, connection, conv, waId, tone });
     }
@@ -647,14 +689,10 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
 }
 
 async function handleListServices({ tenant, connection, conv, waId, tone }) {
-  const svcs = await prisma.service.findMany({
-    where: { tenantId: tenant.id, active: true },
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
-  });
+  const svcs = await loadVisibleServicesForBot(tenant.id);
   state.setFlowState(waId, { flow: 'listing_services', tone, unclearCount: 0 });
 
-  const visible = svcs.filter((s) => !menus.HIDDEN_CATEGORIES.has(String(s.category || '').toLowerCase().trim()));
+  const visible = svcs;
   if (visible.length <= 10) {
     const payload = menus.servicesList(visible, { tone });
     const r = await transport.sendInteractive(connection, waId, payload);
@@ -669,11 +707,7 @@ async function handleListServices({ tenant, connection, conv, waId, tone }) {
 }
 
 async function handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName }) {
-  const svcs = await prisma.service.findMany({
-    where: { tenantId: tenant.id, active: true, category: categoryName },
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
-    orderBy: { name: 'asc' },
-  });
+  const svcs = await loadVisibleServicesForBot(tenant.id, { category: categoryName });
   if (svcs.length === 0) {
     const msg = tone === 'tu'
       ? '🤔 *No encontré servicios ahí* — te muestro las opciones:'
@@ -744,13 +778,7 @@ function buildVisibleCategories(services) {
 // ─── Booking flow ──────────────────────────────────────────────
 
 async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
-  const svcs = await prisma.service.findMany({
-    where: { tenantId: tenant.id, active: true },
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
-  });
-
-  const visible = svcs.filter((s) => !menus.HIDDEN_CATEGORIES.has(String(s.category || '').toLowerCase().trim()));
+  const visible = await loadVisibleServicesForBot(tenant.id);
   if (visible.length === 0) {
     const msg = tone === 'tu'
       ? '😅 *Aún no tenemos servicios disponibles*\n\nComunícate con recepción 💛'
@@ -767,15 +795,15 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
     ? '✨ *¡Qué lindo que quieres darte un momento!*\n\nElige tu servicio:'
     : '✨ *¡Qué lindo que desea darse un momento!*\n\nElija su servicio:');
 
-  if (visible.length <= 10) {
-    const payload = menus.servicesList(visible, { tone, body: intro });
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
-  } else {
-    const categories = buildVisibleCategories(visible);
+  const categories = buildVisibleCategories(visible);
+  if (categories.length > 1) {
     const payload = menus.categoryList(categories, { tone, body: intro });
     const r = await transport.sendInteractive(connection, waId, payload);
     await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías para reserva]` });
+  } else {
+    const payload = menus.servicesList(visible, { tone, body: intro });
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
   }
 }
 

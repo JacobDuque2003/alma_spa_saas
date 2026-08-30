@@ -798,6 +798,116 @@ test('handleBook filtra categorías ocultas (tienda, recordatorio)', async () =>
   assert.ok(!body.includes('recordatorio'), 'recordatorio no debe aparecer');
 });
 
+// ─── Ronda E: reserva completa y cambio de servicio ────────────────
+
+test('Ronda E: "quiero hacer una reserva" muestra catálogo agrupado por categorías visibles', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Limpieza facial', category: 'facial', priceUsd: 25, durationMins: 75, active: true },
+      { id: 's2', name: 'Aero yoga', category: 'yoga', priceUsd: 20, durationMins: 60, active: true },
+      { id: 's3', name: 'Camilla Ceragem', category: 'ceragem', priceUsd: 20, durationMins: 60, active: true },
+      { id: 's4', name: 'Corporal - Reductor', category: 'corporal', priceUsd: 35, durationMins: 75, active: true },
+      { id: 's5', name: 'Cumpleaños', category: 'recordatorio', priceUsd: 0, durationMins: 15, active: true },
+      { id: 's6', name: 'Depilación', category: 'laser', priceUsd: 25, durationMins: 60, active: true },
+      { id: 's7', name: 'Detox iónica', category: 'pies', priceUsd: 15, durationMins: 30, active: true },
+      { id: 's8', name: 'Drenaje post-operatorio', category: 'corporal', priceUsd: 45, durationMins: 105, active: true },
+      { id: 's9', name: 'Emo vacuna', category: 'terapias', priceUsd: 30, durationMins: 30, active: true },
+      { id: 's10', name: 'Masaje relajante', category: 'corporal', priceUsd: 40, durationMins: 120, active: true },
+      { id: 's11', name: 'Reflexología', category: 'pies', priceUsd: 25, durationMins: 60, active: true },
+      { id: 's12', name: 'Sueroterapia', category: 'terapias', priceUsd: 35, durationMins: 30, active: true },
+      { id: 's13', name: 'Terapia neural', category: 'terapias', priceUsd: 45, durationMins: 105, active: true },
+      { id: 's14', name: 'Terapias energéticas', category: 'terapias', priceUsd: 35, durationMins: 75, active: true },
+      { id: 's15', name: 'Tratamientos faciales', category: 'facial', priceUsd: 30, durationMins: 75, active: true },
+      { id: 's16', name: 'Valoración', category: 'valoracion', priceUsd: 0, durationMins: 15, active: true },
+    ],
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: 'quiero hacer una reserva, hay como?' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(sent[0].payload.action.button, 'Ver categorías');
+  const rows = sent[0].payload.action.sections[0].rows;
+  assert.ok(rows.length > 1, 'debe mostrar más de una categoría');
+  assert.ok(rows.some((row) => row.id === 'cat_terapias'), 'debe incluir terapias');
+  assert.ok(rows.some((row) => row.id === 'cat_ceragem'), 'debe incluir ceragem, sin quedarse solo ahí');
+  assert.ok(!rows.some((row) => /recordatorio|valoracion/i.test(row.id)), 'debe ocultar internos');
+});
+
+test('Ronda E: texto con otro servicio dentro de reserva cambia el servicio activo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = [
+    { id: 'ceragem', name: 'Camilla Ceragem', category: 'ceragem', priceUsd: 20, durationMins: 60, active: true },
+    { id: 'energeticas', name: 'Terapias energéticas', category: 'terapias', priceUsd: 35, durationMins: 75, active: true },
+  ];
+  installPrismaMocks({
+    services,
+    serviceById: Object.fromEntries(services.map((service) => [service.id, { ...service, tenantId: TENANT.id }])),
+  });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 'ceragem', serviceName: 'Camilla Ceragem' },
+    tone: 'usted',
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: 'mejor terapias energeticas' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.action.button, 'Elegir día');
+  assert.match(sent[0].payload.body.text, /Terapias energéticas/);
+  const st = state.getFlowState(CONV.customerWaId);
+  assert.equal(st.booking.serviceId, 'energeticas');
+  assert.equal(st.booking.serviceName, 'Terapias energéticas');
+});
+
+test('Ronda E: si la IA trae service_info con reply, primero cambia el servicio en booking', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = [
+    { id: 'ceragem', name: 'Camilla Ceragem', category: 'ceragem', priceUsd: 20, durationMins: 60, active: true },
+    { id: 'energeticas', name: 'Terapias energéticas', category: 'terapias', priceUsd: 35, durationMins: 75, active: true },
+  ];
+  installPrismaMocks({
+    services,
+    serviceById: Object.fromEntries(services.map((service) => [service.id, { ...service, tenantId: TENANT.id }])),
+  });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 'ceragem', serviceName: 'Camilla Ceragem' },
+    tone: 'usted',
+  });
+
+  await bot._internals.routeIntent({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    waId: CONV.customerWaId,
+    tone: 'usted',
+    intent: 'service_info',
+    aiReply: 'Texto de IA que no debe bloquear el cambio',
+    params: { service_query: 'terapias energéticas' },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(sent[0].payload.action.button, 'Elegir día');
+  assert.ok(!sent.some((item) => item.kind === 'text' && /Texto de IA/.test(item.body || '')));
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.serviceId, 'energeticas');
+});
+
 // ─── P4: text confirm/cancel in booking confirm step ────────────────
 
 test('P4: "confirmo" text triggers booking confirmation', async () => {

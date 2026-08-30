@@ -24,7 +24,7 @@ const CATEGORY_DISPLAY_NAMES = {
   pies: '\u{1F9B6} Cuidado de Pies',
 };
 
-const HIDDEN_CATEGORIES = new Set(['tienda', 'recordatorio']);
+const HIDDEN_CATEGORIES = new Set(['tienda', 'recordatorio', 'valoracion']);
 
 function categoryDisplayName(raw) {
   const key = String(raw).toLowerCase().trim();
