@@ -273,6 +273,15 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
     return handleTextMessage({ tenant, connection, conv, waId, tone, bodyText });
   }
 
+  if (incoming.type === 'audio') {
+    const msg = tone === 'tu'
+      ? '🌿 Disculpa, todavía no puedo escuchar notas de voz. ¿Me lo escribes? Así te ayudo enseguida 💛'
+      : '🌿 Disculpe, todavía no puedo escuchar notas de voz. ¿Me lo escribe? Así le ayudo enseguida 💛';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
   // Non-text, non-interactive → main menu
   logBot('info', 'tipo no soportado; enviando menú base', {
     tenant: tenant.slug,
@@ -293,6 +302,9 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   if (flowState.booking?.step === 'confirm') {
+    if (!flowState.booking.serviceId || !flowState.booking.timeSlot || !flowState.booking.clientName) {
+      return handleBook({ tenant, connection, conv, waId, tone });
+    }
     const norm = bodyText.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/(.)\1+$/g, '$1');
     const YES = ['confirmo', 'confirmar', 'si', 'si confirmo', 'ok', 'dale', 'listo', 'de acuerdo', 'perfecto', 'bueno', 'ya'];
     const NO = ['no', 'cancelar', 'no gracias', 'mejor no', 'cancelo'];
@@ -1015,6 +1027,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
   const phone = waIdToPhone(waId);
 
   try {
+    let appointment;
     await prisma.$transaction(async (tx) => {
       const client = await clientService.upsertClient(tx, tenant.id, {
         fullName: booking.clientName,
@@ -1023,7 +1036,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
 
       const tenantData = await tx.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
 
-      await appointmentService.resolveAndCreateAppointment(tx, {
+      appointment = await appointmentService.resolveAndCreateAppointment(tx, {
         tenantId: tenant.id,
         tenantConfig: tenantData?.config,
         clientId: client.id,
@@ -1033,6 +1046,10 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
         status: 'pendiente_bot',
       });
     });
+
+    if (!appointment?.id) {
+      throw new Error('No se pudo crear la cita');
+    }
 
     const slotDate = new Date(booking.timeSlot);
     const TZ = menus.SPA_TZ;

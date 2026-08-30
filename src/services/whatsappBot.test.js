@@ -36,7 +36,7 @@ function installPrismaMocks({ humanReplied = false, services = [], serviceById =
     findMany: async () => services,
     findUnique: async ({ where }) => serviceById[where.id] || null,
   };
-  prisma.client = { findFirst: async () => clientByPhone };
+  prisma.client = { findFirst: async () => clientByPhone, upsert: async () => clientByPhone || { id: 'c_upsert', fullName: 'Test' } };
   prisma.appointment = { findFirst: async () => nextAppointment };
   prisma.tenant = { findUnique: async () => ({ config: tenantConfig }) };
   prisma.botInteractionLog = {
@@ -811,13 +811,13 @@ test('P4: "confirmo" text triggers booking confirmation', async () => {
   });
   prisma.$transaction = async (fn) => fn(prisma);
   const origResolve = require('./appointmentService').resolveAndCreateAppointment;
-  require('./appointmentService').resolveAndCreateAppointment = async () => ({});
+  require('./appointmentService').resolveAndCreateAppointment = async () => ({ id: 'apt1' });
   try {
     await bot.handleInboundMessage({
       tenant: TENANT, connection: CONN, conv: CONV,
       incoming: { type: 'text', text: { body: 'confirmo' } },
     });
-    assert.ok(sent.some(s => s.kind === 'text' && /reserva|confirmada|agenda/i.test(s.body)), 'should confirm booking');
+    assert.ok(sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)), 'should confirm booking');
   } finally {
     require('./appointmentService').resolveAndCreateAppointment = origResolve;
   }
@@ -834,13 +834,13 @@ test('P4: "Sí" with accent triggers booking confirmation', async () => {
   });
   prisma.$transaction = async (fn) => fn(prisma);
   const origResolve = require('./appointmentService').resolveAndCreateAppointment;
-  require('./appointmentService').resolveAndCreateAppointment = async () => ({});
+  require('./appointmentService').resolveAndCreateAppointment = async () => ({ id: 'apt1' });
   try {
     await bot.handleInboundMessage({
       tenant: TENANT, connection: CONN, conv: CONV,
       incoming: { type: 'text', text: { body: 'Sí' } },
     });
-    assert.ok(sent.some(s => s.kind === 'text' && /reserva|confirmada|agenda/i.test(s.body)), 'should confirm booking');
+    assert.ok(sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)), 'should confirm booking');
   } finally {
     require('./appointmentService').resolveAndCreateAppointment = origResolve;
   }
@@ -897,6 +897,105 @@ test('P7: handleMyAppointment shows "confirmada" for pendiente_bot status', asyn
   assert.ok(reply, 'should send appointment info');
   assert.ok(/confirmada/i.test(reply.body), 'should say confirmada, not pendiente de confirmar');
   assert.ok(!/pendiente de confirmar/i.test(reply.body), 'should NOT say pendiente de confirmar');
+});
+
+// ─── Ronda D: no success message without a real appointment ──────────
+test('Ronda D: no success message if resolveAndCreateAppointment returns null', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  prisma.$transaction = async (fn) => fn(prisma);
+  const origResolve = require('./appointmentService').resolveAndCreateAppointment;
+  require('./appointmentService').resolveAndCreateAppointment = async () => null;
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT, connection: CONN, conv: CONV,
+      incoming: { type: 'text', text: { body: 'confirmo' } },
+    });
+    assert.ok(!sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)),
+      'MUST NOT send success message when no appointment was created');
+    assert.ok(sent.some(s => s.kind === 'text' && /recepción/i.test(s.body)),
+      'should escalate to reception');
+  } finally {
+    require('./appointmentService').resolveAndCreateAppointment = origResolve;
+  }
+});
+
+test('Ronda D: no success message if resolveAndCreateAppointment returns {}', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  prisma.$transaction = async (fn) => fn(prisma);
+  const origResolve = require('./appointmentService').resolveAndCreateAppointment;
+  require('./appointmentService').resolveAndCreateAppointment = async () => ({});
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT, connection: CONN, conv: CONV,
+      incoming: { type: 'text', text: { body: 'si' } },
+    });
+    assert.ok(!sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)),
+      'MUST NOT send success message when appointment has no id');
+    assert.ok(sent.some(s => s.kind === 'text' && /recepción/i.test(s.body)),
+      'should escalate to reception');
+  } finally {
+    require('./appointmentService').resolveAndCreateAppointment = origResolve;
+  }
+});
+
+// ─── Ronda D: voice note handler ────────────────────────────────────
+test('Ronda D: voice note gets polite decline (tú)', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, { tone: 'tu' });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'audio', audio: { id: 'audio1' } },
+  });
+  assert.ok(sent.some(s => s.kind === 'text' && /notas de voz/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'text' && /escribes/.test(s.body)));
+  assert.ok(!sent.some(s => s.kind === 'interactive'), 'should NOT send menu after voice note');
+});
+
+test('Ronda D: voice note gets polite decline (usted)', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, { tone: 'usted' });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'audio', audio: { id: 'audio1' } },
+  });
+  assert.ok(sent.some(s => s.kind === 'text' && /notas de voz/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'text' && /escribe\b/.test(s.body)));
+});
+
+// ─── Ronda D: booking confirm with incomplete state ─────────────────
+test('Ronda D: confirm step with missing serviceId redirects to booking flow', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'confirm', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
+    tone: 'usted',
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'confirmo' } },
+  });
+  assert.ok(!sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)),
+    'MUST NOT confirm with incomplete booking state');
 });
 
 // ─── Guard: bot must not call methods missing from appointmentService ────
