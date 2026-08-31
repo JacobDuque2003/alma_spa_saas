@@ -1,22 +1,28 @@
 const MAIN_MENU_IDS = {
   LIST_SERVICES: 'menu_list_services',
   BOOK: 'menu_book',
+  RECOMMEND: 'menu_recommend_service',
   MY_APPOINTMENT: 'menu_my_appointment',
   ESCALATE: 'menu_escalate',
 };
 
 const SERVICE_PREFIX = 'svc_';
 const SERVICE_PAGE_PREFIX = 'svc_page_';
+const BOOK_SERVICE_PREFIX = 'book_svc_';
 const CATEGORY_PREFIX = 'cat_';
 const NAV_BACK_MENU = 'nav_menu';
 const BOOK_DATE_PREFIX = 'bkd_';
 const BOOK_TIME_PREFIX = 'bkt_';
+const BOOK_TIME_PAGE_PREFIX = 'bkt_page_';
+const BOOK_PERIOD_MORNING = 'bkp_morning';
+const BOOK_PERIOD_AFTERNOON = 'bkp_afternoon';
 const BOOK_CONFIRM_YES = 'bk_yes';
 const BOOK_CONFIRM_NO = 'bk_no';
 const RESCHEDULE_START = 'reschedule_start';
 const RESCHEDULE_CONFIRM_YES = 'rs_yes';
 const RESCHEDULE_CONFIRM_NO = 'rs_no';
 const SPA_TZ = 'America/Guayaquil';
+const LIST_PAGE_SIZE = 7;
 
 const CATEGORY_DISPLAY_NAMES = {
   corporal: '\u{1F486}‍♀️ Cuerpo y Relajación',
@@ -39,20 +45,29 @@ function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
 
-function greeting(tone) {
+function firstName(fullName) {
+  return String(fullName || '').trim().split(/\s+/)[0] || null;
+}
+
+function greeting(tone, clientName) {
+  const name = firstName(clientName);
+  const hello = name ? `¡Hola, ${name}!` : '¡Hola!';
   return tone === 'tu'
-    ? '✨ *¡Hola! Soy Almita, tu asistente en Alma Spa*'
-    : '✨ *¡Hola! Soy Almita, su asistente en Alma Spa*';
+    ? `✨ *${hello} Soy Almita, tu asistente en Alma Spa*`
+    : `✨ *${hello} Soy Almita, su asistente en Alma Spa*`;
 }
 
 function verbYouCan(tone) {
   return tone === 'tu' ? '¿En qué te puedo ayudar?' : '¿En qué le puedo ayudar?';
 }
 
-function mainMenu({ tone } = {}) {
+function mainMenu({ tone, clientName, compact = false } = {}) {
+  const body = compact
+    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría explorar ahora?' : '🌿 ¿Qué le gustaría explorar ahora?')
+    : `${greeting(tone, clientName)}\n${verbYouCan(tone)}`;
   return {
     type: 'list',
-    body: { text: `${greeting(tone)}\n${verbYouCan(tone)}` },
+    body: { text: body },
     footer: { text: 'Alma Spa · Zamora 🌿' },
     action: {
       button: 'Ver opciones',
@@ -62,6 +77,7 @@ function mainMenu({ tone } = {}) {
           rows: [
             { id: MAIN_MENU_IDS.LIST_SERVICES, title: 'Ver servicios', description: '💆‍♀️ Nuestra carta con precios' },
             { id: MAIN_MENU_IDS.BOOK, title: 'Reservar cita', description: '📅 Agenda tu hora por la web' },
+            { id: MAIN_MENU_IDS.RECOMMEND, title: 'No sé qué elegir', description: '✨ Cuéntame qué estás buscando' },
             { id: MAIN_MENU_IDS.MY_APPOINTMENT, title: 'Mi cita', description: '📋 Consulta tu próxima cita' },
             { id: MAIN_MENU_IDS.ESCALATE, title: 'Hablar con recepción', description: '👋 Te conectamos con el equipo' },
           ],
@@ -71,35 +87,56 @@ function mainMenu({ tone } = {}) {
   };
 }
 
-function mainMenuText({ tone } = {}) {
+function mainMenuText({ tone, clientName, compact = false } = {}) {
   const instruction = tone === 'tu' ? 'Responde con una opción:' : 'Responda con una opción:';
-  return `${greeting(tone)}
-${verbYouCan(tone)}
+  const intro = compact
+    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría explorar ahora?' : '🌿 ¿Qué le gustaría explorar ahora?')
+    : `${greeting(tone, clientName)}\n${verbYouCan(tone)}`;
+  return `${intro}
 
 ${instruction}
 1. Ver servicios
 2. Reservar cita
-3. Consultar mi cita
-4. Hablar con recepción`;
+3. No sé qué elegir
+4. Consultar mi cita
+5. Hablar con recepción`;
 }
 
-// Meta permite un máximo de 10 filas por lista. Ocho servicios por página
-// dejan espacio para navegar sin obligar a la clienta a elegir una categoría.
+function serviceEmoji(service) {
+  const name = String(service?.name || '').toLowerCase();
+  const category = String(service?.category || '').toLowerCase();
+  if (name.includes('aero yoga') || category === 'yoga') return '🧘';
+  if (name.includes('ceragem') || category === 'ceragem') return '🛏️';
+  if (name.includes('depil')) return '⚡';
+  if (name.includes('drenaje')) return '💧';
+  if (name.includes('masaje')) return '💆';
+  if (name.includes('facial') || category === 'facial') return '✨';
+  if (name.includes('reflex') || name.includes('detox') || category === 'pies') return '🦶';
+  if (name.includes('sueroterapia')) return '🩺';
+  if (name.includes('neural')) return '🩺';
+  if (name.includes('energ')) return '🌿';
+  if (category === 'corporal') return '🌸';
+  if (category === 'terapias') return '🌿';
+  return '🌿';
+}
+
+// Meta permite un máximo de 10 filas por lista. Siete opciones por página
+// dejan espacio para avanzar, retroceder y volver al menú sin superar el límite.
 function servicesList(services, { tone, body, page = 0 } = {}) {
   const visible = services.filter((service) => service.active !== false)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  const safePage = Math.max(0, Math.min(Number(page) || 0, Math.max(Math.ceil(visible.length / 8) - 1, 0)));
-  const start = safePage * 8;
-  const rows = visible.slice(start, start + 8).map((service) => ({
+  const safePage = Math.max(0, Math.min(Number(page) || 0, Math.max(Math.ceil(visible.length / LIST_PAGE_SIZE) - 1, 0)));
+  const start = safePage * LIST_PAGE_SIZE;
+  const rows = visible.slice(start, start + LIST_PAGE_SIZE).map((service) => ({
     id: `${SERVICE_PREFIX}${service.id}`,
-    title: String(service.name).slice(0, 24),
+    title: `${serviceEmoji(service)} ${String(service.name)}`.slice(0, 24),
     description: `$${Number(service.priceUsd).toFixed(2)} · ${service.durationMins || 60} min`.slice(0, 72),
   }));
-  if (start + 8 < visible.length) {
+  if (start + LIST_PAGE_SIZE < visible.length) {
     rows.push({
       id: `${SERVICE_PAGE_PREFIX}${safePage + 1}`,
       title: 'Ver más servicios',
-      description: `${visible.length - (start + 8)} servicios más`,
+      description: `${visible.length - (start + LIST_PAGE_SIZE)} servicios más`,
     });
   }
   if (safePage > 0) {
@@ -179,6 +216,20 @@ function backToMenuButton({ tone } = {}) {
   };
 }
 
+function serviceDetailActions(service, { tone } = {}) {
+  return {
+    type: 'button',
+    body: { text: tone === 'tu' ? '¿Quieres apartar este servicio? 💛' : '¿Desea apartar este servicio? 💛' },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: `${BOOK_SERVICE_PREFIX}${service.id}`, title: '📅 Reservar cita' } },
+        { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: '💆 Ver servicios' } },
+        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Menú principal' } },
+      ],
+    },
+  };
+}
+
 function datePicker({ tone, body } = {}) {
   const rows = [];
   const now = new Date();
@@ -227,14 +278,18 @@ function _slotHour(isoStr) {
   return parseInt(hourPart?.value || '0', 10);
 }
 
-function timeSlotList(slots, serviceName, { tone, body } = {}) {
+function timeSlotList(slots, serviceName, { tone, body, page = 0 } = {}) {
+  const safePage = Math.max(0, Math.min(Number(page) || 0, Math.max(Math.ceil(slots.length / LIST_PAGE_SIZE) - 1, 0)));
+  const start = safePage * LIST_PAGE_SIZE;
+  const pageSlots = slots.slice(start, start + LIST_PAGE_SIZE);
   const morning = [];
   const afternoon = [];
-  for (let i = 0; i < slots.length && i < 9; i++) {
-    const h = _slotHour(slots[i]);
+  for (let i = 0; i < pageSlots.length; i++) {
+    const actualIndex = start + i;
+    const h = _slotHour(pageSlots[i]);
     const row = {
-      id: `${BOOK_TIME_PREFIX}${i}`,
-      title: _formatSlotTime(slots[i]),
+      id: `${BOOK_TIME_PREFIX}${actualIndex}`,
+      title: _formatSlotTime(pageSlots[i]),
       description: String(serviceName).slice(0, 72),
     };
     if (h < 13) morning.push(row);
@@ -244,11 +299,11 @@ function timeSlotList(slots, serviceName, { tone, body } = {}) {
   const sections = [];
   if (morning.length) sections.push({ title: '🌅 Mañana', rows: morning });
   if (afternoon.length) sections.push({ title: '🌆 Tarde', rows: afternoon });
-  if (!sections.length && slots.length > 0) {
+  if (!sections.length && pageSlots.length > 0) {
     sections.push({
       title: 'Horarios',
-      rows: slots.slice(0, 9).map((iso, i) => ({
-        id: `${BOOK_TIME_PREFIX}${i}`,
+      rows: pageSlots.map((iso, i) => ({
+        id: `${BOOK_TIME_PREFIX}${start + i}`,
         title: _formatSlotTime(iso),
         description: String(serviceName).slice(0, 72),
       })),
@@ -256,6 +311,12 @@ function timeSlotList(slots, serviceName, { tone, body } = {}) {
   }
   if (sections.length) {
     const target = sections[sections.length - 1];
+    if (start + LIST_PAGE_SIZE < slots.length) {
+      target.rows.push({ id: `${BOOK_TIME_PAGE_PREFIX}${safePage + 1}`, title: 'Ver más horarios', description: 'Mostrar los siguientes horarios' });
+    }
+    if (safePage > 0) {
+      target.rows.push({ id: `${BOOK_TIME_PAGE_PREFIX}${safePage - 1}`, title: 'Volver a horarios anteriores', description: 'Regresar a la página anterior' });
+    }
     target.rows.push({ id: NAV_BACK_MENU, title: 'Volver', description: 'Elegir otro día o servicio' });
   }
 
@@ -268,6 +329,20 @@ function timeSlotList(slots, serviceName, { tone, body } = {}) {
     action: {
       button: 'Ver horarios',
       sections,
+    },
+  };
+}
+
+function timePeriodPicker({ tone } = {}) {
+  return {
+    type: 'button',
+    body: { text: tone === 'tu' ? '🕐 ¿Qué momento te queda mejor?' : '🕐 ¿Qué momento le queda mejor?' },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: BOOK_PERIOD_MORNING, title: '🌅 Mañana' } },
+        { type: 'reply', reply: { id: BOOK_PERIOD_AFTERNOON, title: '🌆 Tarde' } },
+        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Volver' } },
+      ],
     },
   };
 }
@@ -341,19 +416,26 @@ module.exports = {
   MAIN_MENU_IDS,
   SERVICE_PREFIX,
   SERVICE_PAGE_PREFIX,
+  BOOK_SERVICE_PREFIX,
   CATEGORY_PREFIX,
   NAV_BACK_MENU,
   BOOK_DATE_PREFIX,
   BOOK_TIME_PREFIX,
+  BOOK_TIME_PAGE_PREFIX,
+  BOOK_PERIOD_MORNING,
+  BOOK_PERIOD_AFTERNOON,
   BOOK_CONFIRM_YES,
   BOOK_CONFIRM_NO,
   RESCHEDULE_START,
   RESCHEDULE_CONFIRM_YES,
   RESCHEDULE_CONFIRM_NO,
   SPA_TZ,
+  LIST_PAGE_SIZE,
   CATEGORY_DISPLAY_NAMES,
   HIDDEN_CATEGORIES,
   capitalize,
+  firstName,
+  serviceEmoji,
   categoryDisplayName,
   mainMenu,
   mainMenuText,
@@ -361,8 +443,10 @@ module.exports = {
   categoryList,
   servicesInCategory,
   backToMenuButton,
+  serviceDetailActions,
   datePicker,
   timeSlotList,
+  timePeriodPicker,
   timeSlotButtons,
   bookingConfirmation,
   appointmentActions,

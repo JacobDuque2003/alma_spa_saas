@@ -601,7 +601,11 @@ async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone,
 }
 
 async function loadServicesForAI(tenantId) {
-  return loadVisibleServicesForBot(tenantId);
+  const services = await loadVisibleServicesForBot(tenantId);
+  return services.map((service) => ({
+    ...service,
+    description: serviceCatalogDescription(service),
+  }));
 }
 
 async function matchServiceByQuery(tenantId, query) {
@@ -1052,15 +1056,27 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
 
 function serviceCatalogDescription(service) {
   const description = String(service.description || '').replace(/\s+/g, ' ').trim();
-  if (description) return description.slice(0, 180);
-  return null;
+  const isGenericCatalogDescription = /^servicio de .+ con duraci[oó]n aproximada/i.test(description)
+    || /^a[uú]n no tengo una descripci[oó]n detallada/i.test(description);
+  if (description && !isGenericCatalogDescription) return description.slice(0, 300);
+  return serviceInfoFallback(service);
 }
 
 function serviceInfoFallback(service) {
   const name = normalizeSearchText(service?.name);
-  if (name.includes('masaje')) return 'Es un espacio de bienestar corporal pensado para descansar y relajarte.';
-  if (name.includes('facial')) return 'Es un servicio de cuidado facial y bienestar.';
-  if (name.includes('yoga')) return 'Es una práctica de movimiento y bienestar guiado.';
+  if (name.includes('camilla ceragem')) return 'Sesión de bienestar en camilla de masaje mecánico, pensada para una pausa de comodidad y relajación corporal.';
+  if (name.includes('corporal') || name.includes('reductor')) return 'Tratamiento corporal estético orientado al cuidado de la piel y la silueta. Los resultados dependen de cada persona y del protocolo profesional.';
+  if (name.includes('depil')) return 'Sesión de depilación con tecnología láser para una reducción progresiva del vello; requiere valoración según piel, vello y antecedentes.';
+  if (name.includes('detox')) return 'Baño de pies de bienestar para una pausa de relajación. No sustituye atención médica ni elimina toxinas del organismo.';
+  if (name.includes('drenaje post')) return 'Acompañamiento de bienestar posterior a un procedimiento, únicamente con autorización del cirujano y valoración profesional; no reemplaza el seguimiento médico.';
+  if (name.includes('emo vacuna')) return 'Sesión de bienestar con orientación previa de recepción para explicarle el protocolo y confirmar si es adecuada para usted.';
+  if (name.includes('masaje')) return 'Masaje de bienestar orientado a la relajación y al descanso. No sustituye una valoración médica ante dolor intenso, nuevo o persistente.';
+  if (name.includes('reflex')) return 'Práctica complementaria de presión y masaje en los pies, pensada para relajación. No trata ni cura enfermedades.';
+  if (name.includes('sueroterapia')) return 'Atención clínica que requiere valoración y administración por un profesional de salud habilitado. Recepción coordina la orientación previa.';
+  if (name.includes('terapia neural')) return 'Atención clínica que requiere valoración y aplicación exclusivamente por un profesional de salud habilitado. Recepción coordina la orientación previa.';
+  if (name.includes('energet')) return 'Práctica complementaria de bienestar enfocada en relajación y presencia. No sustituye atención médica ni trata enfermedades.';
+  if (name.includes('facial')) return 'Cuidado estético facial para limpiar, renovar e hidratar la piel, adaptado a sus necesidades tras una valoración profesional.';
+  if (name.includes('yoga')) return 'Práctica guiada de movimiento y bienestar. La profesional adapta la sesión a su experiencia y condición física.';
   return 'Es un servicio de bienestar de Alma Spa. Recepción puede ampliarte los detalles específicos.';
 }
 
@@ -1153,10 +1169,25 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
-async function sendMainMenu({ tenant, connection, conv, waId, tone }) {
+async function handleServiceRecommendation({ tenant, connection, conv, waId, tone }) {
+  const previous = state.getFlowState(waId) || {};
+  state.setFlowState(waId, { ...previous, flow: 'recommend_service', tone, unclearCount: 0 });
+  const msg = tone === 'tu'
+    ? '✨ Cuéntame qué te gustaría mejorar o cómo quieres sentirte. Te orientaré con opciones de bienestar; si hay dolor fuerte, reciente o persistente, es mejor consultar a un profesional de salud.'
+    : '✨ Cuénteme qué le gustaría mejorar o cómo quiere sentirse. Le orientaré con opciones de bienestar; si hay dolor fuerte, reciente o persistente, es mejor consultar a un profesional de salud.';
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
+async function sendMainMenu({ tenant, connection, conv, waId, tone, compact = false }) {
   const prev = state.getFlowState(waId) || {};
-  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0, clientName: prev.clientName || null });
-  const payload = menus.mainMenu({ tone });
+  const stateOrConversationName = prev.clientName || conv.customerName || null;
+  const knownClient = stateOrConversationName
+    ? null
+    : await lookupClientByWaId(tenant.id, waId);
+  const clientName = stateOrConversationName || knownClient?.fullName || null;
+  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0, clientName });
+  const payload = menus.mainMenu({ tone, clientName, compact });
   logBot('info', 'enviando menú principal', {
     tenant: tenant.slug,
     conversationId: conv.id,
@@ -1171,7 +1202,7 @@ async function sendMainMenu({ tenant, connection, conv, waId, tone }) {
     return;
   }
 
-  const fallback = menus.mainMenuText({ tone });
+  const fallback = menus.mainMenuText({ tone, clientName, compact });
   logBot('warn', 'menú interactivo rechazado; enviando menú de texto', {
     tenant: tenant.slug,
     conversationId: conv.id,
@@ -1192,7 +1223,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     }
     return handleBookingDateSelected({ tenant, connection, conv, waId, tone, date });
   }
-  if (selectionId.startsWith(menus.BOOK_TIME_PREFIX)) {
+  if (selectionId.startsWith(menus.BOOK_TIME_PREFIX) && !selectionId.startsWith(menus.BOOK_TIME_PAGE_PREFIX)) {
     const idx = parseInt(selectionId.slice(menus.BOOK_TIME_PREFIX.length), 10);
     const flowState = state.getFlowState(waId);
     if (flowState?.reschedule?.appointmentId) {
@@ -1211,7 +1242,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
       : '🌿 *Sin problema, cancelé su reserva*\n\n¿Le ayudo con algo más?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
   }
   if (selectionId === menus.RESCHEDULE_CONFIRM_YES) {
     return handleRescheduleConfirm({ tenant, connection, conv, waId, tone });
@@ -1224,7 +1255,25 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
       : '🌿 *Dejé su espacio como estaba*\n\n¿Le ayudo con algo más?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
+  }
+
+  if (selectionId.startsWith(menus.BOOK_TIME_PAGE_PREFIX)) {
+    const page = Number.parseInt(selectionId.slice(menus.BOOK_TIME_PAGE_PREFIX.length), 10);
+    const fs = state.getFlowState(waId) || {};
+    if (fs?.reschedule?.availableSlots) {
+      return showRescheduleTimeSlots({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
+    }
+    return showBookingTimeSlots({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
+  }
+
+  if (selectionId === menus.BOOK_PERIOD_MORNING || selectionId === menus.BOOK_PERIOD_AFTERNOON) {
+    const period = selectionId === menus.BOOK_PERIOD_MORNING ? 'morning' : 'afternoon';
+    const fs = state.getFlowState(waId) || {};
+    if (fs?.reschedule?.appointmentId) {
+      return handleReschedulePeriodSelected({ tenant, connection, conv, waId, tone, period });
+    }
+    return handleBookingPeriodSelected({ tenant, connection, conv, waId, tone, period });
   }
 
   if (selectionId.startsWith(menus.SERVICE_PAGE_PREFIX)) {
@@ -1234,6 +1283,11 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
       return handleBook({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
     }
     return handleListServices({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
+  }
+
+  if (selectionId.startsWith(menus.BOOK_SERVICE_PREFIX)) {
+    const serviceId = selectionId.slice(menus.BOOK_SERVICE_PREFIX.length);
+    return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId });
   }
 
   // Service selection — check if we're in booking mode before resetting state
@@ -1249,6 +1303,12 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
 
   if (selectionId === menus.NAV_BACK_MENU) {
     const fs = state.getFlowState(waId) || {};
+    if (fs?.booking?.step === 'select_time' || fs?.booking?.step === 'select_period') {
+      return showBookingDatePicker({ tenant, connection, conv, waId, tone });
+    }
+    if (fs?.reschedule?.step === 'select_time' || fs?.reschedule?.step === 'select_period') {
+      return handleReschedule({ tenant, connection, conv, waId, tone });
+    }
     if (fs?.booking) return handleBook({ tenant, connection, conv, waId, tone });
     if (fs?.reschedule) return handleMyAppointment({ tenant, connection, conv, waId, tone });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
@@ -1262,6 +1322,9 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   }
   if (selectionId === menus.MAIN_MENU_IDS.BOOK) {
     return handleBook({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.RECOMMEND) {
+    return handleServiceRecommendation({ tenant, connection, conv, waId, tone });
   }
   if (selectionId === menus.MAIN_MENU_IDS.MY_APPOINTMENT) {
     return handleMyAppointment({ tenant, connection, conv, waId, tone });
@@ -1305,7 +1368,7 @@ async function handleCategoryServices({ tenant, connection, conv, waId, tone, ca
       : '🤔 *No encontré servicios ahí* — le muestro las opciones:';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
   }
   state.setFlowState(waId, { flow: 'category_services', category: categoryName, tone, unclearCount: 0 });
   const payload = menus.servicesInCategory(svcs, categoryName, { tone });
@@ -1326,7 +1389,8 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
   }
 
   const descLine = `\n\n${serviceCatalogDescription(svc) || serviceInfoFallback(svc)}`;
-  const caption = `🌿 *_${svc.name}_*\n💰 $${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
+  const icon = menus.serviceEmoji(svc);
+  const caption = `${icon} *_${svc.name}_*\n💰 $${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
 
   const imgRes = await serviceService.getServiceImage(botActor, serviceId);
   const image = imgRes?.image;
@@ -1345,9 +1409,9 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
     await recordBotMessage(tenant.id, conv, r, { body: caption });
   }
 
-  const backPayload = menus.backToMenuButton({ tone });
-  const r2 = await transport.sendInteractive(connection, waId, backPayload);
-  await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[botón volver]' });
+  const actions = menus.serviceDetailActions(svc, { tone });
+  const r2 = await transport.sendInteractive(connection, waId, actions);
+  await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: `[acciones de ${svc.name}]` });
   state.setFlowState(waId, { flow: 'service_detail', lastServiceId: serviceId, tone, unclearCount: 0 });
 }
 
@@ -1394,7 +1458,14 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
       : '😅 *Aún no tenemos servicios disponibles*\n\nComuníquese con recepción 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return sendMainMenu({
+      tenant,
+      connection,
+      conv,
+      waId,
+      tone,
+      compact: true,
+    });
   }
 
   const prev = state.getFlowState(waId) || {};
@@ -1442,15 +1513,14 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
     return;
   }
 
-  state.setFlowState(waId, {
-    flow: 'booking',
-    booking: { step: 'select_time', serviceId: service.id, serviceName: service.name, date, availableSlots: slots },
-    clientName: prev.clientName,
-    tone,
-    unclearCount: 0,
-  });
-
   if (time) {
+    state.setFlowState(waId, {
+      flow: 'booking',
+      booking: { step: 'select_time', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
+      clientName: prev.clientName,
+      tone,
+      unclearCount: 0,
+    });
     const matchedIdx = slots.findIndex((isoStr) => {
       const d = new Date(isoStr);
       const slotTime = new Intl.DateTimeFormat('en-GB', {
@@ -1464,20 +1534,24 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
     }
 
     const body = `😅 *No hay horario a las ${time}* para _${service.name}_\n\nPero tengo estos:`;
-    const payload = slots.length <= 3
-      ? menus.timeSlotButtons(slots, service.name, { tone })
-      : menus.timeSlotList(slots, service.name, { tone, body });
-    if (slots.length <= 3) payload.body = { text: body };
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[horarios alternativos]' });
-    return;
+    state.setFlowState(waId, {
+      flow: 'booking',
+      booking: { step: 'select_period', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
+      clientName: prev.clientName,
+      tone,
+      unclearCount: 0,
+    });
+    return showBookingPeriodPicker({ tenant, connection, conv, waId, tone, body });
   }
 
-  const payload = slots.length <= 3
-    ? menus.timeSlotButtons(slots, service.name, { tone })
-    : menus.timeSlotList(slots, service.name, { tone });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${slots.length} horarios para ${date}]` });
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { step: 'select_period', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
+    clientName: prev.clientName,
+    tone,
+    unclearCount: 0,
+  });
+  return showBookingPeriodPicker({ tenant, connection, conv, waId, tone });
 }
 
 async function handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId }) {
@@ -1549,7 +1623,7 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
 
   state.setFlowState(waId, {
     flow: 'booking',
-    booking: { ...fs.booking, step: 'select_time', date, availableSlots: slots },
+    booking: { ...fs.booking, step: 'select_period', date, allAvailableSlots: slots, availableSlots: slots },
     clientName: fs.clientName,
     tone,
     unclearCount: 0,
@@ -1559,18 +1633,83 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
     const slotIndex = findSlotIndexByTime(slots, requestedTime);
     if (slotIndex >= 0) return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex });
   }
+  return showBookingPeriodPicker({
+    tenant, connection, conv, waId, tone,
+    body: requestedTime ? `😅 *No hay horario a las ${requestedTime}*\n\nVeamos otro momento del día:` : undefined,
+  });
+}
 
-  const payload = slots.length <= 3
-    ? menus.timeSlotButtons(slots, fs.booking.serviceName, { tone })
-    : menus.timeSlotList(slots, fs.booking.serviceName, {
-      tone,
-      body: requestedTime ? `😅 *No hay horario a las ${requestedTime}*\n\nPero tengo estos:` : undefined,
-    });
-  if (requestedTime && slots.length <= 3) {
-    payload.body = { text: `😅 *No hay horario a las ${requestedTime}*\n\nPero tengo estos:` };
-  }
+function slotsForPeriod(slots, period) {
+  return (slots || []).filter((slot) => {
+    const hour = new Intl.DateTimeFormat('en-US', {
+      timeZone: menus.SPA_TZ, hour: 'numeric', hour12: false,
+    }).formatToParts(new Date(slot)).find((part) => part.type === 'hour')?.value;
+    const numericHour = Number(hour || 0);
+    return period === 'morning' ? numericHour < 13 : numericHour >= 13;
+  });
+}
+
+async function showBookingDatePicker({ tenant, connection, conv, waId, tone }) {
+  const fs = state.getFlowState(waId) || {};
+  const body = tone === 'tu'
+    ? `📅 ¿Qué otro día te queda bien para _${fs.booking?.serviceName || 'tu servicio'}_?`
+    : `📅 ¿Qué otro día le queda bien para _${fs.booking?.serviceName || 'su servicio'}_?`;
+  const payload = menus.datePicker({ tone, body });
   const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${slots.length} horarios para ${date}]` });
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[volver a elegir fecha]' });
+}
+
+async function showBookingPeriodPicker({ tenant, connection, conv, waId, tone, body }) {
+  const fs = state.getFlowState(waId) || {};
+  const booking = fs.booking || {};
+  const slots = booking.allAvailableSlots || booking.availableSlots || [];
+  const hasMorning = slotsForPeriod(slots, 'morning').length > 0;
+  const hasAfternoon = slotsForPeriod(slots, 'afternoon').length > 0;
+
+  if (hasMorning && hasAfternoon) {
+    const payload = menus.timePeriodPicker({ tone });
+    if (body) payload.body = { text: body };
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[elegir mañana o tarde]' });
+    return;
+  }
+
+  return handleBookingPeriodSelected({
+    tenant, connection, conv, waId, tone,
+    period: hasMorning ? 'morning' : 'afternoon', body,
+  });
+}
+
+async function handleBookingPeriodSelected({ tenant, connection, conv, waId, tone, period, body }) {
+  const fs = state.getFlowState(waId) || {};
+  const booking = fs.booking;
+  if (!booking?.serviceId) return handleBook({ tenant, connection, conv, waId, tone });
+  const availableSlots = slotsForPeriod(booking.allAvailableSlots || booking.availableSlots, period);
+  if (!availableSlots.length) return showBookingPeriodPicker({ tenant, connection, conv, waId, tone });
+  state.setFlowState(waId, {
+    ...fs,
+    flow: 'booking',
+    booking: { ...booking, step: 'select_time', period, availableSlots },
+    tone,
+    unclearCount: 0,
+  });
+  return showBookingTimeSlots({ tenant, connection, conv, waId, tone, body });
+}
+
+async function showBookingTimeSlots({ tenant, connection, conv, waId, tone, page = 0, body }) {
+  const fs = state.getFlowState(waId) || {};
+  const booking = fs.booking;
+  if (!booking?.serviceId || !booking?.availableSlots?.length) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+  const periodLabel = booking.period === 'morning' ? '🌅 Mañana' : '🌆 Tarde';
+  const payload = menus.timeSlotList(booking.availableSlots, booking.serviceName, {
+    tone,
+    page,
+    body: body || `${periodLabel} · *Horarios para* _${booking.serviceName}_`,
+  });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[horarios ${booking.period || 'disponibles'} página ${Number(page) + 1}]` });
 }
 
 async function handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex }) {
@@ -1749,7 +1888,7 @@ async function handleReschedule({ tenant, connection, conv, waId, tone, date = n
       : '🤔 *No encontré una reserva próxima a su nombre*\n\n¿Desea agendar su momento? 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return handleBook({ tenant, connection, conv, waId, tone });
   }
 
   const appointment = await prisma.appointment.findFirst({
@@ -1851,7 +1990,7 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
 
   state.setFlowState(waId, {
     flow: 'reschedule',
-    reschedule: { ...fs.reschedule, step: 'select_time', date, availableSlots: slots },
+    reschedule: { ...fs.reschedule, step: 'select_period', date, allAvailableSlots: slots, availableSlots: slots },
     clientName: fs.clientName,
     tone,
     unclearCount: 0,
@@ -1867,12 +2006,56 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
   const body = requestedTime
     ? `😅 *No hay horario a las ${requestedTime}*\n\nPero tengo estos:`
     : undefined;
-  const payload = slots.length <= 3
-    ? menus.timeSlotButtons(slots, fs.reschedule.serviceName, { tone })
-    : menus.timeSlotList(slots, fs.reschedule.serviceName, { tone, body });
-  if (body && slots.length <= 3) payload.body = { text: body };
+  return showReschedulePeriodPicker({ tenant, connection, conv, waId, tone, body });
+}
+
+async function showReschedulePeriodPicker({ tenant, connection, conv, waId, tone, body }) {
+  const fs = state.getFlowState(waId) || {};
+  const reschedule = fs.reschedule || {};
+  const slots = reschedule.allAvailableSlots || reschedule.availableSlots || [];
+  const hasMorning = slotsForPeriod(slots, 'morning').length > 0;
+  const hasAfternoon = slotsForPeriod(slots, 'afternoon').length > 0;
+  if (hasMorning && hasAfternoon) {
+    const payload = menus.timePeriodPicker({ tone });
+    if (body) payload.body = { text: body };
+    const r = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reprogramar: elegir mañana o tarde]' });
+    return;
+  }
+  return handleReschedulePeriodSelected({
+    tenant, connection, conv, waId, tone,
+    period: hasMorning ? 'morning' : 'afternoon',
+  });
+}
+
+async function handleReschedulePeriodSelected({ tenant, connection, conv, waId, tone, period }) {
+  const fs = state.getFlowState(waId) || {};
+  const reschedule = fs.reschedule;
+  if (!reschedule?.appointmentId) return handleReschedule({ tenant, connection, conv, waId, tone });
+  const availableSlots = slotsForPeriod(reschedule.allAvailableSlots || reschedule.availableSlots, period);
+  if (!availableSlots.length) return showReschedulePeriodPicker({ tenant, connection, conv, waId, tone });
+  state.setFlowState(waId, {
+    ...fs,
+    flow: 'reschedule',
+    reschedule: { ...reschedule, step: 'select_time', period, availableSlots },
+    tone,
+    unclearCount: 0,
+  });
+  return showRescheduleTimeSlots({ tenant, connection, conv, waId, tone });
+}
+
+async function showRescheduleTimeSlots({ tenant, connection, conv, waId, tone, page = 0 }) {
+  const fs = state.getFlowState(waId) || {};
+  const reschedule = fs.reschedule;
+  if (!reschedule?.availableSlots?.length) return handleReschedule({ tenant, connection, conv, waId, tone });
+  const periodLabel = reschedule.period === 'morning' ? '🌅 Mañana' : '🌆 Tarde';
+  const payload = menus.timeSlotList(reschedule.availableSlots, reschedule.serviceName, {
+    tone,
+    page,
+    body: `${periodLabel} · *Horarios para* _${reschedule.serviceName}_`,
+  });
   const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[reprogramar: ${slots.length} horarios para ${date}]` });
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[reprogramar: horarios ${reschedule.period} página ${Number(page) + 1}]` });
 }
 
 async function handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex }) {
@@ -1959,7 +2142,7 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
       : '🤔 *No encontré reservas a su nombre*\n\n¿Desea agendar su momento? 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return handleBook({ tenant, connection, conv, waId, tone });
   }
 
   state.setFlowState(waId, { clientName: client.fullName });
@@ -1976,7 +2159,7 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
       : '📋 *No tiene reservas próximas*\n\n¿Desea agendar su momento? 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
+    return handleBook({ tenant, connection, conv, waId, tone });
   }
 
   const fecha = new Date(next.startsAt).toLocaleString('es-EC', {
