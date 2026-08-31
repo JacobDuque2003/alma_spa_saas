@@ -96,7 +96,7 @@ test('primer mensaje texto dispara menú principal con Almita', async () => {
   assert.equal(sent[0].payload.type, 'list');
   assert.match(sent[0].payload.body.text, /Almita/);
   const rows = sent[0].payload.action.sections[0].rows.map((r) => r.id);
-  assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_recommend_service', 'menu_my_appointment', 'menu_escalate']);
+  assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_book_for_other', 'menu_recommend_service', 'menu_my_appointment', 'menu_escalate']);
   assert.deepEqual(messageCreates[0].interactivePayload, sent[0].payload);
 });
 
@@ -121,7 +121,7 @@ test('número nuevo pide nombre y dirección, crea la clienta y la etiqueta', as
   });
   assert.ok(conversationUpdates.some((data) => data.labels?.includes('nueva_clienta')));
   assert.equal(sent.at(-1).kind, 'interactive');
-  assert.equal(sent.at(-1).payload.action.sections[0].rows.length, 5);
+  assert.equal(sent.at(-1).payload.action.sections[0].rows.length, 6);
 });
 
 test('ver servicios muestra servicios directos paginados y permite volver', async () => {
@@ -144,7 +144,7 @@ test('ver servicios muestra servicios directos paginados y permite volver', asyn
   const firstRows = sent.at(-1).payload.action.sections[0].rows;
   assert.equal(firstRows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 7);
   assert.ok(firstRows.some((row) => row.id === 'svc_page_1'));
-  assert.ok(firstRows.some((row) => row.id === menus.NAV_BACK_MENU));
+  assert.ok(firstRows.some((row) => row.id === menus.MAIN_MENU_BACK));
   assert.ok(!firstRows.some((row) => row.id.startsWith('cat_')));
 
   await bot.handleInboundMessage({
@@ -154,6 +154,111 @@ test('ver servicios muestra servicios directos paginados y permite volver', asyn
   const secondRows = sent.at(-1).payload.action.sections[0].rows;
   assert.equal(secondRows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 7);
   assert.ok(secondRows.some((row) => row.id === 'svc_page_0'));
+});
+
+test('"Menú principal" cancela cualquier flujo y vuelve al menú real', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'reschedule',
+    booking: { step: 'select_service', serviceId: 's1', serviceName: 'Masaje relajante' },
+    reschedule: { step: 'select_date', appointmentId: 'appt1' },
+    bookingForOther: { step: 'address' },
+    clientName: 'Jacob Duque',
+    tone: 'usted',
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { button_reply: { id: menus.MAIN_MENU_BACK } } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(sent[0].payload.action.button, 'Ver opciones');
+  assert.match(sent[0].payload.body.text, /Qué le gustaría explorar ahora/i);
+  const nextState = state.getFlowState(CONV.customerWaId);
+  assert.equal(nextState.flow, 'menu');
+  assert.equal(nextState.booking, null);
+  assert.equal(nextState.reschedule, null);
+  assert.equal(nextState.bookingForOther, null);
+});
+
+test('reservar para otra persona pide teléfono, nombre y dirección antes del servicio', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const { clientCreates } = installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje relajante', category: 'corporal', priceUsd: 30, durationMins: 60, active: true },
+    ],
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book_for_other' } } },
+  });
+  assert.match(sent.at(-1).body, /número de WhatsApp/i);
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: '0993629257' } },
+  });
+  assert.match(sent.at(-1).body, /nombre completo/i);
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'María Pérez' } },
+  });
+  assert.match(sent.at(-1).body, /dirección/i);
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'Av. Amazonas y Naciones Unidas' } },
+  });
+  assert.deepEqual(clientCreates[0], {
+    tenantId: TENANT.id,
+    fullName: 'María Pérez',
+    whatsapp: '+593993629257',
+    address: 'Av. Amazonas y Naciones Unidas',
+  });
+  assert.equal(sent.at(-1).kind, 'interactive');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.clientName, 'María Pérez');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.forOther, true);
+});
+
+test('consulta de citas disponibles pide servicio antes de mostrar horarios', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje relajante', category: 'corporal', priceUsd: 30, durationMins: 60, active: true },
+    ],
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'tengo citas disponibles?' } },
+  });
+  assert.equal(sent.at(-1).kind, 'interactive');
+  assert.match(sent.at(-1).payload.body.text, /horarios realmente disponibles/i);
+});
+
+test('dolor en piernas recomienda un servicio con descripción y opción de reservar', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const massage = {
+    id: 's1', tenantId: 't1', name: 'Masaje relajante', category: 'corporal',
+    priceUsd: 30, durationMins: 60, active: true, description: 'Masaje suave para relajación corporal.',
+  };
+  installPrismaMocks({ services: [massage], serviceById: { s1: massage } });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'me duelen las piernas, ¿cuál me recomiendas?' } },
+  });
+  const serviceMessage = sent.find((item) => item.kind === 'text' || item.kind === 'image');
+  assert.match(serviceMessage.body || serviceMessage.caption, /Masaje relajante/);
+  assert.match(serviceMessage.body || serviceMessage.caption, /relajación corporal/);
+  assert.ok(sent.at(-1).payload.action.buttons.some((button) => button.reply.id === 'book_svc_s1'));
 });
 
 test('menú principal cae a texto si Meta rechaza el interactivo', async () => {
@@ -176,7 +281,7 @@ test('menú principal cae a texto si Meta rechaza el interactivo', async () => {
   assert.equal(sent[0].kind, 'interactive');
   assert.equal(sent[1].kind, 'text');
   assert.match(sent[1].body, /1\. Ver servicios/);
-  assert.match(sent[1].body, /5\. Hablar con recepción/);
+  assert.match(sent[1].body, /6\. Hablar con recepción/);
 });
 
 test('opciones numéricas funcionan sin IA', async () => {
@@ -230,7 +335,7 @@ test('"Ver servicios" → lista directa de servicios', async () => {
   const rows = sent[0].payload.action.sections[0].rows;
   assert.ok(rows.some((row) => /Aero yoga/.test(row.title)));
   assert.ok(rows.some((row) => /Limpieza facial/.test(row.title)));
-  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU));
+  assert.ok(rows.some((row) => row.id === menus.MAIN_MENU_BACK));
 });
 
 test('servicio con imagen → sube y envía image+caption; luego botón volver', async () => {
@@ -388,7 +493,7 @@ test('>10 servicios → envía primera página de servicios', async () => {
   assert.ok(rows.length <= 10);
   assert.equal(rows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 7);
   assert.ok(rows.some((row) => row.id === 'svc_page_1'));
-  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU));
+  assert.ok(rows.some((row) => row.id === menus.MAIN_MENU_BACK));
 });
 
 test('seleccionar categoría → servicios de esa categoría', async () => {
@@ -1179,7 +1284,7 @@ test('Ronda E: "quiero hacer una reserva" muestra servicios directos visibles', 
   const rows = sent[0].payload.action.sections[0].rows;
   assert.equal(rows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 7);
   assert.ok(rows.some((row) => row.id === 'svc_page_1'), 'debe permitir ver el resto del catálogo');
-  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU), 'debe permitir volver');
+  assert.ok(rows.some((row) => row.id === menus.MAIN_MENU_BACK), 'debe permitir volver');
   assert.ok(!rows.some((row) => /recordatorio|valoracion/i.test(row.title)), 'debe ocultar internos');
 });
 

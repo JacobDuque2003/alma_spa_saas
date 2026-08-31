@@ -24,7 +24,7 @@ const rateLimit = require('./rateLimit');
 const menus = require('./menus');
 const intentCache = require('./intentCache');
 const crmEvents = require('../crmEventBus');
-const { waIdToPhone } = require('../../utils/phone');
+const { normalizePhone, isValidE164, waIdToPhone } = require('../../utils/phone');
 const { SlotUnavailableError } = require('../../utils/errors');
 
 const DAILY_COST_CAP_USD = 0.50;
@@ -209,6 +209,17 @@ function isExplicitNewBookingRequest(text) {
     || /\b(quiero|quisiera|deseo|necesito)\b.*\b(nueva|nuevo|otra|otro)\b.*\b(cita|reserva|reservacion)\b/.test(t);
 }
 
+function isGenericBookingRequest(text) {
+  const t = normalizeSearchText(text);
+  return /^(quiero |quisiera |deseo |necesito )?(hacer |agendar |reservar )?(una )?(cita|reserva|reservacion|espacio)$/.test(t);
+}
+
+function asksForAvailableAppointments(text) {
+  const t = normalizeSearchText(text);
+  return /\b(hay|tienen|tengo|quiero ver|mostrar)\b.*\b(citas?|horarios?|espacios?)\b.*\b(disponibles?|libres?|para hoy|para manana)\b/.test(t)
+    || /\b(citas?|horarios?|espacios?)\b.*\b(disponibles?|libres?)\b/.test(t);
+}
+
 function parseRequestedTime(text) {
   const t = normalizeSearchText(text);
   if (!t) return null;
@@ -266,7 +277,15 @@ function hasExplicitBookingLanguage(text) {
 
 function describesWellnessNeed(text) {
   const t = normalizeSearchText(text);
-  return /\b(me duele|dolor|molestia|tension|tenso|contractura|cansancio|estres|ansiedad)\b/.test(t);
+  return /\b(me duele[n]?|dolor|molestia|tension|tenso|contractura|cansancio|estres|ansiedad)\b/.test(t);
+}
+
+function wellnessRecommendationQuery(text) {
+  const t = normalizeSearchText(text);
+  if (/\b(piernas?|espalda|cuello|hombros?|cuerpo|tension|contractura|estres|cansancio)\b/.test(t)) return 'masaje relajante';
+  if (/\b(pies|plantas|talones)\b/.test(t)) return 'reflexologia';
+  if (/\b(piel|rostro|cara|facial)\b/.test(t)) return 'limpieza facial';
+  return null;
 }
 
 function normalizeSearchText(text) {
@@ -600,6 +619,101 @@ async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone,
   }
 }
 
+async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyText = null }) {
+  const fs = state.getFlowState(waId) || {};
+  const bookingForOther = fs.bookingForOther;
+
+  if (!bookingForOther) {
+    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { step: 'phone' }, clientName: fs.clientName, tone, unclearCount: 0 });
+    const msg = tone === 'tu'
+      ? '👤 Claro. ¿Cuál es el número de WhatsApp de la persona para quien quieres reservar?'
+      : '👤 Claro. ¿Cuál es el número de WhatsApp de la persona para quien desea reservar?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  const answer = String(bodyText || '').replace(/\s+/g, ' ').trim();
+  if (!answer) return;
+
+  if (bookingForOther.step === 'phone') {
+    const phone = normalizePhone(answer);
+    if (!isValidE164(phone)) {
+      const msg = tone === 'tu'
+        ? '💛 Escríbeme un número válido, por ejemplo: *0993629257*.'
+        : '💛 Escríbame un número válido, por ejemplo: *0993629257*.';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return;
+    }
+    const existing = await prisma.client.findFirst({ where: { tenantId: tenant.id, whatsapp: phone } });
+    if (existing) {
+      state.setFlowState(waId, {
+        flow: 'booking',
+        bookingForOther: null,
+        booking: { step: 'select_service', clientId: existing.id, clientName: existing.fullName, clientPhone: phone, forOther: true },
+        clientName: fs.clientName,
+        tone,
+        unclearCount: 0,
+      });
+      const msg = '👤 *' + existing.fullName + '* ya está registrado. Ahora elija el servicio para su cita:';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return handleBook({ tenant, connection, conv, waId, tone });
+    }
+    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { step: 'name', phone }, clientName: fs.clientName, tone, unclearCount: 0 });
+    const msg = '💛 Perfecto. ¿Cuál es su nombre completo?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  if (bookingForOther.step === 'name') {
+    if (answer.length < 3 || answer.length > 100) {
+      const msg = '💛 Por favor, escriba su nombre completo.';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return;
+    }
+    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'address', fullName: answer }, clientName: fs.clientName, tone, unclearCount: 0 });
+    const msg = '📍 Ahora, ¿me comparte su dirección?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  if (bookingForOther.step === 'address') {
+    if (answer.length < 5 || answer.length > 200) {
+      const msg = '📍 Por favor, comparta una dirección más completa.';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return;
+    }
+    let client;
+    try {
+      client = await prisma.client.create({
+        data: { tenantId: tenant.id, fullName: bookingForOther.fullName, whatsapp: bookingForOther.phone, address: answer },
+      });
+    } catch (err) {
+      if (err?.code !== 'P2002') throw err;
+      client = await prisma.client.findFirst({ where: { tenantId: tenant.id, whatsapp: bookingForOther.phone } });
+      if (!client) throw err;
+    }
+    state.setFlowState(waId, {
+      flow: 'booking',
+      bookingForOther: null,
+      booking: { step: 'select_service', clientId: client.id, clientName: client.fullName, clientPhone: bookingForOther.phone, forOther: true },
+      clientName: fs.clientName,
+      tone,
+      unclearCount: 0,
+    });
+    const msg = '✨ *Listo, ' + client.fullName + ' ya está registrado.* Ahora elija el servicio para su cita:';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+}
+
 async function loadServicesForAI(tenantId) {
   const services = await loadVisibleServicesForBot(tenantId);
   return services.map((service) => ({
@@ -734,11 +848,32 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
 
 async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyText }) {
   const flowState = state.getFlowState(waId) || {};
+  if (flowState.bookingForOther) {
+    return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText });
+  }
+
+  if (asksForAvailableAppointments(bodyText)) {
+    const intro = tone === 'tu'
+      ? '📅 Para mostrarte horarios realmente disponibles, primero elige el servicio.'
+      : '📅 Para mostrarle horarios realmente disponibles, primero elija el servicio.';
+    return handleBook({ tenant, connection, conv, waId, tone, aiReply: intro });
+  }
+
+  if (describesWellnessNeed(bodyText) && !hasExplicitBookingLanguage(bodyText)) {
+    const query = wellnessRecommendationQuery(bodyText);
+    if (query) {
+      const recommended = await matchServiceByQuery(tenant.id, query);
+      if (recommended) return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: recommended.id });
+    }
+  }
+
   const priorityIntent = detectDeterministicIntent(bodyText);
   // Un mensaje libre de reserva puede traer servicio, fecha y hora. Si la IA
   // está disponible, debe extraer esos datos para llevar la clienta directo a
   // la disponibilidad real, en vez de devolverla al selector inicial.
-  const letAIResolveBooking = priorityIntent === 'book_start' && aiClient.isAvailable();
+  const letAIResolveBooking = priorityIntent === 'book_start'
+    && !isGenericBookingRequest(bodyText)
+    && aiClient.isAvailable();
 
   // La petición nueva y explícita de la clienta manda sobre cualquier flujo previo.
   if (priorityIntent === 'book_start' && !letAIResolveBooking) {
@@ -1305,6 +1440,21 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId });
   }
 
+  if (selectionId === menus.MAIN_MENU_BACK) {
+    const fs = state.getFlowState(waId) || {};
+    // El menú principal no debe heredar una reserva o reprogramación a medias.
+    state.setFlowState(waId, {
+      flow: 'menu',
+      booking: null,
+      reschedule: null,
+      bookingForOther: null,
+      clientName: fs.clientName,
+      tone,
+      unclearCount: 0,
+    });
+    return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
+  }
+
   if (selectionId === menus.NAV_BACK_MENU) {
     const fs = state.getFlowState(waId) || {};
     if (fs?.booking?.step === 'select_time' || fs?.booking?.step === 'select_period') {
@@ -1326,6 +1476,9 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   }
   if (selectionId === menus.MAIN_MENU_IDS.BOOK) {
     return handleBook({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.BOOK_FOR_OTHER) {
+    return handleBookForOther({ tenant, connection, conv, waId, tone });
   }
   if (selectionId === menus.MAIN_MENU_IDS.RECOMMEND) {
     return handleServiceRecommendation({ tenant, connection, conv, waId, tone });
@@ -1473,7 +1626,21 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
   }
 
   const prev = state.getFlowState(waId) || {};
-  state.setFlowState(waId, { flow: 'booking', booking: { step: 'select_service' }, clientName: prev.clientName, tone, unclearCount: 0 });
+  const bookingClient = prev.booking?.forOther
+    ? {
+      clientId: prev.booking.clientId,
+      clientName: prev.booking.clientName,
+      clientPhone: prev.booking.clientPhone,
+      forOther: true,
+    }
+    : {};
+  state.setFlowState(waId, {
+    flow: 'booking',
+    booking: { step: 'select_service', ...bookingClient },
+    clientName: prev.clientName,
+    tone,
+    unclearCount: 0,
+  });
 
   const intro = aiReply || (tone === 'tu'
     ? '✨ *¡Qué lindo que quieres darte un momento!*\n\nElige tu servicio:'
@@ -1573,15 +1740,24 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
   const prev = state.getFlowState(waId) || {};
   state.setFlowState(waId, {
     flow: 'booking',
-    booking: { step: 'select_date', serviceId: svc.id, serviceName: svc.name },
+    booking: {
+      step: 'select_date',
+      serviceId: svc.id,
+      serviceName: svc.name,
+      clientId: prev.booking?.clientId,
+      clientName: prev.booking?.clientName,
+      clientPhone: prev.booking?.clientPhone,
+      forOther: Boolean(prev.booking?.forOther),
+    },
     clientName: prev.clientName,
     tone,
     unclearCount: 0,
   });
 
+  const description = serviceCatalogDescription(svc);
   const body = tone === 'tu'
-    ? `✨ *_${svc.name}_ — excelente elección*\n\n¿Qué día te queda bien?`
-    : `✨ *_${svc.name}_ — excelente elección*\n\n¿Qué día le queda bien?`;
+    ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n¿Qué día te queda bien?'
+    : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n¿Qué día le queda bien?';
   const payload = menus.datePicker({ tone, body });
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[fecha para ${svc.name}]` });
@@ -1735,12 +1911,12 @@ async function handleBookingTimeSelected({ tenant, connection, conv, waId, tone,
     return;
   }
 
-  const client = await lookupClientByWaId(tenant.id, waId);
-  const clientName = client?.fullName || fs.clientName;
+  const client = fs.booking.clientId ? null : await lookupClientByWaId(tenant.id, waId);
+  const clientName = fs.booking.clientName || client?.fullName || fs.clientName;
 
   state.setFlowState(waId, {
     flow: 'booking',
-    booking: { ...fs.booking, step: clientName ? 'confirm' : 'ask_name', timeSlot: slot },
+    booking: { ...fs.booking, step: clientName ? 'confirm' : 'ask_name', timeSlot: slot, clientName },
     tone,
     unclearCount: 0,
   });
@@ -1808,15 +1984,15 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
     return handleBook({ tenant, connection, conv, waId, tone });
   }
 
-  const phone = waIdToPhone(waId);
-
   try {
     let appointment;
     await prisma.$transaction(async (tx) => {
-      const client = await clientService.upsertClient(tx, tenant.id, {
-        fullName: booking.clientName,
-        whatsapp: phone,
-      });
+      const client = booking.clientId
+        ? { id: booking.clientId }
+        : await clientService.upsertClient(tx, tenant.id, {
+          fullName: booking.clientName,
+          whatsapp: waIdToPhone(waId),
+        });
 
       const tenantData = await tx.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
 

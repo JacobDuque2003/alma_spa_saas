@@ -1,6 +1,7 @@
 const MAIN_MENU_IDS = {
   LIST_SERVICES: 'menu_list_services',
   BOOK: 'menu_book',
+  BOOK_FOR_OTHER: 'menu_book_for_other',
   RECOMMEND: 'menu_recommend_service',
   MY_APPOINTMENT: 'menu_my_appointment',
   ESCALATE: 'menu_escalate',
@@ -11,6 +12,9 @@ const SERVICE_PAGE_PREFIX = 'svc_page_';
 const BOOK_SERVICE_PREFIX = 'book_svc_';
 const CATEGORY_PREFIX = 'cat_';
 const NAV_BACK_MENU = 'nav_menu';
+// Este identificador vuelve siempre al menú principal. NAV_BACK_MENU se
+// conserva para retroceder dentro de una reserva o una reprogramación.
+const MAIN_MENU_BACK = 'nav_main_menu';
 const BOOK_DATE_PREFIX = 'bkd_';
 const BOOK_TIME_PREFIX = 'bkt_';
 const BOOK_TIME_PAGE_PREFIX = 'bkt_page_';
@@ -77,6 +81,7 @@ function mainMenu({ tone, clientName, compact = false } = {}) {
           rows: [
             { id: MAIN_MENU_IDS.LIST_SERVICES, title: 'Ver servicios', description: '💆‍♀️ Nuestra carta con precios' },
             { id: MAIN_MENU_IDS.BOOK, title: 'Reservar cita', description: '📅 Agenda tu hora por la web' },
+            { id: MAIN_MENU_IDS.BOOK_FOR_OTHER, title: 'Reservar para alguien', description: '👤 Agenda para otra persona' },
             { id: MAIN_MENU_IDS.RECOMMEND, title: 'No sé qué elegir', description: '✨ Cuéntame qué estás buscando' },
             { id: MAIN_MENU_IDS.MY_APPOINTMENT, title: 'Mi cita', description: '📋 Consulta tu próxima cita' },
             { id: MAIN_MENU_IDS.ESCALATE, title: 'Hablar con recepción', description: '👋 Te conectamos con el equipo' },
@@ -97,9 +102,10 @@ function mainMenuText({ tone, clientName, compact = false } = {}) {
 ${instruction}
 1. Ver servicios
 2. Reservar cita
-3. No sé qué elegir
-4. Consultar mi cita
-5. Hablar con recepción`;
+3. Reservar para otra persona
+4. No sé qué elegir
+5. Consultar mi cita
+6. Hablar con recepción`;
 }
 
 function serviceEmoji(service) {
@@ -146,7 +152,7 @@ function servicesList(services, { tone, body, page = 0 } = {}) {
       description: 'Regresar a la página anterior',
     });
   }
-  rows.push({ id: NAV_BACK_MENU, title: 'Volver al menú', description: 'Regresar a las opciones principales' });
+  rows.push({ id: MAIN_MENU_BACK, title: 'Volver al menú', description: 'Regresar a las opciones principales' });
 
   const defaultBody = tone === 'tu'
     ? '🌿 *Nuestros servicios* — toca uno para ver más'
@@ -210,7 +216,7 @@ function backToMenuButton({ tone } = {}) {
     action: {
       buttons: [
         { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: 'Volver a servicios' } },
-        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Menú principal' } },
+        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: 'Menú principal' } },
       ],
     },
   };
@@ -224,7 +230,7 @@ function serviceDetailActions(service, { tone } = {}) {
       buttons: [
         { type: 'reply', reply: { id: `${BOOK_SERVICE_PREFIX}${service.id}`, title: '📅 Reservar cita' } },
         { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: '💆 Ver servicios' } },
-        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Menú principal' } },
+        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: 'Menú principal' } },
       ],
     },
   };
@@ -386,7 +392,7 @@ function appointmentActions({ tone } = {}) {
     action: {
       buttons: [
         { type: 'reply', reply: { id: RESCHEDULE_START, title: 'Reprogramar cita' } },
-        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Menú principal' } },
+        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: 'Menú principal' } },
       ],
     },
   };
@@ -419,6 +425,7 @@ module.exports = {
   BOOK_SERVICE_PREFIX,
   CATEGORY_PREFIX,
   NAV_BACK_MENU,
+  MAIN_MENU_BACK,
   BOOK_DATE_PREFIX,
   BOOK_TIME_PREFIX,
   BOOK_TIME_PAGE_PREFIX,
