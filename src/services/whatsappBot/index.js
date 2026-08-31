@@ -220,6 +220,13 @@ function asksForAvailableAppointments(text) {
     || /\b(citas?|horarios?|espacios?)\b.*\b(disponibles?|libres?)\b/.test(t);
 }
 
+function serviceListPaginationDirection(text) {
+  const normalized = normalizeSearchText(text);
+  if (/^(ver|mostrar) mas servicios$/.test(normalized)) return 'next';
+  if (/^(volver a )?(servicios )?anteriores$/.test(normalized)) return 'previous';
+  return null;
+}
+
 function parseRequestedTime(text) {
   const t = normalizeSearchText(text);
   if (!t) return null;
@@ -776,7 +783,16 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
     return;
   }
 
-  const bodyText = incoming.type === 'text' ? incoming.text?.body ?? null : null;
+  // Normalmente las listas interactivas incluyen un id. Como respaldo, usamos
+  // también el título visible: algunos reenvíos/proveedores lo conservan aunque
+  // omitan ese id (por ejemplo, "Ver más servicios").
+  const bodyText = incoming.type === 'text'
+    ? incoming.text?.body ?? null
+    : incoming.type === 'interactive'
+      ? incoming.interactive?.list_reply?.title
+        || incoming.interactive?.button_reply?.title
+        || null
+      : null;
   const priorState = state.getFlowState(waId) || {};
   const tone = detectTone(bodyText) || priorState.tone || 'usted';
 
@@ -850,6 +866,18 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   const flowState = state.getFlowState(waId) || {};
   if (flowState.bookingForOther) {
     return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText });
+  }
+
+  // Meta normalmente entrega el id de una lista interactiva. Si un cliente o
+  // un reenvío sólo conserva el título visible, mantenemos la paginación del
+  // catálogo en lugar de responder como si fuera una consulta libre.
+  const paginationDirection = serviceListPaginationDirection(bodyText);
+  if (paginationDirection) {
+    const currentPage = Number(flowState.servicesPage) || 0;
+    const page = paginationDirection === 'next'
+      ? currentPage + 1
+      : Math.max(currentPage - 1, 0);
+    return handleListServices({ tenant, connection, conv, waId, tone, page });
   }
 
   if (asksForAvailableAppointments(bodyText)) {
@@ -1503,7 +1531,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
 
 async function handleListServices({ tenant, connection, conv, waId, tone, asText = false, page = 0 }) {
   const svcs = await loadVisibleServicesForBot(tenant.id);
-  state.setFlowState(waId, { flow: 'listing_services', tone, unclearCount: 0 });
+  state.setFlowState(waId, { flow: 'listing_services', servicesPage: Math.max(0, Number(page) || 0), tone, unclearCount: 0 });
 
   const visible = svcs;
   if (asText) {

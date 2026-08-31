@@ -156,6 +156,63 @@ test('ver servicios muestra servicios directos paginados y permite volver', asyn
   assert.ok(secondRows.some((row) => row.id === 'svc_page_0'));
 });
 
+test('"Ver más servicios" como texto conserva la paginación del catálogo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = Array.from({ length: 15 }, (_, index) => ({
+    id: 's' + (index + 1),
+    name: 'Servicio ' + String(index + 1).padStart(2, '0'),
+    category: 'corporal',
+    priceUsd: 30,
+    durationMins: 60,
+    active: true,
+  }));
+  installPrismaMocks({ services });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: menus.MAIN_MENU_IDS.LIST_SERVICES } } },
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'Ver más servicios' } },
+  });
+
+  const rows = sent.at(-1).payload.action.sections[0].rows;
+  assert.ok(rows.some((row) => row.id === 'svc_s8'));
+  assert.ok(rows.some((row) => row.id === 'svc_page_0'));
+  assert.equal(state.getFlowState(CONV.customerWaId).servicesPage, 1);
+});
+
+test('"Ver más servicios" en una lista sin id conserva la paginación del catálogo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = Array.from({ length: 15 }, (_, index) => ({
+    id: `s${index + 1}`,
+    name: `Servicio ${index + 1}`,
+    category: 'corporal',
+    priceUsd: 20,
+    durationMins: 60,
+    active: true,
+  }));
+  installPrismaMocks({ services });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: menus.MAIN_MENU_IDS.LIST_SERVICES } } },
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { title: 'Ver más servicios' } } },
+  });
+
+  const rows = sent.at(-1).payload.action.sections[0].rows;
+  assert.ok(rows.some((row) => row.id === 'svc_s8'));
+  assert.ok(rows.some((row) => row.id === 'svc_page_0'));
+  assert.equal(state.getFlowState(CONV.customerWaId).servicesPage, 1);
+});
+
 test('"Menú principal" cancela cualquier flujo y vuelve al menú real', async () => {
   resetState();
   const sent = installTransportMocks();
