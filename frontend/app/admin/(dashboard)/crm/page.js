@@ -163,12 +163,9 @@ export default function CRMPage() {
       const items = data.items || [];
       setConversations(items);
       setCounts(data.counts || { all: items.length, pending: 0, resolved: 0 });
-      if (!isMobile) {
-        setSelectedId((cur) => {
-          if (!cur) return items[0]?.id || null;
-          return items.some((item) => item.id === cur) ? cur : items[0]?.id || null;
-        });
-      }
+      setSelectedId((cur) => (
+        cur && items.some((item) => item.id === cur) ? cur : null
+      ));
     } catch (err) {
       if (!silent) {
         setLoadError(err.message);
@@ -303,6 +300,11 @@ export default function CRMPage() {
     lastMsgIdRef.current = null;
     initialMessageLoadRef.current = true;
     setShowScrollBottom(false);
+    if (!selectedId) {
+      setSelected(null);
+      setMessages([]);
+      setNotes([]);
+    }
   }, [selectedId]);
 
   useEffect(() => {
@@ -973,7 +975,8 @@ export default function CRMPage() {
       return (
         <div className="flex-1 flex flex-col items-center justify-center text-sm text-warm-gray bg-cream/40">
           <MessageSquare size={40} className="mb-3 text-warm-gray/40" />
-          Selecciona una conversación
+          <p className="font-medium text-bronze-deep">Selecciona un chat</p>
+          <p className="mt-1 text-center text-xs text-warm-gray">Elige una conversación para ver los mensajes y responder.</p>
         </div>
       );
     }

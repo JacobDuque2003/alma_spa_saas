@@ -227,6 +227,28 @@ function parseRequestedTime(text) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+function asksCurrentAppointmentDetails(text) {
+  const t = normalizeSearchText(text);
+  return /\b(para que dia esta|que dia es|cuando es|a que hora es|cuando tengo|cual es mi cita)\b/.test(t);
+}
+
+function wantsSameAppointmentTime(text) {
+  const t = normalizeSearchText(text);
+  return /\b(la misma hora|mismo horario|misma hora|igual hora)\b/.test(t);
+}
+
+function formatAppointmentDate(startsAt) {
+  return capitalize(new Intl.DateTimeFormat('es-EC', {
+    timeZone: menus.SPA_TZ, weekday: 'long', day: 'numeric', month: 'long',
+  }).format(new Date(startsAt)));
+}
+
+function formatAppointmentTime(startsAt) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: menus.SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(startsAt));
+}
+
 function isExplicitServiceChoice(text, service) {
   const query = normalizeSearchText(text);
   const name = normalizeSearchText(service?.name);
@@ -633,11 +655,17 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   const requestedDate = resolveBookingDate({}, bodyText);
   const requestedTime = parseRequestedTime(bodyText);
-  if (flowState.reschedule?.step === 'select_date' && requestedDate) {
-    return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date: requestedDate, requestedTime });
+  if (flowState.reschedule?.step === 'select_date' && asksCurrentAppointmentDetails(bodyText)) {
+    return sendRescheduleCurrentAppointment({ tenant, connection, conv, waId, tone, reschedule: flowState.reschedule });
   }
-  if (flowState.reschedule?.step === 'select_time' && requestedTime) {
-    const slotIndex = findSlotIndexByTime(flowState.reschedule.availableSlots, requestedTime);
+  const rescheduleTime = requestedTime || (
+    flowState.reschedule && wantsSameAppointmentTime(bodyText) ? flowState.reschedule.currentTime : null
+  );
+  if (flowState.reschedule?.step === 'select_date' && requestedDate) {
+    return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date: requestedDate, requestedTime: rescheduleTime });
+  }
+  if (flowState.reschedule?.step === 'select_time' && rescheduleTime) {
+    const slotIndex = findSlotIndexByTime(flowState.reschedule.availableSlots, rescheduleTime);
     if (slotIndex >= 0) return handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex });
   }
   if (flowState.booking?.step === 'select_date' && requestedDate) {
@@ -888,7 +916,11 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
 
     case 'reschedule': {
       const date = resolveBookingDate(params, userMessage);
-      return handleReschedule({ tenant, connection, conv, waId, tone, date, time: params?.time || null });
+      return handleReschedule({
+        tenant, connection, conv, waId, tone, date,
+        time: params?.time || null,
+        keepCurrentTime: wantsSameAppointmentTime(userMessage),
+      });
     }
 
     case 'business_hours':
@@ -1625,7 +1657,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
 
 // ─── Reprogramación de cita ─────────────────────────────────────
 
-async function handleReschedule({ tenant, connection, conv, waId, tone, date = null, time = null }) {
+async function handleReschedule({ tenant, connection, conv, waId, tone, date = null, time = null, keepCurrentTime = false }) {
   const phone = waIdToPhone(waId);
   const client = await prisma.client.findFirst({ where: { tenantId: tenant.id, whatsapp: phone } });
   if (!client) {
@@ -1662,6 +1694,8 @@ async function handleReschedule({ tenant, connection, conv, waId, tone, date = n
       step: 'select_date',
       appointmentId: appointment.id,
       serviceName: appointment.service?.name || 'tu servicio',
+      currentStartsAt: new Date(appointment.startsAt).toISOString(),
+      currentTime: formatAppointmentTime(appointment.startsAt),
     },
     clientName: client.fullName,
     tone,
@@ -1669,15 +1703,29 @@ async function handleReschedule({ tenant, connection, conv, waId, tone, date = n
   });
 
   if (date) {
-    return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime: time });
+    return handleRescheduleDateSelected({
+      tenant, connection, conv, waId, tone, date,
+      requestedTime: time || (keepCurrentTime ? formatAppointmentTime(appointment.startsAt) : null),
+    });
   }
 
+  const currentDate = formatAppointmentDate(appointment.startsAt);
+  const currentTime = formatAppointmentTime(appointment.startsAt);
   const body = tone === 'tu'
-    ? `📅 *Vamos a reprogramar tu espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\n¿Qué día te queda bien?`
-    : `📅 *Vamos a reprogramar su espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\n¿Qué día le queda bien?`;
+    ? `📅 *Vamos a reprogramar tu espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\nTu cita actual es el ${currentDate} a las ${formatHora12(currentTime)}.\n\n¿Qué día te queda bien? También puedes decir “el miércoles a la misma hora”.`
+    : `📅 *Vamos a reprogramar su espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\nSu cita actual es el ${currentDate} a las ${formatHora12(currentTime)}.\n\n¿Qué día le queda bien? También puede decir “el miércoles a la misma hora”.`;
   const payload = menus.datePicker({ tone, body });
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reprogramar: selección de fecha]' });
+}
+
+async function sendRescheduleCurrentAppointment({ tenant, connection, conv, waId, tone, reschedule }) {
+  if (!reschedule?.currentStartsAt) return handleReschedule({ tenant, connection, conv, waId, tone });
+  const message = tone === 'tu'
+    ? `📋 *Tu cita actual*\n\n🌿 _${reschedule.serviceName}_\n📅 ${formatAppointmentDate(reschedule.currentStartsAt)}\n🕐 ${formatHora12(formatAppointmentTime(reschedule.currentStartsAt))}\n\nDime el nuevo día y hora; por ejemplo: “el miércoles a la misma hora”.`
+    : `📋 *Su cita actual*\n\n🌿 _${reschedule.serviceName}_\n📅 ${formatAppointmentDate(reschedule.currentStartsAt)}\n🕐 ${formatHora12(formatAppointmentTime(reschedule.currentStartsAt))}\n\nDígame el nuevo día y hora; por ejemplo: “el miércoles a la misma hora”.`;
+  const r = await transport.sendText(connection, waId, message);
+  await recordBotMessage(tenant.id, conv, r, { body: message });
 }
 
 async function handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime = null }) {

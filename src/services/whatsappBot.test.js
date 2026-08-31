@@ -615,7 +615,64 @@ test('sin IA, "reagendar mi cita" inicia el flujo de fechas de la reserva existe
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
   assert.equal(sent[0].payload.action.button, 'Elegir día');
+  assert.match(sent[0].payload.body.text, /Su cita actual es/);
   assert.equal(state.getFlowState(CONV.customerWaId)?.reschedule?.appointmentId, 'appt1');
+  assert.equal(state.getFlowState(CONV.customerWaId)?.reschedule?.currentTime, '09:00');
+});
+
+test('en reprogramación, preguntar por la fecha actual la informa sin abandonar el flujo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'reschedule',
+    reschedule: {
+      step: 'select_date', appointmentId: 'appt1', serviceName: 'Aero yoga',
+      currentStartsAt: '2026-09-01T14:00:00.000Z', currentTime: '09:00',
+    },
+    tone: 'usted',
+  });
+
+  await bot._internals.handleTextMessage({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'usted', bodyText: '¿para qué día está?',
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /Su cita actual/);
+  assert.equal(state.getFlowState(CONV.customerWaId)?.reschedule?.step, 'select_date');
+});
+
+test('en reprogramación, "el miércoles a la misma hora" conserva la hora actual', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'reschedule',
+    reschedule: {
+      step: 'select_date', appointmentId: 'appt1', serviceName: 'Aero yoga',
+      currentStartsAt: '2026-09-01T14:00:00.000Z', currentTime: '09:00',
+    },
+    tone: 'usted',
+  });
+  const appointmentService = require('./appointmentService');
+  const original = appointmentService.getRescheduleAvailability;
+  appointmentService.getRescheduleAvailability = async () => ['2026-09-02T14:00:00.000Z'];
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  try {
+    await bot._internals.handleTextMessage({
+      tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+      tone: 'usted', bodyText: 'quiero a la misma hora pero para el día miércoles',
+    });
+    const reschedule = state.getFlowState(CONV.customerWaId)?.reschedule;
+    assert.equal(reschedule?.step, 'confirm');
+    assert.equal(reschedule?.timeSlot, '2026-09-02T14:00:00.000Z');
+    assert.ok(sent.some((item) => item.kind === 'interactive' && /Actualizo su espacio/.test(item.payload?.body?.text || '')));
+  } finally {
+    appointmentService.getRescheduleAvailability = original;
+  }
 });
 
 test('Ronda I: horario responde en formato claro', async () => {
