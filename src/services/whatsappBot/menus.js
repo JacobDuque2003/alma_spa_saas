@@ -148,7 +148,10 @@ function servicesList(services, { tone, body, page = 0 } = {}) {
   if (safePage > 0) {
     rows.push({
       id: `${SERVICE_PAGE_PREFIX}${safePage - 1}`,
-      title: 'Volver a servicios anteriores',
+      // Los títulos de filas de listas de WhatsApp admiten hasta 24 caracteres.
+      // El texto anterior tenía 29 y Meta rechazaba toda la página siguiente
+      // con el error 131009, aunque el botón se hubiera recibido correctamente.
+      title: 'Servicios anteriores',
       description: 'Regresar a la página anterior',
     });
   }

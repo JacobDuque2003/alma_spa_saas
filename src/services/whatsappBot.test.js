@@ -1066,6 +1066,23 @@ test('servicesList acepta body personalizado', () => {
   assert.equal(payload.body.text, '✨ Elige tu servicio para reservar:');
 });
 
+test('servicesList pagina sin exceder los límites de Meta', () => {
+  const services = Array.from({ length: 15 }, (_, index) => ({
+    id: `s${index + 1}`,
+    name: `Servicio de bienestar ${index + 1}`,
+    category: 'corporal',
+    priceUsd: 30,
+    durationMins: 60,
+    active: true,
+  }));
+  const rows = menus.servicesList(services, { tone: 'usted', page: 1 }).action.sections[0].rows;
+
+  assert.ok(rows.length <= 10);
+  assert.ok(rows.every((row) => row.title.length <= 24));
+  assert.ok(rows.every((row) => row.description.length <= 72));
+  assert.ok(rows.some((row) => row.id === 'svc_page_0' && row.title === 'Servicios anteriores'));
+});
+
 // ─── Category display names ─────────────────────────────────
 
 test('categoryDisplayName mapea nombres internos a bonitos', () => {
