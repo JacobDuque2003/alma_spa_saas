@@ -588,6 +588,40 @@ test('Ronda H: intención tolera faltas, tildes omitidas y letras repetidas', ()
   assert.equal(bot._internals.detectDeterministicIntent('quiero hacer una reseva'), 'book_start');
 });
 
+test('Ronda I: consulta de cita, horario y despedida se entienden sin IA', () => {
+  assert.equal(bot._internals.detectDeterministicIntent('quiero consultar mi cita'), 'my_appointment');
+  assert.equal(bot._internals.detectDeterministicIntent('a que hora atienden'), 'business_hours');
+  assert.equal(bot._internals.detectDeterministicIntent('todo okey gracias'), 'farewell');
+});
+
+test('Ronda I: horario responde en formato claro', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'usted', intent: 'business_hours',
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /9:00 a\. m\./);
+  assert.match(sent[0].body, /8:00 p\. m\./);
+  assert.match(sent[0].body, /Domingos descansamos/);
+});
+
+test('Ronda I: despedida cierra cálida sin mostrar menú', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+    tone: 'tu', intent: 'farewell',
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /lindo día/);
+});
+
 test('Ronda H: matchServiceByQuery tolera errores ortográficos en servicios', async () => {
   installPrismaMocks({
     services: [

@@ -10,7 +10,7 @@ const MAX_RETRIES = 1;
 
 const INTENT_ENUM = [
   'menu', 'list_services', 'service_info', 'book',
-  'my_appointment', 'cancel', 'escalate', 'unclear',
+  'my_appointment', 'cancel', 'business_hours', 'farewell', 'escalate', 'unclear',
 ];
 
 const SYSTEM_PROMPT = `Eres el asistente virtual de Alma Spa, un spa en Zamora, Ecuador.
@@ -28,7 +28,9 @@ Reglas:
 - Si pregunta por un servicio específico, usa "service_info".
 - Si quiere reservar, usa "book".
 - Si pregunta por su cita, usa "my_appointment".
-- Si quiere cancelar, usa "cancel".`;
+- Si quiere cancelar, usa "cancel".
+- Si pregunta por horario de atención, usa "business_hours".
+- Si se despide, agradece o cierra la conversación, usa "farewell".`;
 
 // Haiku 4.5 pricing (per 1M tokens): input $1.00, output $5.00
 const COST_PER_INPUT_TOKEN = 1.0 / 1_000_000;
@@ -135,7 +137,7 @@ async function classifyIntent(userMessage, { tone = 'usted' } = {}) {
 const CHAT_INTENTS = [
   'greeting', 'list_services', 'service_info', 'suggest_service',
   'book_start', 'book_service', 'my_appointment', 'cancel',
-  'escalate', 'chitchat', 'unclear',
+  'business_hours', 'farewell', 'escalate', 'chitchat', 'unclear',
 ];
 
 function buildServiceCatalog(services) {
@@ -208,6 +210,8 @@ Intenciones:
 - book_service: quiere reservar un servicio específico → params.service_query = nombre
 - my_appointment: consulta su cita
 - cancel: quiere cancelar una cita
+- business_hours: pregunta horario de atención, días abiertos/cerrados o a qué hora atienden
+- farewell: agradece, se despide o cierra la conversación
 - escalate: quiere hablar con una persona
 - chitchat: conversación casual sobre el spa/bienestar
 - unclear: no entiendes el mensaje

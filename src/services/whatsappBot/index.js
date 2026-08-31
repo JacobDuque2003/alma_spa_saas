@@ -59,6 +59,9 @@ const QUESTION_INTENT_WORDS = ['que', 'q', 'k', 'cuales', 'cual', 'cuantos', 'ti
 const BOOK_INTENT_WORDS = ['reservar', 'reserva', 'reservacion', 'reseva', 'reserba', 'agendar', 'ajendar', 'agenda', 'cita', 'sita'];
 const EXPLAIN_INTENT_WORDS = ['explica', 'explicame', 'cuentame', 'trata', 'incluye', 'sirve', 'hace'];
 const CURRENT_SERVICE_WORDS = ['eso', 'este', 'esta', 'servicio', 'tratamiento', 'masaje', 'terapia'];
+const APPOINTMENT_QUERY_WORDS = ['consultar', 'consulta', 'ver', 'saber', 'revisar', 'proxima', 'prox'];
+const BUSINESS_HOURS_WORDS = ['horario', 'horarios', 'atienden', 'atiende', 'abren', 'abre', 'cierran', 'cierra', 'atencion', 'atencion'];
+const FAREWELL_WORDS = ['gracias', 'listo', 'ok', 'okay', 'okey', 'perfecto', 'chao', 'chau', 'adios', 'adiós', 'bye', 'hasta luego', 'hasta pronto', 'nos vemos', 'todo bien', 'todo ok', 'todo okey'];
 
 function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
@@ -166,11 +169,14 @@ function detectDeterministicIntent(text) {
   if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
   if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2) && hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1)) return 'list_services';
+  if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
+  if (/\b(mi cita|mis citas|cita)\b/.test(t) && (hasAnyApproxToken(t, APPOINTMENT_QUERY_WORDS, 1) || /\bque dia|cuando|a que hora\b/.test(t))) return 'my_appointment';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda)\b/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito|hacer|haser)\b/.test(t) && hasAnyApproxToken(t, BOOK_INTENT_WORDS, 2)) return 'book_start';
   if (/\bhacer una reserva\b/.test(t)) return 'book_start';
-  if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
+  if (hasAnyApproxToken(t, BUSINESS_HOURS_WORDS, 1)) return 'business_hours';
+  if (FAREWELL_WORDS.some((phrase) => t === normalizeSearchText(phrase) || t.includes(normalizeSearchText(phrase)))) return 'farewell';
   if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
   return null;
 }
@@ -799,6 +805,12 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
     case 'my_appointment':
     case 'cancel':
       return handleMyAppointment({ tenant, connection, conv, waId, tone });
+
+    case 'business_hours':
+      return handleBusinessHours({ tenant, connection, conv, waId, tone });
+
+    case 'farewell':
+      return handleFarewell({ tenant, connection, conv, waId, tone });
 
     case 'escalate':
       return handleEscalate({ tenant, connection, conv, waId, tone });
@@ -1527,6 +1539,24 @@ async function handleEscalate({ tenant, connection, conv, waId, tone }) {
   state.clearFlowState(waId);
 }
 
+async function handleBusinessHours({ tenant, connection, conv, waId, tone }) {
+  const msg = tone === 'tu'
+    ? '🕐 *Nuestro horario de atención*\n\nLunes a sábado:\n🌤️ 9:00 a. m. a 12:00 p. m.\n🌙 3:00 p. m. a 8:00 p. m.\n\nDomingos descansamos 🌿'
+    : '🕐 *Nuestro horario de atención*\n\nLunes a sábado:\n🌤️ 9:00 a. m. a 12:00 p. m.\n🌙 3:00 p. m. a 8:00 p. m.\n\nDomingos descansamos 🌿';
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
+async function handleFarewell({ tenant, connection, conv, waId, tone }) {
+  const msg = tone === 'tu'
+    ? '✨ *Con mucho gusto*\n\nQue tengas un lindo día 🌿'
+    : '✨ *Con mucho gusto*\n\nQue tenga un lindo día 🌿';
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+  const prev = state.getFlowState(waId) || {};
+  state.setFlowState(waId, { flow: 'menu', clientName: prev.clientName || null, tone, unclearCount: 0 });
+}
+
 module.exports = {
   handleInboundMessage,
   _internals: {
@@ -1549,6 +1579,8 @@ module.exports = {
     showBookingConfirmation,
     handleMyAppointment,
     handleEscalate,
+    handleBusinessHours,
+    handleFarewell,
     handleTextMessage,
     handleUnclear,
     detectDeterministicIntent,

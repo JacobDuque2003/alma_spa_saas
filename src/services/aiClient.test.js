@@ -14,7 +14,7 @@ test('calcCost: zero tokens → zero cost', () => {
 });
 
 test('INTENT_ENUM contains all required intents', () => {
-  const required = ['menu', 'list_services', 'service_info', 'book', 'my_appointment', 'cancel', 'escalate', 'unclear'];
+  const required = ['menu', 'list_services', 'service_info', 'book', 'my_appointment', 'cancel', 'business_hours', 'farewell', 'escalate', 'unclear'];
   for (const r of required) {
     assert.ok(aiClient.INTENT_ENUM.includes(r), `missing intent: ${r}`);
   }
@@ -61,4 +61,12 @@ test('chat prompt: debe interpretar faltas ortográficas y gramática informal',
   assert.match(prompt, /faltas ortográficas/);
   assert.match(prompt, /tildes omitidas/);
   assert.match(prompt, /gramática informal/);
+});
+
+test('chat prompt: incluye horario y despedida como intenciones explícitas', () => {
+  assert.ok(aiClient.CHAT_INTENTS.includes('business_hours'));
+  assert.ok(aiClient.CHAT_INTENTS.includes('farewell'));
+  const prompt = aiClient._internals.buildChatSystemPrompt({ tone: 'usted', services: [] });
+  assert.match(prompt, /business_hours/);
+  assert.match(prompt, /farewell/);
 });
