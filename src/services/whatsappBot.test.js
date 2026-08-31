@@ -594,6 +594,30 @@ test('Ronda I: consulta de cita, horario y despedida se entienden sin IA', () =>
   assert.equal(bot._internals.detectDeterministicIntent('todo okey gracias'), 'farewell');
 });
 
+test('reprogramar cita se entiende sin IA, incluso con una falta común', () => {
+  assert.equal(bot._internals.detectDeterministicIntent('quiero reagendar mi cita'), 'reschedule');
+  assert.equal(bot._internals.detectDeterministicIntent('puedo reprogramar mi reserva'), 'reschedule');
+});
+
+test('sin IA, "reagendar mi cita" inicia el flujo de fechas de la reserva existente', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    clientByPhone: { id: 'client1', fullName: 'María López' },
+    nextAppointment: { id: 'appt1', startsAt: new Date('2026-09-15T14:00:00.000Z'), service: { name: 'Masaje Relajante' } },
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'quiero reagendar mi cita' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(sent[0].payload.action.button, 'Elegir día');
+  assert.equal(state.getFlowState(CONV.customerWaId)?.reschedule?.appointmentId, 'appt1');
+});
+
 test('Ronda I: horario responde en formato claro', async () => {
   resetState();
   const sent = installTransportMocks();
@@ -755,6 +779,34 @@ test('handleSelection preserva booking state durante selección de hora', async 
   assert.equal(fs.booking?.step, 'confirm');
   assert.equal(fs.booking?.timeSlot, slots[0]);
   assert.ok(sent.some(s => s.kind === 'interactive' && s.payload?.type === 'button'));
+});
+
+test('handleSelection conserva reprogramación y ofrece solo los horarios validados', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'reschedule',
+    reschedule: { step: 'select_date', appointmentId: 'appt1', serviceName: 'Masaje Relajante' },
+    clientName: 'María López', tone: 'usted', unclearCount: 0,
+  });
+  const appointmentService = require('./appointmentService');
+  const original = appointmentService.getRescheduleAvailability;
+  appointmentService.getRescheduleAvailability = async () => ['2026-09-01T20:00:00.000Z'];
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  try {
+    await bot._internals.handleSelection({
+      tenant: TENANT, connection: CONN, conv: CONV,
+      waId: CONV.customerWaId, tone: 'usted', selectionId: 'bkd_2026-09-01',
+    });
+    const fs = state.getFlowState(CONV.customerWaId);
+    assert.equal(fs.reschedule?.step, 'select_time');
+    assert.deepEqual(fs.reschedule?.availableSlots, ['2026-09-01T20:00:00.000Z']);
+    assert.ok(sent.some((item) => item.kind === 'interactive' && item.payload?.type === 'button'));
+  } finally {
+    appointmentService.getRescheduleAvailability = original;
+  }
 });
 
 // ─── Smart booking tests ─────────────────────────────────────

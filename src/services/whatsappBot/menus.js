@@ -12,6 +12,9 @@ const BOOK_DATE_PREFIX = 'bkd_';
 const BOOK_TIME_PREFIX = 'bkt_';
 const BOOK_CONFIRM_YES = 'bk_yes';
 const BOOK_CONFIRM_NO = 'bk_no';
+const RESCHEDULE_START = 'reschedule_start';
+const RESCHEDULE_CONFIRM_YES = 'rs_yes';
+const RESCHEDULE_CONFIRM_NO = 'rs_no';
 const SPA_TZ = 'America/Guayaquil';
 
 const CATEGORY_DISPLAY_NAMES = {
@@ -297,6 +300,33 @@ function bookingConfirmation(summary, { tone } = {}) {
   };
 }
 
+function appointmentActions({ tone } = {}) {
+  return {
+    type: 'button',
+    body: { text: tone === 'tu' ? '¿Quieres cambiar el día u hora de tu espacio?' : '¿Desea cambiar el día u hora de su espacio?' },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: RESCHEDULE_START, title: 'Reprogramar cita' } },
+        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Menú principal' } },
+      ],
+    },
+  };
+}
+
+function rescheduleConfirmation(summary, { tone } = {}) {
+  const header = tone === 'tu' ? '✨ *¿Actualizo tu espacio?*' : '✨ *¿Actualizo su espacio?*';
+  return {
+    type: 'button',
+    body: { text: `${header}\n\n${summary}\n\n${tone === 'tu' ? 'Presiona *Sí* para confirmar 💛' : 'Presione *Sí* para confirmar 💛'}` },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: RESCHEDULE_CONFIRM_YES, title: 'Sí, actualizar' } },
+        { type: 'reply', reply: { id: RESCHEDULE_CONFIRM_NO, title: 'No, dejar igual' } },
+      ],
+    },
+  };
+}
+
 function askNameText({ tone } = {}) {
   return tone === 'tu'
     ? '💛 *Para apartar tu espacio*, ¿me dices tu nombre completo?'
@@ -312,6 +342,9 @@ module.exports = {
   BOOK_TIME_PREFIX,
   BOOK_CONFIRM_YES,
   BOOK_CONFIRM_NO,
+  RESCHEDULE_START,
+  RESCHEDULE_CONFIRM_YES,
+  RESCHEDULE_CONFIRM_NO,
   SPA_TZ,
   CATEGORY_DISPLAY_NAMES,
   HIDDEN_CATEGORIES,
@@ -327,5 +360,7 @@ module.exports = {
   timeSlotList,
   timeSlotButtons,
   bookingConfirmation,
+  appointmentActions,
+  rescheduleConfirmation,
   askNameText,
 };

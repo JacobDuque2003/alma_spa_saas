@@ -60,6 +60,7 @@ const BOOK_INTENT_WORDS = ['reservar', 'reserva', 'reservacion', 'reseva', 'rese
 const EXPLAIN_INTENT_WORDS = ['explica', 'explicame', 'cuentame', 'trata', 'incluye', 'sirve', 'hace'];
 const CURRENT_SERVICE_WORDS = ['eso', 'este', 'esta', 'servicio', 'tratamiento', 'masaje', 'terapia'];
 const APPOINTMENT_QUERY_WORDS = ['consultar', 'consulta', 'ver', 'saber', 'revisar', 'proxima', 'prox'];
+const RESCHEDULE_WORDS = ['reagendar', 'reagendo', 'reagendamiento', 'reprogramar', 'reprogramo', 'reprogramacion', 'cambiar', 'mover', 'cambio'];
 const BUSINESS_HOURS_WORDS = ['horario', 'horarios', 'atienden', 'atiende', 'abren', 'abre', 'cierran', 'cierra', 'atencion', 'atencion'];
 const FAREWELL_WORDS = ['gracias', 'listo', 'ok', 'okay', 'okey', 'perfecto', 'chao', 'chau', 'adios', 'adiós', 'bye', 'hasta luego', 'hasta pronto', 'nos vemos', 'todo bien', 'todo ok', 'todo okey'];
 
@@ -169,6 +170,8 @@ function detectDeterministicIntent(text) {
   if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
   if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2) && hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1)) return 'list_services';
+  if (hasAnyApproxToken(t, RESCHEDULE_WORDS, 2) && /\b(cita|reserva|turno|hora|espacio)\b/.test(t)) return 'reschedule';
+  if (/\b(cambiar|mover)\b.*\b(mi|la)\b.*\b(cita|reserva|hora)\b/.test(t)) return 'reschedule';
   if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
   if (/\b(mi cita|mis citas|cita)\b/.test(t) && (hasAnyApproxToken(t, APPOINTMENT_QUERY_WORDS, 1) || /\bque dia|cuando|a que hora\b/.test(t))) return 'my_appointment';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
@@ -806,6 +809,11 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
     case 'cancel':
       return handleMyAppointment({ tenant, connection, conv, waId, tone });
 
+    case 'reschedule': {
+      const date = resolveBookingDate(params, userMessage);
+      return handleReschedule({ tenant, connection, conv, waId, tone, date, time: params?.time || null });
+    }
+
     case 'business_hours':
       return handleBusinessHours({ tenant, connection, conv, waId, tone });
 
@@ -970,10 +978,18 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   // Booking flow selections — do NOT reset state (booking data must survive)
   if (selectionId.startsWith(menus.BOOK_DATE_PREFIX)) {
     const date = selectionId.slice(menus.BOOK_DATE_PREFIX.length);
+    const flowState = state.getFlowState(waId);
+    if (flowState?.reschedule?.appointmentId) {
+      return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date });
+    }
     return handleBookingDateSelected({ tenant, connection, conv, waId, tone, date });
   }
   if (selectionId.startsWith(menus.BOOK_TIME_PREFIX)) {
     const idx = parseInt(selectionId.slice(menus.BOOK_TIME_PREFIX.length), 10);
+    const flowState = state.getFlowState(waId);
+    if (flowState?.reschedule?.appointmentId) {
+      return handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex: idx });
+    }
     return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex: idx });
   }
   if (selectionId === menus.BOOK_CONFIRM_YES) {
@@ -985,6 +1001,19 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     const msg = tone === 'tu'
       ? '🌿 *Sin problema, cancelé tu reserva*\n\n¿Te ayudo con algo más?'
       : '🌿 *Sin problema, cancelé su reserva*\n\n¿Le ayudo con algo más?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.RESCHEDULE_CONFIRM_YES) {
+    return handleRescheduleConfirm({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.RESCHEDULE_CONFIRM_NO) {
+    const prev = state.getFlowState(waId) || {};
+    state.setFlowState(waId, { flow: 'menu', reschedule: null, clientName: prev.clientName, tone, unclearCount: 0 });
+    const msg = tone === 'tu'
+      ? '🌿 *Dejé tu espacio como estaba*\n\n¿Te ayudo con algo más?'
+      : '🌿 *Dejé su espacio como estaba*\n\n¿Le ayudo con algo más?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return sendMainMenu({ tenant, connection, conv, waId, tone });
@@ -1015,6 +1044,9 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   }
   if (selectionId === menus.MAIN_MENU_IDS.MY_APPOINTMENT) {
     return handleMyAppointment({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.RESCHEDULE_START) {
+    return handleReschedule({ tenant, connection, conv, waId, tone });
   }
   if (selectionId === menus.MAIN_MENU_IDS.ESCALATE) {
     return handleEscalate({ tenant, connection, conv, waId, tone });
@@ -1485,6 +1517,200 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
   }
 }
 
+// ─── Reprogramación de cita ─────────────────────────────────────
+
+async function handleReschedule({ tenant, connection, conv, waId, tone, date = null, time = null }) {
+  const phone = waIdToPhone(waId);
+  const client = await prisma.client.findFirst({ where: { tenantId: tenant.id, whatsapp: phone } });
+  if (!client) {
+    const msg = tone === 'tu'
+      ? '🤔 *No encontré una reserva próxima a tu nombre*\n\n¿Quieres agendar tu momento? 💛'
+      : '🤔 *No encontré una reserva próxima a su nombre*\n\n¿Desea agendar su momento? 💛';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+
+  const appointment = await prisma.appointment.findFirst({
+    where: {
+      tenantId: tenant.id,
+      clientId: client.id,
+      status: { in: ['pendiente', 'pendiente_bot', 'confirmado'] },
+      startsAt: { gte: new Date() },
+    },
+    orderBy: { startsAt: 'asc' },
+    include: { service: true },
+  });
+  if (!appointment) {
+    const msg = tone === 'tu'
+      ? '📋 *No tienes reservas próximas para cambiar*\n\n¿Quieres agendar tu momento? 💛'
+      : '📋 *No tiene reservas próximas para cambiar*\n\n¿Desea agendar su momento? 💛';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+
+  state.setFlowState(waId, {
+    flow: 'reschedule',
+    reschedule: {
+      step: 'select_date',
+      appointmentId: appointment.id,
+      serviceName: appointment.service?.name || 'tu servicio',
+    },
+    clientName: client.fullName,
+    tone,
+    unclearCount: 0,
+  });
+
+  if (date) {
+    return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime: time });
+  }
+
+  const body = tone === 'tu'
+    ? `📅 *Vamos a reprogramar tu espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\n¿Qué día te queda bien?`
+    : `📅 *Vamos a reprogramar su espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\n¿Qué día le queda bien?`;
+  const payload = menus.datePicker({ tone, body });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reprogramar: selección de fecha]' });
+}
+
+async function handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime = null }) {
+  const fs = state.getFlowState(waId);
+  if (!fs?.reschedule?.appointmentId) {
+    return handleReschedule({ tenant, connection, conv, waId, tone });
+  }
+
+  let slots;
+  try {
+    const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
+    slots = await appointmentService.getRescheduleAvailability({
+      tenantId: tenant.id,
+      tenantConfig: tenantData?.config,
+      appointmentId: fs.reschedule.appointmentId,
+      date,
+    });
+  } catch (err) {
+    logBot('warn', 'error al buscar horarios para reprogramar', { error: err.message, date });
+    const msg = '😅 *Hubo un problema al buscar horarios*\n\nProbemos de nuevo:';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    const payload = menus.datePicker({ tone });
+    const r2 = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[reprogramar: selección de fecha]' });
+    return;
+  }
+
+  if (slots.length === 0) {
+    const msg = tone === 'tu'
+      ? '😔 *No hay horarios ese día para tu espacio*\n\n¿Probamos otro?'
+      : '😔 *No hay horarios ese día para su espacio*\n\n¿Probamos otro?';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    const payload = menus.datePicker({ tone });
+    const r2 = await transport.sendInteractive(connection, waId, payload);
+    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[reprogramar: otro día]' });
+    return;
+  }
+
+  state.setFlowState(waId, {
+    flow: 'reschedule',
+    reschedule: { ...fs.reschedule, step: 'select_time', date, availableSlots: slots },
+    clientName: fs.clientName,
+    tone,
+    unclearCount: 0,
+  });
+
+  if (requestedTime) {
+    const idx = slots.findIndex((iso) => new Intl.DateTimeFormat('en-GB', {
+      timeZone: menus.SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(iso)) === requestedTime);
+    if (idx >= 0) return handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex: idx });
+  }
+
+  const body = requestedTime
+    ? `😅 *No hay horario a las ${requestedTime}*\n\nPero tengo estos:`
+    : undefined;
+  const payload = slots.length <= 3
+    ? menus.timeSlotButtons(slots, fs.reschedule.serviceName, { tone })
+    : menus.timeSlotList(slots, fs.reschedule.serviceName, { tone, body });
+  if (body && slots.length <= 3) payload.body = { text: body };
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[reprogramar: ${slots.length} horarios para ${date}]` });
+}
+
+async function handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex }) {
+  const fs = state.getFlowState(waId);
+  const reschedule = fs?.reschedule;
+  if (!reschedule?.appointmentId || !reschedule?.availableSlots) {
+    return handleReschedule({ tenant, connection, conv, waId, tone });
+  }
+  const slot = reschedule.availableSlots[slotIndex];
+  if (!slot) return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date: reschedule.date });
+
+  state.setFlowState(waId, {
+    flow: 'reschedule',
+    reschedule: { ...reschedule, step: 'confirm', timeSlot: slot },
+    clientName: fs.clientName,
+    tone,
+    unclearCount: 0,
+  });
+  return showRescheduleConfirmation({ tenant, connection, conv, waId, tone });
+}
+
+async function showRescheduleConfirmation({ tenant, connection, conv, waId, tone }) {
+  const fs = state.getFlowState(waId);
+  const reschedule = fs?.reschedule;
+  if (!reschedule?.appointmentId || !reschedule?.timeSlot) {
+    return handleReschedule({ tenant, connection, conv, waId, tone });
+  }
+  const slot = new Date(reschedule.timeSlot);
+  const fecha = new Intl.DateTimeFormat('es-EC', {
+    timeZone: menus.SPA_TZ, weekday: 'long', day: 'numeric', month: 'long',
+  }).format(slot);
+  const hora = new Intl.DateTimeFormat('es-EC', {
+    timeZone: menus.SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(slot);
+  const summary = `🌿 _${reschedule.serviceName}_\n📅 ${capitalize(fecha)}\n🕐 ${formatHora12(hora)}`;
+  const payload = menus.rescheduleConfirmation(summary, { tone });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[confirmación de reprogramar: ${reschedule.serviceName}]` });
+}
+
+async function handleRescheduleConfirm({ tenant, connection, conv, waId, tone }) {
+  const fs = state.getFlowState(waId);
+  const reschedule = fs?.reschedule;
+  if (!reschedule?.appointmentId || !reschedule?.timeSlot) {
+    return handleReschedule({ tenant, connection, conv, waId, tone });
+  }
+
+  try {
+    const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
+    await appointmentService.updateAppointment(botActor, reschedule.appointmentId, { startsAt: reschedule.timeSlot });
+    const slot = new Date(reschedule.timeSlot);
+    const fecha = new Intl.DateTimeFormat('es-EC', {
+      timeZone: menus.SPA_TZ, weekday: 'long', day: 'numeric', month: 'long',
+    }).format(slot);
+    const hora = new Intl.DateTimeFormat('es-EC', {
+      timeZone: menus.SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(slot);
+    const msg = tone === 'tu'
+      ? `✨ *Listo, actualicé tu espacio*\n\n🌿 _${reschedule.serviceName}_\n📅 ${capitalize(fecha)}\n🕐 ${formatHora12(hora)}\n\nTe esperamos con mucho cariño 💛`
+      : `✨ *Listo, actualicé su espacio*\n\n🌿 _${reschedule.serviceName}_\n📅 ${capitalize(fecha)}\n🕐 ${formatHora12(hora)}\n\nLe esperamos con mucho cariño 💛`;
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    state.setFlowState(waId, { flow: 'menu', reschedule: null, clientName: fs.clientName, tone, unclearCount: 0 });
+  } catch (err) {
+    logBot('warn', 'error al reprogramar cita', { error: err.message, appointmentId: reschedule.appointmentId });
+    if (err instanceof SlotUnavailableError) {
+      const msg = '😔 *Ese horario se acaba de ocupar*\n\nVeamos otros disponibles:';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date: reschedule.date });
+    }
+    return handleEscalate({ tenant, connection, conv, waId, tone });
+  }
+}
+
 // ─── Other handlers ────────────────────────────────────────────
 
 async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
@@ -1526,6 +1752,9 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
     : `📋 *Su próximo espacio en Alma Spa*\n\n🌿 _${next.service?.name}_\n📅 ${fecha}\n🏠 Cabina: ${next.room?.name || '—'}\n✅ ${capitalize(estado)}\n\nSi necesita cambiar algo, avísenos 💛`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
+  const actions = menus.appointmentActions({ tone });
+  const actionResult = await transport.sendInteractive(connection, waId, actions);
+  await recordBotMessage(tenant.id, conv, actionResult, { type: 'interactive', body: '[acciones de mi cita]' });
   state.setFlowState(waId, { flow: 'menu', clientName: client.fullName, tone, unclearCount: 0 });
 }
 
@@ -1575,6 +1804,10 @@ module.exports = {
     handleBookingDateSelected,
     handleBookingTimeSelected,
     handleBookingConfirm,
+    handleReschedule,
+    handleRescheduleDateSelected,
+    handleRescheduleTimeSelected,
+    handleRescheduleConfirm,
     handleNameCapture,
     showBookingConfirmation,
     handleMyAppointment,

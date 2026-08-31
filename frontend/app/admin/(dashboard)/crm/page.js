@@ -312,7 +312,13 @@ export default function CRMPage() {
       initialMessageLoadRef.current = false;
       lastMsgIdRef.current = lastId;
       if (container) {
-        setShowScrollBottom(container.scrollHeight - container.scrollTop - container.clientHeight > 180);
+        // Al abrir una conversación se debe ver el mensaje más reciente, igual
+        // que en WhatsApp. Después de ese primer posicionamiento ya no forzamos
+        // el scroll: solo seguimos mensajes nuevos si la persona está al final.
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+          setShowScrollBottom(false);
+        });
       }
       return;
     }
@@ -834,7 +840,7 @@ export default function CRMPage() {
           </div>
         </div>
         {pendingMessageCount > 0 && (
-          <span className="absolute right-3 top-1/2 flex min-w-5 h-5 -translate-y-1/2 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm">
+          <span className="absolute right-3 top-1/2 flex min-w-5 h-5 -translate-y-1/2 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
             {pendingMessageCount > 99 ? "99+" : pendingMessageCount}
           </span>
         )}
@@ -860,7 +866,7 @@ export default function CRMPage() {
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
-          max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-sm
+          max-w-[75%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm
           ${isBot
             ? "bg-emerald-50 border border-emerald-200 text-bronze-deep"
             : isHuman

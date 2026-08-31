@@ -63,10 +63,13 @@ test('chat prompt: debe interpretar faltas ortográficas y gramática informal',
   assert.match(prompt, /gramática informal/);
 });
 
-test('chat prompt: incluye horario y despedida como intenciones explícitas', () => {
+test('chat prompt: incluye horario, despedida y reprogramación como intenciones explícitas', () => {
   assert.ok(aiClient.CHAT_INTENTS.includes('business_hours'));
   assert.ok(aiClient.CHAT_INTENTS.includes('farewell'));
+  assert.ok(aiClient.CHAT_INTENTS.includes('reschedule'));
+  assert.ok(aiClient.INTENT_ENUM.includes('reschedule'));
   const prompt = aiClient._internals.buildChatSystemPrompt({ tone: 'usted', services: [] });
   assert.match(prompt, /business_hours/);
   assert.match(prompt, /farewell/);
+  assert.match(prompt, /reschedule/);
 });

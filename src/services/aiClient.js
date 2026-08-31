@@ -10,7 +10,7 @@ const MAX_RETRIES = 1;
 
 const INTENT_ENUM = [
   'menu', 'list_services', 'service_info', 'book',
-  'my_appointment', 'cancel', 'business_hours', 'farewell', 'escalate', 'unclear',
+  'my_appointment', 'reschedule', 'cancel', 'business_hours', 'farewell', 'escalate', 'unclear',
 ];
 
 const SYSTEM_PROMPT = `Eres el asistente virtual de Alma Spa, un spa en Zamora, Ecuador.
@@ -28,6 +28,7 @@ Reglas:
 - Si pregunta por un servicio específico, usa "service_info".
 - Si quiere reservar, usa "book".
 - Si pregunta por su cita, usa "my_appointment".
+- Si quiere cambiar, mover, reagendar o reprogramar su cita, usa "reschedule".
 - Si quiere cancelar, usa "cancel".
 - Si pregunta por horario de atención, usa "business_hours".
 - Si se despide, agradece o cierra la conversación, usa "farewell".`;
@@ -136,7 +137,7 @@ async function classifyIntent(userMessage, { tone = 'usted' } = {}) {
 
 const CHAT_INTENTS = [
   'greeting', 'list_services', 'service_info', 'suggest_service',
-  'book_start', 'book_service', 'my_appointment', 'cancel',
+  'book_start', 'book_service', 'my_appointment', 'reschedule', 'cancel',
   'business_hours', 'farewell', 'escalate', 'chitchat', 'unclear',
 ];
 
@@ -209,6 +210,7 @@ Intenciones:
 - book_start: quiere reservar sin especificar servicio
 - book_service: quiere reservar un servicio específico → params.service_query = nombre
 - my_appointment: consulta su cita
+- reschedule: quiere cambiar, mover, reagendar o reprogramar su cita
 - cancel: quiere cancelar una cita
 - business_hours: pregunta horario de atención, días abiertos/cerrados o a qué hora atienden
 - farewell: agradece, se despide o cierra la conversación
@@ -216,8 +218,8 @@ Intenciones:
 - chitchat: conversación casual sobre el spa/bienestar
 - unclear: no entiendes el mensaje
 
-EXTRACCIÓN DE FECHA Y HORA (solo para book_service):
-Cuando la clienta menciona día y/o hora al reservar, extrae SOLO la intención en crudo:
+EXTRACCIÓN DE FECHA Y HORA (para book_service o reschedule):
+Cuando la clienta menciona día y/o hora al reservar o reprogramar, extrae SOLO la intención en crudo:
 - params.date_text = texto de fecha tal como se entiende del mensaje ("lunes", "viernes", "hoy", "mañana", "pasado mañana", "el 5", "5 de septiembre")
 - NUNCA devuelvas params.date ni calcules fechas de calendario. JavaScript convierte date_text a fecha ISO usando America/Guayaquil.
 - params.time = hora en formato HH:mm 24h ("5pm"→"17:00", "las 3"→"15:00", "9 de la mañana"→"09:00", "en la mañana"→"09:00", "en la tarde"→"15:00")

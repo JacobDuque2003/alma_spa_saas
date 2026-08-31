@@ -263,6 +263,38 @@ test('getAvailability devuelve lista vacía si no hay ningún staff habilitado',
   assert.deepEqual(slots, []);
 });
 
+test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita actual y respeta el bloque completo', async () => {
+  mockPrisma({
+    service: {
+      findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }),
+    },
+    room: {
+      findMany: async () => [{ id: 'room1', specialty: 'masajes' }],
+    },
+    user: {
+      findFirst: async () => ({ id: 'staff1' }),
+    },
+    appointment: {
+      findUnique: async () => ({ id: 'appt1', tenantId: 't1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1' }),
+      findMany: async () => [{
+        id: 'other', roomId: 'room1', staffId: 'staff1',
+        startsAt: new Date('2026-08-01T14:00:00.000Z'),
+        endsAt: new Date('2026-08-01T15:15:00.000Z'),
+      }],
+    },
+  });
+
+  const slots = await appointmentService.getRescheduleAvailability({
+    tenantId: 't1',
+    tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
+    appointmentId: 'appt1',
+    date: '2026-08-01',
+  });
+
+  assert.equal(slots.includes('2026-08-01T14:00:00.000Z'), false, 'no ofrece un bloque que cruza una cita existente');
+  assert.equal(slots.includes('2026-08-01T15:15:00.000Z'), true, 'ofrece el siguiente bloque completo disponible');
+});
+
 test('listAppointments permite filtrar historial por clienta sin salir del tenant', async () => {
   let seenArgs;
   mockPrisma({

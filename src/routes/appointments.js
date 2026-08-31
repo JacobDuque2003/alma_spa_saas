@@ -35,6 +35,24 @@ router.get('/availability', async (req, res, next) => {
   }
 });
 
+router.get('/:id/reschedule-availability', async (req, res, next) => {
+  try {
+    const tenantId = resolveTenantId(req.user);
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const slots = await appointmentService.getRescheduleAvailability({
+      tenantId,
+      tenantConfig: tenant?.config || {},
+      appointmentId: req.params.id,
+      date: req.query.date,
+      roomId: req.query.roomId || undefined,
+      staffId: req.query.staffId || undefined,
+    });
+    res.json({ slots });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const appointment = await appointmentService.getAppointment(req.user, req.params.id);

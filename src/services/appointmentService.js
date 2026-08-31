@@ -178,6 +178,77 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
 }
 
 /**
+ * Horarios que puede tomar una cita existente al reprogramarse.
+ *
+ * A diferencia de la disponibilidad para una reserva nueva, conserva la
+ * cabina y terapeuta elegidos (o los cambios explícitos del panel), excluye
+ * la cita actual de los conflictos y aplica exactamente el mismo bloque del
+ * servicio: duración + pausa, horario de la cabina y zona del tenant.
+ */
+async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
+    throw new BadRequestError('date debe tener formato YYYY-MM-DD');
+  }
+
+  const appointment = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+  if (!appointment || appointment.tenantId !== tenantId) {
+    throw new BadRequestError('Cita no encontrada');
+  }
+
+  const service = await prisma.service.findFirst({
+    where: { id: appointment.serviceId, tenantId, active: true },
+  });
+  if (!service) {
+    throw new BadRequestError('El servicio de esta cita ya no está disponible');
+  }
+
+  const roomCandidates = await getCompatibleRooms(prisma, tenantId, service);
+  const selectedRoomId = roomId || appointment.roomId;
+  const room = roomCandidates.find((candidate) => candidate.id === selectedRoomId);
+  if (!room) {
+    throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
+  }
+
+  const selectedStaffId = staffId || appointment.staffId;
+  const staff = await prisma.user.findFirst({
+    where: {
+      id: selectedStaffId,
+      tenantId,
+      role: { in: STAFF_ROLES },
+      active: true,
+      canAttendAppointments: true,
+    },
+  });
+  if (!staff) return [];
+
+  const tz = getTenantTimezone(tenantConfig);
+  const { dayStart, dayEnd } = localDayBoundsUTC(date, tz);
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      id: { not: appointment.id },
+      startsAt: { lt: dayEnd },
+      endsAt: { gt: dayStart },
+      status: { in: OPEN_STATUSES },
+      OR: [{ roomId: room.id }, { staffId: staff.id }],
+    },
+  });
+
+  const slots = [];
+  const businessHours = roomBusinessHours(room, tenantConfig, date);
+  for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
+    const endsAt = addMinutes(slot, totalBlockMins(service));
+    if (
+      isResourceFree(appointments, 'roomId', room.id, slot, endsAt)
+      && isResourceFree(appointments, 'staffId', staff.id, slot, endsAt)
+    ) {
+      slots.push(slot.toISOString());
+    }
+  }
+  return slots;
+}
+
+/**
  * Resuelve roomId/staffId (auto-asignación) e inserta el Appointment dentro
  * de la transacción del caller. Prueba combinaciones candidatas en orden
  * determinístico; si el insert choca contra los @@unique de Appointment
@@ -557,6 +628,7 @@ async function updateStatus(actor, id, status) {
 
 module.exports = {
   getAvailability,
+  getRescheduleAvailability,
   resolveAndCreateAppointment,
   createPublicBooking,
   getBookingByToken,

@@ -1427,19 +1427,51 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editDate, setEditDate] = useState("");
-  const [editTime, setEditTime] = useState("");
+  const [editSlot, setEditSlot] = useState("");
   const [editRoomId, setEditRoomId] = useState("");
   const [editStaffId, setEditStaffId] = useState("");
   const [editIndications, setEditIndications] = useState("");
+  const [rescheduleSlots, setRescheduleSlots] = useState([]);
+  const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
 
   useEffect(() => {
     if (!appt) return;
     setEditDate(toLocalDate(new Date(appt.startsAt)));
-    setEditTime(formatTime(appt.startsAt));
+    setEditSlot(new Date(appt.startsAt).toISOString());
     setEditRoomId(appt.room?.id || "");
     setEditStaffId(appt.staff?.id || "");
     setEditIndications(appt.indications || "");
   }, [appt]);
+
+  useEffect(() => {
+    if (!editing || !appt?.id || !editDate) {
+      setRescheduleSlots([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setRescheduleSlotsLoading(true);
+    authFetch(`/appointments/${appt.id}/reschedule-availability`, {
+      query: { date: editDate, roomId: editRoomId || undefined, staffId: editStaffId || undefined },
+    })
+      .then((data) => {
+        if (cancelled) return;
+        const slots = Array.isArray(data?.slots) ? data.slots : [];
+        setRescheduleSlots(slots);
+        setEditSlot((current) => (slots.includes(current) ? current : slots[0] || ""));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setRescheduleSlots([]);
+        setEditSlot("");
+        toast.error(err?.message || "No se pudieron cargar los horarios disponibles");
+      })
+      .finally(() => {
+        if (!cancelled) setRescheduleSlotsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appt?.id, editDate, editRoomId, editStaffId, editing, toast]);
 
   if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
@@ -1487,8 +1519,11 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
     setSaving(true);
     try {
       const body = {};
-      const newStartsAt = `${editDate}T${editTime}:00`;
-      if (newStartsAt !== appt.startsAt) body.startsAt = newStartsAt;
+      if (!editSlot) {
+        toast.error("Selecciona un horario disponible");
+        return;
+      }
+      if (new Date(editSlot).getTime() !== new Date(appt.startsAt).getTime()) body.startsAt = editSlot;
       if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
       if (editStaffId && editStaffId !== appt.staff?.id) body.staffId = editStaffId;
       if (Object.keys(body).length === 0) { setEditing(false); return; }
@@ -1507,6 +1542,11 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
   const canChange = appt.status !== "cancelado" && appt.status !== "no_show";
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" };
   const pillBtn = (bg, color, border) => ({ padding: "7px 16px", borderRadius: 999, border: border || "none", background: bg, color, fontSize: 12, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 });
+  const rescheduleTimeOptions = rescheduleSlots.map((slot) => ({
+    value: slot,
+    label: formatTime(slot),
+    caption: `${appt.service?.name || "Servicio"} · bloque ${totalServiceBlockMins(appt.service || {})} min`,
+  }));
 
   return (
     <div
@@ -1630,10 +1670,21 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                 <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={inputStyle} />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Hora</label>
-                <input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} style={inputStyle} />
+                <PremiumSelect
+                  label="Hora disponible"
+                  value={editSlot}
+                  options={rescheduleTimeOptions}
+                  placeholder={rescheduleSlotsLoading ? "Buscando horarios…" : "Seleccionar hora"}
+                  emptyLabel={rescheduleSlotsLoading ? "Buscando horarios…" : "Sin horarios ese día"}
+                  onChange={setEditSlot}
+                />
               </div>
             </div>
+            {!rescheduleSlotsLoading && rescheduleSlots.length === 0 && (
+              <p style={{ margin: 0, fontSize: 12, color: "#A89A87", lineHeight: 1.45 }}>
+                No hay espacio con esta cabina y terapeuta ese día. Prueba otra fecha o ajusta la asignación.
+              </p>
+            )}
             <div>
               <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Cabina</label>
               <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
