@@ -116,6 +116,7 @@ export default function CRMPage() {
   const mobilePanel = useAnimatedMount(isMobile && mobileView === "panel", 220);
   const messagesEndRef = useRef(null);
   const lastMsgIdRef = useRef(null);
+  const initialMessageLoadRef = useRef(true);
   const messagesContainerRef = useRef(null);
   const fileInputRef = useRef(null);
   const headerMenuRef = useRef(null);
@@ -297,15 +298,27 @@ export default function CRMPage() {
     };
   }, [fetchConversations, fetchConversation, fetchNotes, selectedId]);
 
-  useEffect(() => { lastMsgIdRef.current = null; }, [selectedId]);
+  useEffect(() => {
+    lastMsgIdRef.current = null;
+    initialMessageLoadRef.current = true;
+    setShowScrollBottom(false);
+  }, [selectedId]);
 
   useEffect(() => {
     const lastId = messages[messages.length - 1]?.id;
     if (!lastId || lastId === lastMsgIdRef.current) return;
     const container = messagesContainerRef.current;
+    if (initialMessageLoadRef.current) {
+      initialMessageLoadRef.current = false;
+      lastMsgIdRef.current = lastId;
+      if (container) {
+        setShowScrollBottom(container.scrollHeight - container.scrollTop - container.clientHeight > 180);
+      }
+      return;
+    }
     const isNearBottom = !container
       || container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-    if (isNearBottom || lastMsgIdRef.current === null) {
+    if (isNearBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
     lastMsgIdRef.current = lastId;
@@ -743,15 +756,13 @@ export default function CRMPage() {
     const isSelected = c.id === selectedId;
     const name = c.clientName || c.customerName || c.customerWaId;
     const labels = c.labels || [];
-    const pendingMessageCount = c.status === "resolved"
-      ? 0
-      : Math.max(Number(c.pendingMessageCount || 0), Number(c.unreadCount || 0), Number(c.unreadRestoreCount || 0));
+    const pendingMessageCount = Math.max(Number(c.pendingMessageCount || 0), Number(c.unreadCount || 0));
     return (
       <button
         key={c.id}
         onClick={() => selectConversation(c.id)}
         className={`
-          relative w-full flex items-start gap-3 p-3 pr-9 rounded-xl text-left
+          relative w-full flex items-start gap-3 p-3 pr-10 rounded-xl text-left
           transition-colors duration-150
           ${isSelected
             ? "bg-glow/40"
@@ -823,7 +834,7 @@ export default function CRMPage() {
           </div>
         </div>
         {pendingMessageCount > 0 && (
-          <span className="absolute right-3 top-3 flex min-w-5 h-5 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm">
+          <span className="absolute right-3 top-1/2 flex min-w-5 h-5 -translate-y-1/2 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm">
             {pendingMessageCount > 99 ? "99+" : pendingMessageCount}
           </span>
         )}

@@ -274,9 +274,7 @@ function compactConversation(c) {
   if (!c) return null;
   let botStatus = c.botActive ? 'active' : 'handedOff';
   if (c.botActive && botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
-  const pendingMessageCount = conversationStatusForList(c) === 'resolved'
-    ? 0
-    : Math.max(Number(c.unreadCount || 0), Number(c.unreadRestoreCount || 0));
+  const pendingMessageCount = Math.max(Number(c.unreadCount || 0), 0);
   return {
     id: c.id,
     customerWaId: c.customerWaId,
@@ -507,6 +505,9 @@ async function sendManualText(actor, conversationId, text) {
       lastOutboundAt: now,
       lastMessageAt: now,
       lastMessagePreview: previewOf(text),
+      unreadCount: 0,
+      unreadRestoreCount: 0,
+      manuallyMarkedUnread: false,
       botActive: false,
       status: 'open',
       assignedToUserId: actor.id,
@@ -585,6 +586,9 @@ async function sendManualMedia(actor, conversationId, payload = {}) {
       lastOutboundAt: now,
       lastMessageAt: now,
       lastMessagePreview: previewOf(displayBody),
+      unreadCount: 0,
+      unreadRestoreCount: 0,
+      manuallyMarkedUnread: false,
       botActive: false,
       status: 'open',
       assignedToUserId: actor.id,
@@ -695,17 +699,17 @@ async function setReadState(actor, conversationId, unread) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
   const nextUnread = Boolean(unread);
-  const restoreCount = Math.max(Number(conv.unreadRestoreCount || 0), Number(conv.unreadCount || 0), nextUnread ? 1 : 0);
+  const nextCount = Math.max(Number(conv.unreadCount || 0), nextUnread ? 1 : 0);
   const data = nextUnread
     ? {
-        unreadCount: restoreCount,
-        unreadRestoreCount: restoreCount,
+        unreadCount: nextCount,
+        unreadRestoreCount: nextCount,
         manuallyMarkedUnread: true,
         status: 'pending',
       }
     : {
         unreadCount: 0,
-        unreadRestoreCount: restoreCount,
+        unreadRestoreCount: 0,
         manuallyMarkedUnread: false,
         lastReadAt: new Date(),
       };

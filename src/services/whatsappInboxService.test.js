@@ -151,10 +151,10 @@ test('listConversations: botStatus usa botActive del registro (no N+1 query)', a
   assert.equal(items[0].botActive, true);
   assert.deepEqual(items[0].labels, ['consulta']);
   assert.equal(items[0].client.recordNumber, 'A-001');
-  assert.equal(items[0].pendingMessageCount, 3);
+  assert.equal(items[0].pendingMessageCount, 0);
   assert.equal(items[1].botStatus, 'handedOff');
   assert.equal(items[1].botActive, false);
-  assert.equal(items[1].pendingMessageCount, 0);
+  assert.equal(items[1].pendingMessageCount, 2);
 });
 
 test('listConversations: unread=true filtra conversaciones con mensajes pendientes', async () => {
@@ -208,6 +208,24 @@ test('setStatus: resolver limpia contadores pendientes de la bandeja', async () 
   assert.equal(result.status, 'resolved');
 });
 
+test('setReadState: marcar leído borra el número de mensajes nuevos', async () => {
+  let updateData = null;
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', unreadCount: 4, unreadRestoreCount: 4 }),
+    update: async ({ data }) => {
+      updateData = data;
+      return { id: 'c1', ...data };
+    },
+  };
+
+  const result = await inbox.setReadState({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', false);
+  assert.equal(updateData.unreadCount, 0);
+  assert.equal(updateData.unreadRestoreCount, 0);
+  assert.equal(updateData.manuallyMarkedUnread, false);
+  assert.ok(updateData.lastReadAt instanceof Date);
+  assert.equal(result.unreadCount, 0);
+});
+
 test('sendManualText: auto desactiva botActive', async () => {
   let updateData = null;
   mockTransport({
@@ -223,6 +241,9 @@ test('sendManualText: auto desactiva botActive', async () => {
   };
   await inbox.sendManualText({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', 'hola');
   assert.equal(updateData.botActive, false, 'sendManualText debe desactivar el bot');
+  assert.equal(updateData.unreadCount, 0, 'al responder, el contador vuelve a cero');
+  assert.equal(updateData.unreadRestoreCount, 0, 'al responder, no se conservan números viejos');
+  assert.equal(updateData.manuallyMarkedUnread, false);
 });
 
 test('sendManualMedia: sube adjunto, lo envía por WhatsApp y actualiza conversación', async () => {
@@ -269,6 +290,9 @@ test('sendManualMedia: sube adjunto, lo envía por WhatsApp y actualiza conversa
   assert.equal(msg.mediaId, 'media.IMG');
   assert.equal(updateData.botActive, false);
   assert.equal(updateData.lastMessagePreview, 'Mira esta referencia');
+  assert.equal(updateData.unreadCount, 0);
+  assert.equal(updateData.unreadRestoreCount, 0);
+  assert.equal(updateData.manuallyMarkedUnread, false);
 });
 
 test('sendManualMedia: rechaza archivos no permitidos', async () => {
