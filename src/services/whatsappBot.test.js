@@ -7,6 +7,8 @@ process.env.INTAKE_ENCRYPTION_KEY = process.env.INTAKE_ENCRYPTION_KEY || crypto.
 
 const prisma = require('../utils/prisma');
 const transport = require('./whatsappTransport');
+const aiClient = require('./aiClient');
+const appointmentService = require('./appointmentService');
 const bot = require('./whatsappBot');
 const state = require('./whatsappBot/state');
 const rateLimit = require('./whatsappBot/rateLimit');
@@ -456,6 +458,45 @@ test('"Reservar cita" → muestra servicios en modo reserva (NUNCA link externo,
   assert.ok(!/https?:\/\//.test(allBodies), 'NUNCA debe enviar links externos');
   const st = state.getFlowState(CONV.customerWaId);
   assert.equal(st.booking?.step, 'select_service');
+});
+
+test('IA agenda por texto: extrae servicio, fecha y hora y pasa a la confirmación', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    clientByPhone: { id: 'client1', fullName: 'Ana' },
+    services: [
+      { id: 's1', name: 'Masaje relajante', category: 'corporal', priceUsd: 30, durationMins: 60, active: true },
+    ],
+  });
+  const originalIsAvailable = aiClient.isAvailable;
+  const originalChat = aiClient.chat;
+  const originalAvailability = appointmentService.getAvailability;
+  aiClient.isAvailable = () => true;
+  aiClient.chat = async () => ({
+    ok: true,
+    intent: 'book_service',
+    params: { service_query: 'Masaje relajante', date_text: 'lunes', time: '09:00' },
+    replyText: '',
+    costUsd: 0,
+  });
+  appointmentService.getAvailability = async () => ['2026-09-07T14:00:00.000Z'];
+
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT,
+      connection: CONN,
+      conv: CONV,
+      incoming: { type: 'text', text: { body: 'quiero agendar masaje relajante el lunes a las 9' } },
+    });
+    assert.equal(sent.at(-1).kind, 'interactive');
+    assert.equal(sent.at(-1).payload.type, 'button');
+    assert.match(sent.at(-1).payload.body.text, /Confirmo su espacio/i);
+  } finally {
+    aiClient.isAvailable = originalIsAvailable;
+    aiClient.chat = originalChat;
+    appointmentService.getAvailability = originalAvailability;
+  }
 });
 
 test('seleccionar servicio en booking → muestra date picker', async () => {

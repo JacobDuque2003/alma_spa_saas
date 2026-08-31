@@ -735,9 +735,13 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
 async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyText }) {
   const flowState = state.getFlowState(waId) || {};
   const priorityIntent = detectDeterministicIntent(bodyText);
+  // Un mensaje libre de reserva puede traer servicio, fecha y hora. Si la IA
+  // está disponible, debe extraer esos datos para llevar la clienta directo a
+  // la disponibilidad real, en vez de devolverla al selector inicial.
+  const letAIResolveBooking = priorityIntent === 'book_start' && aiClient.isAvailable();
 
   // La petición nueva y explícita de la clienta manda sobre cualquier flujo previo.
-  if (priorityIntent === 'book_start') {
+  if (priorityIntent === 'book_start' && !letAIResolveBooking) {
     await logBotInteraction(tenant.id, conv, { userMessage: bodyText, intent: priorityIntent, reply: null });
     return routeIntent({ tenant, connection, conv, waId, tone, intent: priorityIntent, userMessage: bodyText });
   }
@@ -801,7 +805,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
         : '🌿 *Sin problema, cancelé su reserva*\n\n¿Le ayudo con algo más?';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
-      return sendMainMenu({ tenant, connection, conv, waId, tone });
+      return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
     }
   }
 
@@ -812,7 +816,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     }
   }
 
-  const deterministicIntent = priorityIntent;
+  const deterministicIntent = letAIResolveBooking ? null : priorityIntent;
   if (deterministicIntent) {
     logBot('info', 'intención determinística resuelta', {
       tenant: tenant.slug,
