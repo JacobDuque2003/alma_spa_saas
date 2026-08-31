@@ -118,6 +118,7 @@ async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', bod
         status: 'sent',
         waMessageId,
         body,
+        interactivePayload: type === 'interactive' ? sendResult.interactivePayload || null : null,
         sentByUserId: null,
       },
     });

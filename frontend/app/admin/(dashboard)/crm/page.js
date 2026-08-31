@@ -760,6 +760,70 @@ export default function CRMPage() {
     );
   }
 
+  function renderInteractivePreview(payload) {
+    if (!payload || typeof payload !== "object") return null;
+    const bodyText = payload.body?.text || "";
+    const headerText = payload.header?.text || "";
+    const footerText = payload.footer?.text || "";
+    const buttons = Array.isArray(payload.action?.buttons) ? payload.action.buttons : [];
+    const sections = Array.isArray(payload.action?.sections) ? payload.action.sections : [];
+    const listButton = payload.action?.button || "Ver opciones";
+
+    return (
+      <div className="space-y-2">
+        {headerText && <p className="text-sm font-semibold">{renderHighlightedText(headerText)}</p>}
+        {bodyText && <p className="whitespace-pre-wrap leading-relaxed">{renderHighlightedText(bodyText)}</p>}
+        {footerText && <p className="text-xs text-bronze/70">{footerText}</p>}
+
+        {buttons.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white/60">
+            <div className="border-b border-emerald-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+              Opciones de la clienta
+            </div>
+            {buttons.map((button, index) => (
+              <button
+                key={`${button.reply?.id || button.reply?.title || "opcion"}-${index}`}
+                type="button"
+                disabled
+                tabIndex={-1}
+                className="flex w-full items-center justify-between border-b border-emerald-100 px-3 py-2.5 text-left text-sm font-medium text-bronze-deep last:border-b-0 disabled:cursor-default disabled:opacity-100"
+              >
+                <span>{button.reply?.title || "Opción"}</span>
+                <ChevronRight size={15} className="text-emerald-500" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {sections.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white/60">
+            <div className="flex items-center justify-between border-b border-emerald-100 px-3 py-2">
+              <span className="text-sm font-semibold text-emerald-700">{listButton}</span>
+              <ChevronDown size={15} className="text-emerald-600" />
+            </div>
+            {sections.map((section, sectionIndex) => (
+              <div key={`${section.title || "opciones"}-${sectionIndex}`} className="border-b border-emerald-100 last:border-b-0">
+                {section.title && <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wide text-warm-gray">{section.title}</p>}
+                {(section.rows || []).map((row, rowIndex) => (
+                  <div key={`${row.id || row.title || "fila"}-${rowIndex}`} className="flex items-center gap-2 px-3 py-2.5">
+                    <CircleDot size={12} className="flex-shrink-0 text-emerald-500" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-bronze-deep">{row.title || "Opción"}</span>
+                      {row.description && <span className="mt-0.5 block text-xs text-bronze/75">{row.description}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <p className="border-t border-emerald-100 bg-emerald-50/70 px-3 py-1.5 text-[10px] text-emerald-700">
+              Vista previa: estas opciones no se pueden seleccionar desde la Bandeja.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ─── Render helpers ──────────────────────────────────────────
   function renderConversationCard(c) {
     const isSelected = c.id === selectedId;
@@ -865,6 +929,7 @@ export default function CRMPage() {
       interactive: "Mensaje interactivo",
       template: "Plantilla enviada",
     };
+    const interactivePreview = m.type === "interactive" ? m.interactivePayload : null;
 
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
@@ -896,7 +961,7 @@ export default function CRMPage() {
               <ImageIcon size={14} /> Imagen pendiente
             </div>
           )}
-          {(!m.mediaId || (m.body && !isPlaceholderBody(m.body))) && (
+          {interactivePreview ? renderInteractivePreview(interactivePreview) : (!m.mediaId || (m.body && !isPlaceholderBody(m.body))) && (
             <p className="whitespace-pre-wrap leading-relaxed">
               {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
             </p>

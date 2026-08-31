@@ -125,12 +125,15 @@ async function sendMediaByMediaId(conn, toWaId, type, mediaId, options = {}) {
 }
 
 async function sendInteractive(conn, toWaId, interactivePayload) {
-  return postToMeta(conn, `${conn.phoneNumberId}/messages`, {
+  const result = await postToMeta(conn, `${conn.phoneNumberId}/messages`, {
     messaging_product: 'whatsapp',
     to: toWaId,
     type: 'interactive',
     interactive: interactivePayload,
   });
+  // El bot necesita conservar esta estructura para que la Bandeja muestre
+  // exactamente las opciones que recibió la clienta. No se reenvía nunca.
+  return { ...result, interactivePayload };
 }
 
 async function sendImageByMediaId(conn, toWaId, mediaId, caption) {

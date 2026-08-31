@@ -19,7 +19,7 @@ const CONV = { id: 'conv1', tenantId: 't1', customerWaId: '593999111222' };
 function installTransportMocks() {
   const sent = [];
   transport.sendText = async (conn, to, body) => { sent.push({ kind: 'text', to, body }); return { ok: true, data: { messages: [{ id: 'wamid.mock' }] } }; };
-  transport.sendInteractive = async (conn, to, payload) => { sent.push({ kind: 'interactive', to, payload }); return { ok: true, data: { messages: [{ id: 'wamid.mock' }] } }; };
+  transport.sendInteractive = async (conn, to, payload) => { sent.push({ kind: 'interactive', to, payload }); return { ok: true, data: { messages: [{ id: 'wamid.mock' }] }, interactivePayload: payload }; };
   transport.sendImageByMediaId = async (conn, to, mediaId, caption) => { sent.push({ kind: 'image', to, mediaId, caption }); return { ok: true, data: { messages: [{ id: 'wamid.mock' }] } }; };
   transport.uploadMedia = async (conn, buf, mime) => { sent.push({ kind: 'uploadMedia', bytes: buf.length, mime }); return { ok: true, mediaId: 'media_1' }; };
   transport.sanitizeError = () => ({ name: 'x', message: 'x' });
@@ -27,9 +27,10 @@ function installTransportMocks() {
 }
 
 function installPrismaMocks({ humanReplied = false, services = [], serviceById = {}, imageForId = {}, clientByPhone = null, nextAppointment = null, tenantConfig = {} } = {}) {
+  const messageCreates = [];
   prisma.whatsAppMessage = {
     findFirst: async () => (humanReplied ? { id: 'human1' } : null),
-    create: async () => ({ id: 'msg1' }),
+    create: async ({ data }) => { messageCreates.push(data); return { id: 'msg1' }; },
   };
   prisma.whatsAppConversation = { update: async () => ({}) };
   prisma.service = {
@@ -43,6 +44,7 @@ function installPrismaMocks({ humanReplied = false, services = [], serviceById =
     create: async () => ({}),
     aggregate: async () => ({ _sum: { costUsd: 0 } }),
   };
+  return { messageCreates };
 }
 
 function resetState() { state._reset(); rateLimit._reset(); }
@@ -79,7 +81,7 @@ test('bot no responde a conversaciones escaladas', async () => {
 test('primer mensaje texto dispara menú principal con Almita', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks();
+  const { messageCreates } = installPrismaMocks();
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'buenos días' } } });
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
@@ -87,6 +89,7 @@ test('primer mensaje texto dispara menú principal con Almita', async () => {
   assert.match(sent[0].payload.body.text, /Almita/);
   const rows = sent[0].payload.action.sections[0].rows.map((r) => r.id);
   assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_my_appointment', 'menu_escalate']);
+  assert.deepEqual(messageCreates[0].interactivePayload, sent[0].payload);
 });
 
 test('menú principal cae a texto si Meta rechaza el interactivo', async () => {

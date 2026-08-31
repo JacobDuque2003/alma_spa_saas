@@ -500,6 +500,7 @@ model WhatsAppMessage {
   status         WhatsAppMessageStatus
   waMessageId    String?               @unique
   body           String?
+  interactivePayload Json?
   templateName   String?
   templateLang   String?
   mediaId        String?
