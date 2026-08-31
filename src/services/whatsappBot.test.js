@@ -979,7 +979,7 @@ test('Ronda E: texto con otro servicio dentro de reserva cambia el servicio acti
   assert.equal(st.booking.serviceName, 'Terapias energéticas');
 });
 
-test('Ronda E: si la IA trae service_info con reply, primero cambia el servicio en booking', async () => {
+test('una consulta o sugerencia de IA dentro de una reserva informa sin cambiar el servicio activo', async () => {
   resetState();
   const sent = installTransportMocks();
   const services = [
@@ -1008,10 +1008,91 @@ test('Ronda E: si la IA trae service_info con reply, primero cambia el servicio 
   });
 
   assert.equal(sent.length, 1);
-  assert.equal(sent[0].kind, 'interactive');
-  assert.equal(sent[0].payload.action.button, 'Elegir día');
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /Terapias energéticas/);
   assert.ok(!sent.some((item) => item.kind === 'text' && /Texto de IA/.test(item.body || '')));
-  assert.equal(state.getFlowState(CONV.customerWaId).booking.serviceId, 'energeticas');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.serviceId, 'ceragem');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.step, 'select_date');
+});
+
+test('un síntoma clasificado por IA como book_service no reserva ni reemplaza el flujo activo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = [
+    { id: 'ceragem', name: 'Camilla Ceragem', category: 'ceragem', priceUsd: 20, durationMins: 60, active: true },
+    { id: 'masaje', name: 'Masaje relajante', category: 'masajes', priceUsd: 30, durationMins: 120, active: true },
+  ];
+  installPrismaMocks({
+    services,
+    serviceById: Object.fromEntries(services.map((service) => [service.id, { ...service, tenantId: TENANT.id }])),
+  });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 'ceragem', serviceName: 'Camilla Ceragem' },
+    tone: 'usted',
+  });
+
+  await bot._internals.routeIntent({
+    tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted',
+    intent: 'book_service', params: { service_query: 'Masaje relajante' },
+    userMessage: 'me duele el cuerpo, ¿qué me recomiendas?',
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /Masaje relajante/);
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.serviceId, 'ceragem');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.step, 'select_date');
+});
+
+test('una petición explícita de cita nueva reemplaza una reprogramación en curso', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = [{ id: 's1', name: 'Masaje relajante', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true }];
+  installPrismaMocks({ services });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'reschedule',
+    reschedule: { step: 'select_date', appointmentId: 'appt1', serviceName: 'Reflexología' },
+    tone: 'usted',
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'no, quiero una nueva cita' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'interactive');
+  assert.equal(state.getFlowState(CONV.customerWaId).flow, 'booking');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.step, 'select_service');
+});
+
+test('en reserva, "mañana en la mañana" usa fecha y hora en vez de volver al menú', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'María López' } });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 's1', serviceName: 'Masaje relajante' },
+    tone: 'usted',
+  });
+  const appointmentService = require('./appointmentService');
+  const original = appointmentService.getAvailability;
+  appointmentService.getAvailability = async () => ['2026-08-31T14:00:00.000Z'];
+  prisma.tenant.findUnique = async () => ({ config: {} });
+
+  try {
+    await bot._internals.handleTextMessage({
+      tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
+      tone: 'usted', bodyText: 'quiero para mañana en la mañana',
+    });
+    const booking = state.getFlowState(CONV.customerWaId).booking;
+    assert.equal(booking.step, 'confirm');
+    assert.equal(booking.timeSlot, '2026-08-31T14:00:00.000Z');
+    assert.ok(sent.some((item) => item.kind === 'interactive'));
+  } finally {
+    appointmentService.getAvailability = original;
+  }
 });
 
 // ─── Ronda F: cálculo de fechas en JS ───────────────────────────────

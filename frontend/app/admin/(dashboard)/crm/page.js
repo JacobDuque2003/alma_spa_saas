@@ -215,7 +215,8 @@ export default function CRMPage() {
       const chatIsVisible = typeof document === "undefined"
         || document.visibilityState === "visible";
       const mobileChatIsOpen = !isMobile || mobileView === "chat";
-      if (conv.unreadCount > 0 && chatIsVisible && mobileChatIsOpen) {
+      // "No leído" es una acción explícita del equipo: un refresco no debe deshacerla.
+      if (conv.unreadCount > 0 && !conv.manuallyMarkedUnread && chatIsVisible && mobileChatIsOpen) {
         authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" })
           .then(() => {
             setSelected((cur) => cur?.id === selectedId ? { ...cur, unreadCount: 0, lastReadAt: new Date().toISOString() } : cur);
@@ -840,7 +841,7 @@ export default function CRMPage() {
           </div>
         </div>
         {pendingMessageCount > 0 && (
-          <span className="absolute right-3 top-1/2 flex min-w-5 h-5 -translate-y-1/2 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
+          <span className="absolute right-3 top-1/2 flex min-w-5 h-5 -translate-y-1/2 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
             {pendingMessageCount > 99 ? "99+" : pendingMessageCount}
           </span>
         )}

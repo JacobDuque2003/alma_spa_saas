@@ -73,3 +73,12 @@ test('chat prompt: incluye horario, despedida y reprogramación como intenciones
   assert.match(prompt, /farewell/);
   assert.match(prompt, /reschedule/);
 });
+
+test('chat prompt: usa descripciones reales y no convierte síntomas en reservas automáticas', () => {
+  const prompt = aiClient._internals.buildChatSystemPrompt({
+    tone: 'usted',
+    services: [{ name: 'Masaje relajante', priceUsd: 30, durationMins: 60, category: 'Masajes', description: 'Relajación corporal suave.' }],
+  });
+  assert.match(prompt, /Relajación corporal suave/);
+  assert.match(prompt, /Nunca inicies ni cambies una reserva por esa sugerencia/);
+});

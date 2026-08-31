@@ -175,9 +175,10 @@ function detectDeterministicIntent(text) {
   if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
   if (/\b(mi cita|mis citas|cita)\b/.test(t) && (hasAnyApproxToken(t, APPOINTMENT_QUERY_WORDS, 1) || /\bque dia|cuando|a que hora\b/.test(t))) return 'my_appointment';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
-  if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda)\b/.test(t)) return 'book_start';
+  if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda|cita)\b/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito|hacer|haser)\b/.test(t) && hasAnyApproxToken(t, BOOK_INTENT_WORDS, 2)) return 'book_start';
   if (/\bhacer una reserva\b/.test(t)) return 'book_start';
+  if (isExplicitNewBookingRequest(t)) return 'book_start';
   if (hasAnyApproxToken(t, BUSINESS_HOURS_WORDS, 1)) return 'business_hours';
   if (FAREWELL_WORDS.some((phrase) => t === normalizeSearchText(phrase) || t.includes(normalizeSearchText(phrase)))) return 'farewell';
   if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
@@ -199,6 +200,50 @@ function wantsCurrentServiceInfo(text) {
   if (!t) return false;
   return /\b(que es|de que trata|como es|q es|k es|para que)\b/.test(t)
     || (hasAnyApproxToken(t, EXPLAIN_INTENT_WORDS, 2) && hasAnyApproxToken(t, CURRENT_SERVICE_WORDS, 1));
+}
+
+function isExplicitNewBookingRequest(text) {
+  const t = normalizeSearchText(text);
+  return /\b(nueva|nuevo|otra|otro)\s+(cita|reserva|reservacion)\b/.test(t)
+    || /\b(quiero|quisiera|deseo|necesito)\b.*\b(nueva|nuevo|otra|otro)\b.*\b(cita|reserva|reservacion)\b/.test(t);
+}
+
+function parseRequestedTime(text) {
+  const t = normalizeSearchText(text);
+  if (!t) return null;
+  if (/\b(en la manana|por la manana)\b/.test(t)) return '09:00';
+  if (/\b(en la tarde|por la tarde)\b/.test(t)) return '15:00';
+  if (/\b(en la noche|por la noche)\b/.test(t)) return '18:00';
+
+  const match = t.match(/\b(?:a\s+las?|para\s+las?|tipo\s+las?)\s*(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(a\.?m\.?|p\.?m\.?|de la manana|de la tarde|de la noche)?\b/);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const period = match[3] || '';
+  if (hour > 23 || minute > 59) return null;
+  if (/p\.?m\.?|tarde|noche/.test(period) && hour < 12) hour += 12;
+  else if (/a\.?m\.?|manana/.test(period) && hour === 12) hour = 0;
+  else if (!period && hour >= 1 && hour <= 7) hour += 12;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function isExplicitServiceChoice(text, service) {
+  const query = normalizeSearchText(text);
+  const name = normalizeSearchText(service?.name);
+  if (!query || !name) return false;
+  const maxWords = tokenizeForMatch(name).length + 2;
+  return query === name || (query.includes(name) && tokenizeForMatch(query).length <= maxWords);
+}
+
+function hasExplicitBookingLanguage(text) {
+  const t = normalizeSearchText(text);
+  return hasAnyApproxToken(t, BOOK_INTENT_WORDS, 2)
+    || /\b(quiero|quisiera|deseo|necesito)\b.*\b(agendar|reservar|una cita)\b/.test(t);
+}
+
+function describesWellnessNeed(text) {
+  const t = normalizeSearchText(text);
+  return /\b(me duele|dolor|molestia|tension|tenso|contractura|cansancio|estres|ansiedad)\b/.test(t);
 }
 
 function normalizeSearchText(text) {
@@ -578,6 +623,30 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
 
 async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyText }) {
   const flowState = state.getFlowState(waId) || {};
+  const priorityIntent = detectDeterministicIntent(bodyText);
+
+  // La petición nueva y explícita de la clienta manda sobre cualquier flujo previo.
+  if (priorityIntent === 'book_start') {
+    await logBotInteraction(tenant.id, conv, { userMessage: bodyText, intent: priorityIntent, reply: null });
+    return routeIntent({ tenant, connection, conv, waId, tone, intent: priorityIntent, userMessage: bodyText });
+  }
+
+  const requestedDate = resolveBookingDate({}, bodyText);
+  const requestedTime = parseRequestedTime(bodyText);
+  if (flowState.reschedule?.step === 'select_date' && requestedDate) {
+    return handleRescheduleDateSelected({ tenant, connection, conv, waId, tone, date: requestedDate, requestedTime });
+  }
+  if (flowState.reschedule?.step === 'select_time' && requestedTime) {
+    const slotIndex = findSlotIndexByTime(flowState.reschedule.availableSlots, requestedTime);
+    if (slotIndex >= 0) return handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex });
+  }
+  if (flowState.booking?.step === 'select_date' && requestedDate) {
+    return handleBookingDateSelected({ tenant, connection, conv, waId, tone, date: requestedDate, requestedTime });
+  }
+  if (flowState.booking?.step === 'select_time' && requestedTime) {
+    const slotIndex = findSlotIndexByTime(flowState.booking.availableSlots, requestedTime);
+    if (slotIndex >= 0) return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex });
+  }
 
   if (flowState.booking?.serviceId && wantsCurrentServiceInfo(bodyText)) {
     return handleBookingServiceInfo({ tenant, connection, conv, waId, tone, serviceId: flowState.booking.serviceId });
@@ -621,12 +690,12 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   if (flowState.booking && flowState.booking.step !== 'ask_name') {
     const requestedService = await matchServiceByQuery(tenant.id, bodyText);
-    if (requestedService) {
+    if (requestedService && isExplicitServiceChoice(bodyText, requestedService)) {
       return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: requestedService.id });
     }
   }
 
-  const deterministicIntent = detectDeterministicIntent(bodyText);
+  const deterministicIntent = priorityIntent;
   if (deterministicIntent) {
     logBot('info', 'intención determinística resuelta', {
       tenant: tenant.slug,
@@ -642,7 +711,8 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   // Tier 2: intent cache lookup
-  const cached = intentCache.get(bodyText);
+  const canUseIntentCache = !flowState.booking && !flowState.reschedule && flowState.flow !== 'service_detail';
+  const cached = canUseIntentCache ? intentCache.get(bodyText) : null;
   if (cached) {
     logBot('info', 'intención resuelta por caché', {
       tenant: tenant.slug,
@@ -726,7 +796,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     costUsd: Number((aiResult.costUsd || 0).toFixed(4)),
   });
 
-  intentCache.set(bodyText, aiResult.intent, aiResult.replyText);
+  if (canUseIntentCache) intentCache.set(bodyText, aiResult.intent, aiResult.replyText);
 
   await logBotInteraction(tenant.id, conv, {
     userMessage: bodyText,
@@ -795,6 +865,13 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
         if (svc) {
+          // Un síntoma no es consentimiento para reservar: primero se informa
+          // y se conserva el flujo que la clienta ya estaba siguiendo.
+          if (describesWellnessNeed(userMessage) && !hasExplicitBookingLanguage(userMessage)) {
+            const fs = state.getFlowState(waId) || {};
+            if (fs.booking) return sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service: svc });
+            return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: svc.id });
+          }
           const resolvedDate = resolveBookingDate(params, userMessage);
           if (resolvedDate) {
             return handleSmartBooking({ tenant, connection, conv, waId, tone, service: svc, date: resolvedDate, time: params.time || null, aiReply });
@@ -830,7 +907,7 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
         if (svc) {
           const fs = state.getFlowState(waId) || {};
           if (fs?.booking) {
-            return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
+            return sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service: svc });
           }
           return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: svc.id });
         }
@@ -860,6 +937,20 @@ function serviceCatalogDescription(service) {
   const description = String(service.description || '').replace(/\s+/g, ' ').trim();
   if (description) return description.slice(0, 180);
   return null;
+}
+
+function serviceInfoFallback(service) {
+  const name = normalizeSearchText(service?.name);
+  if (name.includes('masaje')) return 'Es un espacio de bienestar corporal pensado para descansar y relajarte.';
+  if (name.includes('facial')) return 'Es un servicio de cuidado facial y bienestar.';
+  if (name.includes('yoga')) return 'Es una práctica de movimiento y bienestar guiado.';
+  return 'Es un servicio de bienestar de Alma Spa. Recepción puede ampliarte los detalles específicos.';
+}
+
+function findSlotIndexByTime(slots, requestedTime) {
+  return (slots || []).findIndex((iso) => new Intl.DateTimeFormat('en-GB', {
+    timeZone: menus.SPA_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(iso)) === requestedTime);
 }
 
 function serviceCatalogMeta(service) {
@@ -1112,7 +1203,7 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
     return handleListServices({ tenant, connection, conv, waId, tone });
   }
 
-  const descLine = svc.description ? `\n\n${svc.description}` : '';
+  const descLine = `\n\n${serviceCatalogDescription(svc) || serviceInfoFallback(svc)}`;
   const caption = `🌿 *_${svc.name}_*\n💰 $${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
 
   const imgRes = await serviceService.getServiceImage(botActor, serviceId);
@@ -1145,9 +1236,13 @@ async function handleBookingServiceInfo({ tenant, connection, conv, waId, tone, 
     return handleBook({ tenant, connection, conv, waId, tone });
   }
 
+  return sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service: svc });
+}
+
+async function sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service }) {
   const msg = tone === 'tu'
-    ? `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc) || 'Aún no tengo una descripción detallada cargada para este servicio.'}\n\n${serviceCatalogMeta(svc)}\n\nCuando quieras, dime qué día te queda bien.`
-    : `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc) || 'Aún no tengo una descripción detallada cargada para este servicio.'}\n\n${serviceCatalogMeta(svc)}\n\nCuando desee, dígame qué día le queda bien.`;
+    ? `🌿 *_${service.name}_*\n${serviceCatalogDescription(service) || serviceInfoFallback(service)}\n\n${serviceCatalogMeta(service)}\n\nCuando quieras, dime qué día te queda bien.`
+    : `🌿 *_${service.name}_*\n${serviceCatalogDescription(service) || serviceInfoFallback(service)}\n\n${serviceCatalogMeta(service)}\n\nCuando desee, dígame qué día le queda bien.`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }
@@ -1299,7 +1394,7 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[fecha para ${svc.name}]` });
 }
 
-async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date }) {
+async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime = null }) {
   const fs = state.getFlowState(waId);
   if (!fs?.booking?.serviceId) {
     return handleBook({ tenant, connection, conv, waId, tone });
@@ -1345,9 +1440,20 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
     unclearCount: 0,
   });
 
+  if (requestedTime) {
+    const slotIndex = findSlotIndexByTime(slots, requestedTime);
+    if (slotIndex >= 0) return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex });
+  }
+
   const payload = slots.length <= 3
     ? menus.timeSlotButtons(slots, fs.booking.serviceName, { tone })
-    : menus.timeSlotList(slots, fs.booking.serviceName, { tone });
+    : menus.timeSlotList(slots, fs.booking.serviceName, {
+      tone,
+      body: requestedTime ? `😅 *No hay horario a las ${requestedTime}*\n\nPero tengo estos:` : undefined,
+    });
+  if (requestedTime && slots.length <= 3) {
+    payload.body = { text: `😅 *No hay horario a las ${requestedTime}*\n\nPero tengo estos:` };
+  }
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${slots.length} horarios para ${date}]` });
 }

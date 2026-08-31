@@ -226,6 +226,24 @@ test('setReadState: marcar leído borra el número de mensajes nuevos', async ()
   assert.equal(result.unreadCount, 0);
 });
 
+test('setReadState: marcar no leído persiste la marca manual y al menos un contador', async () => {
+  let updateData = null;
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', unreadCount: 0, unreadRestoreCount: 0 }),
+    update: async ({ data }) => {
+      updateData = data;
+      return { id: 'c1', ...data };
+    },
+  };
+
+  const result = await inbox.setReadState({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', true);
+  assert.equal(updateData.unreadCount, 1);
+  assert.equal(updateData.unreadRestoreCount, 1);
+  assert.equal(updateData.manuallyMarkedUnread, true);
+  assert.equal(updateData.status, 'pending');
+  assert.equal(result.manuallyMarkedUnread, true);
+});
+
 test('sendManualText: auto desactiva botActive', async () => {
   let updateData = null;
   mockTransport({
