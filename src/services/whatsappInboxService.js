@@ -14,7 +14,7 @@ const DEFAULT_LABELS = [
   { key: 'cita_confirmada', text: 'Cita confirmada', tone: 'emerald' },
   { key: 'seguimiento', text: 'Seguimiento', tone: 'purple' },
   { key: 'queja', text: 'Queja', tone: 'red' },
-  { key: 'nueva_clienta', text: 'Nueva clienta', tone: 'sky' },
+  { key: 'nueva_clienta', text: 'Nuevo cliente', tone: 'sky' },
 ];
 const DEFAULT_QUICK_REPLIES = [
   { key: 'saludo', icon: '👋', title: 'Saludo', text: 'Hola, gracias por escribir a Alma Spa. ¿En qué podemos ayudarte?' },

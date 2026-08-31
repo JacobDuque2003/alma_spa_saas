@@ -6,6 +6,7 @@ const MAIN_MENU_IDS = {
 };
 
 const SERVICE_PREFIX = 'svc_';
+const SERVICE_PAGE_PREFIX = 'svc_page_';
 const CATEGORY_PREFIX = 'cat_';
 const NAV_BACK_MENU = 'nav_menu';
 const BOOK_DATE_PREFIX = 'bkd_';
@@ -82,34 +83,33 @@ ${instruction}
 4. Hablar con recepción`;
 }
 
-// Flat service list — only used when total active services ≤ 10 (Meta's
-// hard limit is 10 rows across all sections in an interactive list).
-function servicesList(services, { tone, body } = {}) {
-  const byCat = new Map();
-  for (const s of services) {
-    if (!s.active) continue;
-    const cat = String(s.category || 'Otros');
-    if (!byCat.has(cat)) byCat.set(cat, []);
-    byCat.get(cat).push(s);
+// Meta permite un máximo de 10 filas por lista. Ocho servicios por página
+// dejan espacio para navegar sin obligar a la clienta a elegir una categoría.
+function servicesList(services, { tone, body, page = 0 } = {}) {
+  const visible = services.filter((service) => service.active !== false)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, Math.max(Math.ceil(visible.length / 8) - 1, 0)));
+  const start = safePage * 8;
+  const rows = visible.slice(start, start + 8).map((service) => ({
+    id: `${SERVICE_PREFIX}${service.id}`,
+    title: String(service.name).slice(0, 24),
+    description: `$${Number(service.priceUsd).toFixed(2)} · ${service.durationMins || 60} min`.slice(0, 72),
+  }));
+  if (start + 8 < visible.length) {
+    rows.push({
+      id: `${SERVICE_PAGE_PREFIX}${safePage + 1}`,
+      title: 'Ver más servicios',
+      description: `${visible.length - (start + 8)} servicios más`,
+    });
   }
-  const sections = [];
-  let totalRows = 0;
-  for (const [cat, items] of [...byCat.entries()].sort()) {
-    const remaining = 10 - totalRows;
-    if (remaining <= 0) break;
-    const rows = items
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-      .slice(0, remaining)
-      .map((s) => ({
-        id: `${SERVICE_PREFIX}${s.id}`,
-        title: String(s.name).slice(0, 24),
-        description: `$${Number(s.priceUsd).toFixed(2)} · ${s.durationMins || 60} min`.slice(0, 72),
-      }));
-    if (rows.length) {
-      sections.push({ title: categoryDisplayName(cat).slice(0, 24), rows });
-      totalRows += rows.length;
-    }
+  if (safePage > 0) {
+    rows.push({
+      id: `${SERVICE_PAGE_PREFIX}${safePage - 1}`,
+      title: 'Volver a servicios anteriores',
+      description: 'Regresar a la página anterior',
+    });
   }
+  rows.push({ id: NAV_BACK_MENU, title: 'Volver al menú', description: 'Regresar a las opciones principales' });
 
   const defaultBody = tone === 'tu'
     ? '🌿 *Nuestros servicios* — toca uno para ver más'
@@ -120,7 +120,7 @@ function servicesList(services, { tone, body } = {}) {
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver servicios',
-      sections: sections.slice(0, 10),
+      sections: [{ title: 'Servicios', rows }],
     },
   };
 }
@@ -172,7 +172,7 @@ function backToMenuButton({ tone } = {}) {
     body: { text: tone === 'tu' ? '¿Te muestro algo más? 🌿' : '¿Le muestro algo más? 🌿' },
     action: {
       buttons: [
-        { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: 'Ver servicios' } },
+        { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: 'Volver a servicios' } },
         { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Menú principal' } },
       ],
     },
@@ -208,7 +208,7 @@ function datePicker({ tone, body } = {}) {
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Elegir día',
-      sections: [{ title: 'Días disponibles', rows }],
+      sections: [{ title: 'Días disponibles', rows: [...rows, { id: NAV_BACK_MENU, title: 'Volver', description: 'Elegir otro servicio' }] }],
     },
   };
 }
@@ -230,7 +230,7 @@ function _slotHour(isoStr) {
 function timeSlotList(slots, serviceName, { tone, body } = {}) {
   const morning = [];
   const afternoon = [];
-  for (let i = 0; i < slots.length && i < 10; i++) {
+  for (let i = 0; i < slots.length && i < 9; i++) {
     const h = _slotHour(slots[i]);
     const row = {
       id: `${BOOK_TIME_PREFIX}${i}`,
@@ -247,12 +247,16 @@ function timeSlotList(slots, serviceName, { tone, body } = {}) {
   if (!sections.length && slots.length > 0) {
     sections.push({
       title: 'Horarios',
-      rows: slots.slice(0, 10).map((iso, i) => ({
+      rows: slots.slice(0, 9).map((iso, i) => ({
         id: `${BOOK_TIME_PREFIX}${i}`,
         title: _formatSlotTime(iso),
         description: String(serviceName).slice(0, 72),
       })),
     });
+  }
+  if (sections.length) {
+    const target = sections[sections.length - 1];
+    target.rows.push({ id: NAV_BACK_MENU, title: 'Volver', description: 'Elegir otro día o servicio' });
   }
 
   const svcLabel = String(serviceName).slice(0, 50);
@@ -336,6 +340,7 @@ function askNameText({ tone } = {}) {
 module.exports = {
   MAIN_MENU_IDS,
   SERVICE_PREFIX,
+  SERVICE_PAGE_PREFIX,
   CATEGORY_PREFIX,
   NAV_BACK_MENU,
   BOOK_DATE_PREFIX,

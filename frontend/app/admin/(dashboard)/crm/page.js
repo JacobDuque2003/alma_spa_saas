@@ -19,7 +19,7 @@ const DEFAULT_LABELS = [
   { key: "cita_confirmada", text: "Cita confirmada", tone: "emerald" },
   { key: "seguimiento", text: "Seguimiento", tone: "purple" },
   { key: "queja", text: "Queja", tone: "red" },
-  { key: "nueva_clienta", text: "Nueva clienta", tone: "sky" },
+  { key: "nueva_clienta", text: "Nuevo cliente", tone: "sky" },
 ];
 
 const LABEL_TONES = {

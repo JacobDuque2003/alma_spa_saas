@@ -14,7 +14,7 @@ const menus = require('./whatsappBot/menus');
 
 const TENANT = { id: 't1', slug: 'alma-spa' };
 const CONN = { id: 'c1', tenantId: 't1', phoneNumberId: '999', status: 'activo' };
-const CONV = { id: 'conv1', tenantId: 't1', customerWaId: '593999111222' };
+const CONV = { id: 'conv1', tenantId: 't1', customerWaId: '593999111222', clientId: 'client1' };
 
 function installTransportMocks() {
   const sent = [];
@@ -28,23 +28,29 @@ function installTransportMocks() {
 
 function installPrismaMocks({ humanReplied = false, services = [], serviceById = {}, imageForId = {}, clientByPhone = null, nextAppointment = null, tenantConfig = {} } = {}) {
   const messageCreates = [];
+  const clientCreates = [];
+  const conversationUpdates = [];
   prisma.whatsAppMessage = {
     findFirst: async () => (humanReplied ? { id: 'human1' } : null),
     create: async ({ data }) => { messageCreates.push(data); return { id: 'msg1' }; },
   };
-  prisma.whatsAppConversation = { update: async () => ({}) };
+  prisma.whatsAppConversation = { update: async ({ data }) => { conversationUpdates.push(data); return {}; } };
   prisma.service = {
     findMany: async () => services,
     findUnique: async ({ where }) => serviceById[where.id] || null,
   };
-  prisma.client = { findFirst: async () => clientByPhone, upsert: async () => clientByPhone || { id: 'c_upsert', fullName: 'Test' } };
+  prisma.client = {
+    findFirst: async () => clientByPhone,
+    create: async ({ data }) => { clientCreates.push(data); return { id: 'c_new', ...data }; },
+    upsert: async () => clientByPhone || { id: 'c_upsert', fullName: 'Test' },
+  };
   prisma.appointment = { findFirst: async () => nextAppointment };
   prisma.tenant = { findUnique: async () => ({ config: tenantConfig }) };
   prisma.botInteractionLog = {
     create: async () => ({}),
     aggregate: async () => ({ _sum: { costUsd: 0 } }),
   };
-  return { messageCreates };
+  return { messageCreates, clientCreates, conversationUpdates };
 }
 
 function resetState() { state._reset(); rateLimit._reset(); }
@@ -92,6 +98,62 @@ test('primer mensaje texto dispara menú principal con Almita', async () => {
   assert.deepEqual(messageCreates[0].interactivePayload, sent[0].payload);
 });
 
+test('número nuevo pide nombre y dirección, crea la clienta y la etiqueta', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const { clientCreates, conversationUpdates } = installPrismaMocks();
+  const unknownConv = { ...CONV, clientId: null, labels: [] };
+
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'hola' } } });
+  assert.match(sent.at(-1).body, /nombre completo/i);
+
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'María Pérez' } } });
+  assert.match(sent.at(-1).body, /dirección/i);
+
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Av. Amazonas y Naciones Unidas' } } });
+  assert.deepEqual(clientCreates[0], {
+    tenantId: TENANT.id,
+    fullName: 'María Pérez',
+    whatsapp: '+593999111222',
+    address: 'Av. Amazonas y Naciones Unidas',
+  });
+  assert.ok(conversationUpdates.some((data) => data.labels?.includes('nueva_clienta')));
+  assert.equal(sent.at(-1).kind, 'interactive');
+  assert.equal(sent.at(-1).payload.action.sections[0].rows.length, 4);
+});
+
+test('ver servicios muestra servicios directos paginados y permite volver', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const services = Array.from({ length: 15 }, (_, index) => ({
+    id: 's' + (index + 1),
+    name: 'Servicio ' + String(index + 1).padStart(2, '0'),
+    category: 'corporal',
+    priceUsd: 30,
+    durationMins: 60,
+    active: true,
+  }));
+  installPrismaMocks({ services });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: menus.MAIN_MENU_IDS.LIST_SERVICES } } },
+  });
+  const firstRows = sent.at(-1).payload.action.sections[0].rows;
+  assert.equal(firstRows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 8);
+  assert.ok(firstRows.some((row) => row.id === 'svc_page_1'));
+  assert.ok(firstRows.some((row) => row.id === menus.NAV_BACK_MENU));
+  assert.ok(!firstRows.some((row) => row.id.startsWith('cat_')));
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_page_1' } } },
+  });
+  const secondRows = sent.at(-1).payload.action.sections[0].rows;
+  assert.equal(secondRows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 7);
+  assert.ok(secondRows.some((row) => row.id === 'svc_page_0'));
+});
+
 test('menú principal cae a texto si Meta rechaza el interactivo', async () => {
   resetState();
   const sent = installTransportMocks();
@@ -136,7 +198,7 @@ test('opciones numéricas funcionan sin IA', async () => {
   assert.match(sent[0].payload.body.text, /servicios/i);
 });
 
-test('"Ver servicios" → lista agrupada por categoría', async () => {
+test('"Ver servicios" → lista directa de servicios', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -151,9 +213,10 @@ test('"Ver servicios" → lista agrupada por categoría', async () => {
   });
   assert.equal(sent.length, 1);
   assert.equal(sent[0].payload.type, 'list');
-  const secs = sent[0].payload.action.sections.map((s) => s.title);
-  assert.ok(secs.some((t) => t.includes('Facial') || t.includes('facial')));
-  assert.ok(secs.some((t) => t.includes('Yoga') || t.includes('yoga')));
+  const rows = sent[0].payload.action.sections[0].rows;
+  assert.ok(rows.some((row) => row.title === 'Aero yoga'));
+  assert.ok(rows.some((row) => row.title === 'Limpieza facial'));
+  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU));
 });
 
 test('servicio con imagen → sube y envía image+caption; luego botón volver', async () => {
@@ -283,9 +346,9 @@ test('rate limit — aviso en msg 21, silencio después', async () => {
   assert.equal(sent.length, countAfterWarn);
 });
 
-// ─── Category flow (>10 services) ──────────────────────────────
+// ─── Lista paginada de servicios (>10 services) ─────────────────
 
-test('>10 servicios → envía categorías', async () => {
+test('>10 servicios → envía primera página de servicios', async () => {
   resetState();
   const sent = installTransportMocks();
   const manyServices = [];
@@ -302,7 +365,9 @@ test('>10 servicios → envía categorías', async () => {
   assert.equal(sent[0].payload.type, 'list');
   const rows = sent[0].payload.action.sections[0].rows;
   assert.ok(rows.length <= 10);
-  assert.ok(rows.some((r) => r.id.startsWith('cat_')));
+  assert.equal(rows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 8);
+  assert.ok(rows.some((row) => row.id === 'svc_page_1'));
+  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU));
 });
 
 test('seleccionar categoría → servicios de esa categoría', async () => {
@@ -397,7 +462,8 @@ test('seleccionar servicio en booking → muestra date picker', async () => {
   assert.equal(sent[0].kind, 'interactive');
   assert.equal(sent[0].payload.action.button, 'Elegir día');
   const rows = sent[0].payload.action.sections[0].rows;
-  assert.ok(rows.every(r => r.id.startsWith('bkd_')));
+  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU));
+  assert.ok(rows.filter((row) => row.id !== menus.NAV_BACK_MENU).every((row) => row.id.startsWith('bkd_')));
   assert.match(sent[0].payload.body.text, /excelente elección/i);
   const st = state.getFlowState(CONV.customerWaId);
   assert.equal(st.booking?.step, 'select_date');
@@ -463,8 +529,9 @@ test('date picker genera solo días lun-sáb (sin domingo)', async () => {
   const picker = menus.datePicker({ tone: 'usted' });
   assert.equal(picker.type, 'list');
   assert.ok(picker.action.sections[0].rows.length >= 1);
-  assert.ok(picker.action.sections[0].rows.length <= 7);
+  assert.ok(picker.action.sections[0].rows.length <= 8);
   for (const row of picker.action.sections[0].rows) {
+    if (row.id === menus.NAV_BACK_MENU) continue;
     assert.ok(row.id.startsWith('bkd_'));
     assert.ok(!row.description.toLowerCase().includes('domingo'));
   }
@@ -479,7 +546,8 @@ test('time slot list respeta máximo 10 rows y agrupa mañana/tarde', async () =
   assert.equal(list.type, 'list');
   const allRows = list.action.sections.flatMap(s => s.rows);
   assert.ok(allRows.length <= 10);
-  assert.ok(allRows.every(r => r.id.startsWith('bkt_')));
+  assert.ok(allRows.some((row) => row.id === menus.NAV_BACK_MENU));
+  assert.ok(allRows.filter((row) => row.id !== menus.NAV_BACK_MENU).every((row) => row.id.startsWith('bkt_')));
   const sectionTitles = list.action.sections.map(s => s.title);
   assert.ok(sectionTitles.length >= 1, 'debe tener al menos una sección');
 });
@@ -966,7 +1034,7 @@ test('handleBook filtra categorías ocultas (tienda, recordatorio)', async () =>
 
 // ─── Ronda E: reserva completa y cambio de servicio ────────────────
 
-test('Ronda E: "quiero hacer una reserva" muestra catálogo agrupado por categorías visibles', async () => {
+test('Ronda E: "quiero hacer una reserva" muestra servicios directos visibles', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks({
@@ -999,12 +1067,12 @@ test('Ronda E: "quiero hacer una reserva" muestra catálogo agrupado por categor
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
-  assert.equal(sent[0].payload.action.button, 'Ver categorías');
+  assert.equal(sent[0].payload.action.button, 'Ver servicios');
   const rows = sent[0].payload.action.sections[0].rows;
-  assert.ok(rows.length > 1, 'debe mostrar más de una categoría');
-  assert.ok(rows.some((row) => row.id === 'cat_terapias'), 'debe incluir terapias');
-  assert.ok(rows.some((row) => row.id === 'cat_ceragem'), 'debe incluir ceragem, sin quedarse solo ahí');
-  assert.ok(!rows.some((row) => /recordatorio|valoracion/i.test(row.id)), 'debe ocultar internos');
+  assert.equal(rows.filter((row) => row.id.startsWith('svc_') && !row.id.startsWith('svc_page_')).length, 8);
+  assert.ok(rows.some((row) => row.id === 'svc_page_1'), 'debe permitir ver el resto del catálogo');
+  assert.ok(rows.some((row) => row.id === menus.NAV_BACK_MENU), 'debe permitir volver');
+  assert.ok(!rows.some((row) => /recordatorio|valoracion/i.test(row.title)), 'debe ocultar internos');
 });
 
 test('Ronda E: texto con otro servicio dentro de reserva cambia el servicio activo', async () => {

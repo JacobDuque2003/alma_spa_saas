@@ -530,6 +530,76 @@ async function lookupClientByWaId(tenantId, waId) {
   return prisma.client.findFirst({ where: { tenantId, whatsapp: phone } });
 }
 
+async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone, bodyText }) {
+  const flowState = state.getFlowState(waId) || {};
+  const onboarding = flowState.newClient;
+
+  if (!onboarding) {
+    state.setFlowState(waId, { flow: 'new_client', newClient: { step: 'name' }, tone, unclearCount: 0 });
+    const prompt = tone === 'tu'
+      ? '🌿 *¡Bienvenida a Alma Spa!*\n\nAntes de mostrarte las opciones, ¿me compartes tu nombre completo?'
+      : '🌿 *¡Bienvenida a Alma Spa!*\n\nAntes de mostrarle las opciones, ¿me comparte su nombre completo?';
+    const r = await transport.sendText(connection, waId, prompt);
+    await recordBotMessage(tenant.id, conv, r, { body: prompt });
+    return;
+  }
+
+  const answer = String(bodyText || '').replace(/\s+/g, ' ').trim();
+  if (!answer) return;
+
+  if (onboarding.step === 'name') {
+    if (answer.length < 3) {
+      const retry = tone === 'tu'
+        ? '¿Me compartes tu nombre completo, por favor? 🌿'
+        : '¿Me comparte su nombre completo, por favor? 🌿';
+      const r = await transport.sendText(connection, waId, retry);
+      await recordBotMessage(tenant.id, conv, r, { body: retry });
+      return;
+    }
+    state.setFlowState(waId, { flow: 'new_client', newClient: { step: 'address', fullName: answer }, tone, unclearCount: 0 });
+    const prompt = tone === 'tu'
+      ? 'Mucho gusto, *' + answer + '* 💛\n\nAhora, ¿me compartes tu dirección?'
+      : 'Mucho gusto, *' + answer + '* 💛\n\nAhora, ¿me comparte su dirección?';
+    const r = await transport.sendText(connection, waId, prompt);
+    await recordBotMessage(tenant.id, conv, r, { body: prompt });
+    return;
+  }
+
+  if (onboarding.step === 'address') {
+    let client;
+    try {
+      client = await prisma.client.create({
+        data: {
+          tenantId: tenant.id,
+          fullName: onboarding.fullName,
+          whatsapp: waIdToPhone(waId),
+          address: answer,
+        },
+      });
+    } catch (err) {
+      if (err?.code !== 'P2002') throw err;
+      client = await lookupClientByWaId(tenant.id, waId);
+      if (!client) throw err;
+    }
+
+    await prisma.whatsAppConversation.update({
+      where: { id: conv.id },
+      data: {
+        clientId: client.id,
+        customerName: client.fullName,
+        labels: [...new Set([...(conv.labels || []), 'nueva_clienta'])],
+      },
+    });
+    state.setFlowState(waId, { flow: 'menu', newClient: null, clientName: client.fullName, tone, unclearCount: 0 });
+    const welcome = tone === 'tu'
+      ? '✨ *¡Listo, ' + client.fullName + '!* Ya registré tus datos. ¿Qué te gustaría hacer?'
+      : '✨ *¡Listo, ' + client.fullName + '!* Ya registré sus datos. ¿Qué le gustaría hacer?';
+    const r = await transport.sendText(connection, waId, welcome);
+    await recordBotMessage(tenant.id, conv, r, { body: welcome });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+}
+
 async function loadServicesForAI(tenantId) {
   return loadVisibleServicesForBot(tenantId);
 }
@@ -591,6 +661,20 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
   const bodyText = incoming.type === 'text' ? incoming.text?.body ?? null : null;
   const priorState = state.getFlowState(waId) || {};
   const tone = detectTone(bodyText) || priorState.tone || 'usted';
+
+  // Una conversación antigua puede no estar enlazada aunque la clienta ya
+  // exista. Solo iniciamos el alta cuando el número no existe realmente.
+  let clientId = conv.clientId;
+  if (!clientId) {
+    const existingClient = await lookupClientByWaId(tenant.id, waId);
+    if (existingClient) {
+      clientId = existingClient.id;
+      await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { clientId } });
+    }
+  }
+  if (!clientId) {
+    return handleNewClientOnboarding({ tenant, connection, conv, waId, tone, bodyText });
+  }
 
   // Tier 1: interactive button/list reply → deterministic
   const interactive = incoming.interactive;
@@ -1143,6 +1227,15 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
+  if (selectionId.startsWith(menus.SERVICE_PAGE_PREFIX)) {
+    const page = Number.parseInt(selectionId.slice(menus.SERVICE_PAGE_PREFIX.length), 10);
+    const fs = state.getFlowState(waId) || {};
+    if (fs?.booking?.step === 'select_service') {
+      return handleBook({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
+    }
+    return handleListServices({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
+  }
+
   // Service selection — check if we're in booking mode before resetting state
   if (selectionId.startsWith(menus.SERVICE_PREFIX)) {
     const serviceId = selectionId.slice(menus.SERVICE_PREFIX.length);
@@ -1154,12 +1247,16 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId });
   }
 
+  if (selectionId === menus.NAV_BACK_MENU) {
+    const fs = state.getFlowState(waId) || {};
+    if (fs?.booking) return handleBook({ tenant, connection, conv, waId, tone });
+    if (fs?.reschedule) return handleMyAppointment({ tenant, connection, conv, waId, tone });
+    return sendMainMenu({ tenant, connection, conv, waId, tone });
+  }
+
   // Non-booking selections — safe to reset state
   state.setFlowState(waId, { flow: 'selection', tone, unclearCount: 0 });
 
-  if (selectionId === menus.NAV_BACK_MENU) {
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
-  }
   if (selectionId === menus.MAIN_MENU_IDS.LIST_SERVICES) {
     return handleListServices({ tenant, connection, conv, waId, tone });
   }
@@ -1184,7 +1281,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
-async function handleListServices({ tenant, connection, conv, waId, tone, asText = false }) {
+async function handleListServices({ tenant, connection, conv, waId, tone, asText = false, page = 0 }) {
   const svcs = await loadVisibleServicesForBot(tenant.id);
   state.setFlowState(waId, { flow: 'listing_services', tone, unclearCount: 0 });
 
@@ -1195,17 +1292,9 @@ async function handleListServices({ tenant, connection, conv, waId, tone, asText
     return;
   }
 
-  if (visible.length <= 10) {
-    const payload = menus.servicesList(visible, { tone });
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[lista de ${visible.length} servicios]` });
-    return;
-  }
-
-  const categories = buildVisibleCategories(visible);
-  const payload = menus.categoryList(categories, { tone });
+  const payload = menus.servicesList(visible, { tone, page });
   const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías]` });
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[servicios página ${Number(page) + 1}]` });
 }
 
 async function handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName }) {
@@ -1297,7 +1386,7 @@ function buildVisibleCategories(services) {
 
 // ─── Booking flow ──────────────────────────────────────────────
 
-async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
+async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page = 0 }) {
   const visible = await loadVisibleServicesForBot(tenant.id);
   if (visible.length === 0) {
     const msg = tone === 'tu'
@@ -1315,16 +1404,9 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply }) {
     ? '✨ *¡Qué lindo que quieres darte un momento!*\n\nElige tu servicio:'
     : '✨ *¡Qué lindo que desea darse un momento!*\n\nElija su servicio:');
 
-  const categories = buildVisibleCategories(visible);
-  if (categories.length > 1) {
-    const payload = menus.categoryList(categories, { tone, body: intro });
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${categories.length} categorías para reserva]` });
-  } else {
-    const payload = menus.servicesList(visible, { tone, body: intro });
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
-  }
+  const payload = menus.servicesList(visible, { tone, body: intro, page });
+  const r = await transport.sendInteractive(connection, waId, payload);
+  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
 }
 
 async function handleSmartBooking({ tenant, connection, conv, waId, tone, service, date, time, aiReply }) {
