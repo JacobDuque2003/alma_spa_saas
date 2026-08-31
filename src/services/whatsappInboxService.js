@@ -364,10 +364,14 @@ async function listConversations(actor, query) {
     where.clientId = { in: clientIds };
   }
 
+  // La bandeja es operativa: primero lo asignado a quien inició sesión,
+  // luego lo que ya está abierto y finalmente los mensajes por atender.
+  // Prisma no puede ordenar por "asignado al usuario actual" sin SQL crudo,
+  // así que recuperamos un conjunto acotado y aplicamos esa prioridad aquí.
   const rows = await prisma.whatsAppConversation.findMany({
     where,
     orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
-    take: limit,
+    take: query.cursor ? limit : 100,
     include: {
       client: {
         select: {
@@ -390,9 +394,26 @@ async function listConversations(actor, query) {
     prisma.whatsAppConversation.count({ where: { ...baseWhere, status: 'resolved' } }),
   ]);
 
-  const items = rows.map(compactConversation);
-  const last = rows[rows.length - 1];
-  const nextCursor = rows.length === limit ? `${last.lastMessageAt.toISOString()}|${last.id}` : null;
+  const priority = (conversation) => {
+    if (conversation.assignedToUserId && conversation.assignedToUserId === actor.id) return 0;
+    if (conversation.status === 'open') return 1;
+    if (conversation.status === 'resolved' || conversation.status === 'archived') return 3;
+    if (conversation.unreadCount > 0 || conversation.status === 'pending') return 2;
+    return 3;
+  };
+  const orderedRows = [...rows].sort((a, b) => (
+    priority(a) - priority(b)
+    || new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+    || String(b.id).localeCompare(String(a.id))
+  ));
+  const visibleRows = query.cursor ? orderedRows : orderedRows.slice(0, limit);
+  const items = visibleRows.map(compactConversation);
+  const last = visibleRows[visibleRows.length - 1];
+  // La primera carga se prioriza en memoria; evitar un cursor cronológico
+  // impide saltar conversaciones de alta prioridad en una segunda página.
+  const nextCursor = query.cursor && visibleRows.length === limit && last
+    ? `${last.lastMessageAt.toISOString()}|${last.id}`
+    : null;
   return { items, nextCursor, counts: { all: totalCount, pending: pendingCount, resolved: resolvedCount } };
 }
 
@@ -422,6 +443,7 @@ async function listMessages(actor, conversationId, query) {
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit,
+    include: { sentBy: { select: { id: true, name: true } } },
   });
   return {
     items: rows.reverse(),

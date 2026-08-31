@@ -130,7 +130,7 @@ function toLocalDateInTimezone(date, timezone) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality }) {
+async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null }) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
@@ -152,6 +152,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
   const { dayStart, dayEnd } = localDayBoundsUTC(date, tz);
   const orConditions = [{ staffId: { in: staffIds } }];
   if (roomIds.length) orConditions.push({ roomId: { in: roomIds } });
+  if (clientId) orConditions.push({ clientId });
 
   const appointments = await prisma.appointment.findMany({
     where: {
@@ -170,7 +171,8 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
       const blockedEnd = addMinutes(slot, totalBlockMins(service));
       const roomFree = isResourceFree(appointments, 'roomId', room.id, slot, blockedEnd);
       const staffFree = staffIds.some((id) => isResourceFree(appointments, 'staffId', id, slot, blockedEnd));
-      if (roomFree && staffFree) slotMap.set(slot.toISOString(), slot);
+      const clientFree = !clientId || isResourceFree(appointments, 'clientId', clientId, slot, blockedEnd);
+      if (roomFree && staffFree && clientFree) slotMap.set(slot.toISOString(), slot);
     }
   }
 
@@ -230,7 +232,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
       startsAt: { lt: dayEnd },
       endsAt: { gt: dayStart },
       status: { in: OPEN_STATUSES },
-      OR: [{ roomId: room.id }, { staffId: staff.id }],
+      OR: [{ roomId: room.id }, { staffId: staff.id }, { clientId: appointment.clientId }],
     },
   });
 
@@ -241,6 +243,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
     if (
       isResourceFree(appointments, 'roomId', room.id, slot, endsAt)
       && isResourceFree(appointments, 'staffId', staff.id, slot, endsAt)
+      && isResourceFree(appointments, 'clientId', appointment.clientId, slot, endsAt)
     ) {
       slots.push(slot.toISOString());
     }
@@ -278,6 +281,7 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
 
   const orConditions = [{ staffId: { in: staffCandidates.map((s) => s.id) } }];
   if (roomCandidates.length) orConditions.push({ roomId: { in: roomCandidates.map((r) => r.id) } });
+  orConditions.push({ clientId });
 
   const conflicting = await tx.appointment.findMany({
     where: {
@@ -298,6 +302,10 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
   }
   const freeRooms = roomsInsideWindow.filter((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
   const freeStaff = staffCandidates.filter((s) => isResourceFree(conflicting, 'staffId', s.id, startsAt, endsAt));
+
+  if (!isResourceFree(conflicting, 'clientId', clientId, startsAt, endsAt)) {
+    throw new SlotUnavailableError('La persona ya tiene una cita que se cruza con ese horario');
+  }
 
   if (freeRooms.length === 0 || freeStaff.length === 0) {
     throw new SlotUnavailableError();
@@ -503,11 +511,15 @@ async function createManualAppointment(actor, data) {
       OR: [
         { staffId: staff.id },
         { roomId: { in: roomCandidates.map((r) => r.id) } },
+        { clientId: data.clientId },
       ],
     },
   });
   if (!isResourceFree(conflicting, 'staffId', staff.id, startsAt, endsAt)) {
     throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
+  }
+  if (!isResourceFree(conflicting, 'clientId', data.clientId, startsAt, endsAt)) {
+    throw new SlotUnavailableError('La persona ya tiene una cita que se cruza con ese horario');
   }
 
   let resolvedRoomId = null;
@@ -593,7 +605,7 @@ async function updateAppointment(actor, id, changes) {
         startsAt: { lt: endsAt },
         endsAt: { gt: startsAt },
         status: { in: OPEN_STATUSES },
-        OR: [{ roomId }, { staffId }],
+        OR: [{ roomId }, { staffId }, { clientId: target.clientId }],
       },
     });
     if (!isResourceFree(conflicting, 'staffId', staffId, startsAt, endsAt)) {
@@ -601,6 +613,9 @@ async function updateAppointment(actor, id, changes) {
     }
     if (!isResourceFree(conflicting, 'roomId', roomId, startsAt, endsAt)) {
       throw new SlotUnavailableError('La cabina seleccionada ya está ocupada en ese horario');
+    }
+    if (!isResourceFree(conflicting, 'clientId', target.clientId, startsAt, endsAt)) {
+      throw new SlotUnavailableError('La persona ya tiene una cita que se cruza con ese horario');
     }
   }
 

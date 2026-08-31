@@ -22,7 +22,10 @@ const BOOK_PERIOD_MORNING = 'bkp_morning';
 const BOOK_PERIOD_AFTERNOON = 'bkp_afternoon';
 const BOOK_CONFIRM_YES = 'bk_yes';
 const BOOK_CONFIRM_NO = 'bk_no';
+const BOOK_RECIPIENT_SELF = 'bk_recipient_self';
+const BOOK_RECIPIENT_OTHER = 'bk_recipient_other';
 const RESCHEDULE_START = 'reschedule_start';
+const RESCHEDULE_APPOINTMENT_PREFIX = 'rs_appt_';
 const RESCHEDULE_CONFIRM_YES = 'rs_yes';
 const RESCHEDULE_CONFIRM_NO = 'rs_no';
 const SPA_TZ = 'America/Guayaquil';
@@ -74,7 +77,7 @@ function mainMenu({ tone, clientName, compact = false } = {}) {
     body: { text: body },
     footer: { text: 'Alma Spa · Zamora 🌿' },
     action: {
-      button: 'Ver opciones',
+      button: '☰ Ver opciones',
       sections: [
         {
           title: 'Menú',
@@ -157,9 +160,13 @@ function servicesList(services, { tone, body, page = 0 } = {}) {
   }
   rows.push({ id: MAIN_MENU_BACK, title: 'Volver al menú', description: 'Regresar a las opciones principales' });
 
-  const defaultBody = tone === 'tu'
-    ? '🌿 *Nuestros servicios* — toca uno para ver más'
-    : '🌿 *Nuestros servicios* — toque uno para ver más';
+  const defaultBody = safePage > 0
+    ? (tone === 'tu'
+      ? '✨ *Tenemos más servicios para que disfrutes.* Elige el que más te llame la atención.'
+      : '✨ *Tenemos más servicios para que disfrute.* Elija el que más le llame la atención.')
+    : (tone === 'tu'
+      ? '🌿 *Nuestros servicios* — toca uno para ver más'
+      : '🌿 *Nuestros servicios* — toque uno para ver más');
   return {
     type: 'list',
     body: { text: body || defaultBody },
@@ -219,7 +226,7 @@ function backToMenuButton({ tone } = {}) {
     action: {
       buttons: [
         { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: 'Volver a servicios' } },
-        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: 'Menú principal' } },
+        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: '🏠 Menú principal' } },
       ],
     },
   };
@@ -233,7 +240,7 @@ function serviceDetailActions(service, { tone } = {}) {
       buttons: [
         { type: 'reply', reply: { id: `${BOOK_SERVICE_PREFIX}${service.id}`, title: '📅 Reservar cita' } },
         { type: 'reply', reply: { id: MAIN_MENU_IDS.LIST_SERVICES, title: '💆 Ver servicios' } },
-        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: 'Menú principal' } },
+        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: '🏠 Menú principal' } },
       ],
     },
   };
@@ -388,16 +395,57 @@ function bookingConfirmation(summary, { tone } = {}) {
   };
 }
 
+function bookingRecipientPicker({ tone } = {}) {
+  return {
+    type: 'button',
+    body: { text: tone === 'tu'
+      ? '📅 Ya tienes una cita este día. ¿Esta nueva reserva es para ti o para otra persona?'
+      : '📅 Ya tiene una cita este día. ¿Esta nueva reserva es para usted o para otra persona?' },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: BOOK_RECIPIENT_SELF, title: '🙋 Para mí' } },
+        { type: 'reply', reply: { id: BOOK_RECIPIENT_OTHER, title: '👤 Para otra persona' } },
+        { type: 'reply', reply: { id: NAV_BACK_MENU, title: 'Volver' } },
+      ],
+    },
+  };
+}
+
 function appointmentActions({ tone } = {}) {
   return {
     type: 'button',
     body: { text: tone === 'tu' ? '¿Quieres cambiar el día u hora de tu espacio?' : '¿Desea cambiar el día u hora de su espacio?' },
     action: {
       buttons: [
-        { type: 'reply', reply: { id: RESCHEDULE_START, title: 'Reprogramar cita' } },
-        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: 'Menú principal' } },
+        { type: 'reply', reply: { id: RESCHEDULE_START, title: '📅 Reprogramar' } },
+        { type: 'reply', reply: { id: MAIN_MENU_BACK, title: '🏠 Menú principal' } },
       ],
     },
+  };
+}
+
+function rescheduleAppointmentPicker(appointments, { tone } = {}) {
+  const rows = (appointments || []).slice(0, 9).map((appointment) => {
+    const startsAt = new Date(appointment.startsAt);
+    const date = new Intl.DateTimeFormat('es-EC', {
+      timeZone: SPA_TZ, weekday: 'short', day: 'numeric', month: 'short',
+    }).format(startsAt);
+    const time = _formatSlotTime(startsAt.toISOString());
+    const serviceName = appointment.service?.name || 'Cita en Alma Spa';
+    return {
+      id: `${RESCHEDULE_APPOINTMENT_PREFIX}${appointment.id}`,
+      title: `${serviceEmoji(appointment.service)} ${serviceName}`.slice(0, 24),
+      description: `${capitalize(date)} · ${time}`.slice(0, 72),
+    };
+  });
+  rows.push({ id: MAIN_MENU_BACK, title: '🏠 Menú principal', description: 'Regresar a las opciones principales' });
+  return {
+    type: 'list',
+    body: { text: tone === 'tu'
+      ? '📅 Tienes varias citas próximas. Elige cuál quieres reprogramar:'
+      : '📅 Tiene varias citas próximas. Elija cuál desea reprogramar:' },
+    footer: { text: 'Alma Spa 🌿' },
+    action: { button: '📅 Elegir cita', sections: [{ title: 'Citas próximas', rows }] },
   };
 }
 
@@ -436,9 +484,13 @@ module.exports = {
   BOOK_PERIOD_AFTERNOON,
   BOOK_CONFIRM_YES,
   BOOK_CONFIRM_NO,
+  BOOK_RECIPIENT_SELF,
+  BOOK_RECIPIENT_OTHER,
   RESCHEDULE_START,
+  RESCHEDULE_APPOINTMENT_PREFIX,
   RESCHEDULE_CONFIRM_YES,
   RESCHEDULE_CONFIRM_NO,
+  rescheduleAppointmentPicker,
   SPA_TZ,
   LIST_PAGE_SIZE,
   CATEGORY_DISPLAY_NAMES,
@@ -459,6 +511,7 @@ module.exports = {
   timePeriodPicker,
   timeSlotButtons,
   bookingConfirmation,
+  bookingRecipientPicker,
   appointmentActions,
   rescheduleConfirmation,
   askNameText,

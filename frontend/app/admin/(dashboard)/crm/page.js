@@ -176,7 +176,7 @@ export default function CRMPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [filter, q, isMobile]);
+  }, [filter, q]);
 
   useEffect(() => {
     const t = setTimeout(() => fetchConversations(), 200);
@@ -214,8 +214,8 @@ export default function CRMPage() {
       const chatIsVisible = typeof document === "undefined"
         || document.visibilityState === "visible";
       const mobileChatIsOpen = !isMobile || mobileView === "chat";
-      // "No leído" es una acción explícita del equipo: un refresco no debe deshacerla.
-      if (conv.unreadCount > 0 && !conv.manuallyMarkedUnread && chatIsVisible && mobileChatIsOpen) {
+      // Abrir la conversación la devuelve a su estado natural: leída y abierta.
+      if (conv.unreadCount > 0 && chatIsVisible && mobileChatIsOpen) {
         authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" })
           .then(() => {
             setSelected((cur) => cur?.id === selectedId ? { ...cur, unreadCount: 0, lastReadAt: new Date().toISOString() } : cur);
@@ -224,6 +224,15 @@ export default function CRMPage() {
             )));
           })
           .catch(() => null);
+      }
+      if (conv.status === "pending" && chatIsVisible && mobileChatIsOpen) {
+        authFetch(`/crm/conversations/${selectedId}/status`, {
+          method: "POST",
+          body: { status: "open" },
+        }).then((updated) => {
+          setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated } : cur);
+          setConversations((prev) => prev.map((item) => item.id === selectedId ? { ...item, ...updated } : item));
+        }).catch(() => null);
       }
     } catch (err) {
       if (!silent) toast.error(err.message);
@@ -982,7 +991,7 @@ export default function CRMPage() {
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-bronze">
-                  <UserRound size={11} /> Equipo
+                  <UserRound size={11} /> {m.sentBy?.name || "Recepción"}
                 </span>
               )}
             </div>
@@ -1098,7 +1107,14 @@ export default function CRMPage() {
               {initials(name)}
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-bronze-deep truncate">{name}</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-bronze-deep truncate">{name}</div>
+                {selected.status === "open" && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+                    <CircleDot size={10} /> Abierto
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-warm-gray">{selected.customerWaId}</div>
             </div>
           </div>
@@ -1431,7 +1447,6 @@ export default function CRMPage() {
     const name = linkedClient?.fullName || selected.customerName || selected.customerWaId;
     const labels = selected.labels || [];
     const isResolved = selected.status === "resolved";
-    const isUnreadActive = !isResolved && (selected.unreadCount > 0 || selected.manuallyMarkedUnread);
 
     return (
       <div className={`
@@ -1481,7 +1496,7 @@ export default function CRMPage() {
         {/* Status actions */}
         <div className="mx-3 mt-2 rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-warm-gray">Acciones</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-2">
             <button
               onClick={() => changeStatus(isResolved ? "open" : "resolved")}
               className={`flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition-colors duration-150 ${
@@ -1492,17 +1507,6 @@ export default function CRMPage() {
             >
               <CheckCircle2 size={18} />
               <span>Resolver</span>
-            </button>
-            <button
-              onClick={markUnread}
-              className={`flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition-colors duration-150 ${
-                isUnreadActive
-                  ? "bg-sky-500 border-sky-500 text-white shadow-sm"
-                  : "bg-[#f7f9fe] border-[#e6edf7] text-slate-600 hover:bg-sky-50 hover:text-sky-700"
-              }`}
-            >
-              <RefreshCw size={18} />
-              <span>No leído</span>
             </button>
           </div>
           <button

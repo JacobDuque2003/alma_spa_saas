@@ -233,7 +233,7 @@ test('"Menú principal" cancela cualquier flujo y vuelve al menú real', async (
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
-  assert.equal(sent[0].payload.action.button, 'Ver opciones');
+  assert.equal(sent[0].payload.action.button, '☰ Ver opciones');
   assert.match(sent[0].payload.body.text, /Qué le gustaría explorar ahora/i);
   const nextState = state.getFlowState(CONV.customerWaId);
   assert.equal(nextState.flow, 'menu');
@@ -1735,7 +1735,7 @@ test('P7: handleMyAppointment shows "confirmada" for pendiente_bot status', asyn
   });
   state.setFlowState(CONV.customerWaId, { flow: 'menu', tone: 'usted' });
   await bot._internals.handleMyAppointment({ tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted' });
-  const reply = sent.find(s => s.kind === 'text' && /próximo espacio/.test(s.body));
+  const reply = sent.find(s => s.kind === 'text' && /citas próximas/.test(s.body));
   assert.ok(reply, 'should send appointment info');
   assert.ok(/confirmada/i.test(reply.body), 'should say confirmada, not pendiente de confirmar');
   assert.ok(!/pendiente de confirmar/i.test(reply.body), 'should NOT say pendiente de confirmar');
