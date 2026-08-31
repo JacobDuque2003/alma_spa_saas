@@ -22,7 +22,7 @@ Reglas:
 - "reply" máximo 40 palabras, español ecuatoriano, trato de "usted" por defecto.
 - NUNCA inventes servicios, precios ni horarios.
 - Si el mensaje no encaja en ninguna intención clara, usa "unclear".
-- Si pide hablar con una persona, usa "escalate".
+- Si pide hablar con una persona, recepción, asesora, agente o menciona que desea ser atendida por alguien concreto (por ejemplo, Gianella), usa "escalate".
 - Si pide ver el menú o saludos genéricos, usa "menu".
 - Si pregunta por servicios o catálogo, usa "list_services".
 - Si pregunta por un servicio específico, usa "service_info".
@@ -218,7 +218,7 @@ Intenciones:
 - cancel: quiere cancelar una cita
 - business_hours: pregunta horario de atención, días abiertos/cerrados o a qué hora atienden
 - farewell: agradece, se despide o cierra la conversación
-- escalate: quiere hablar con una persona
+- escalate: quiere hablar con una persona, recepción, asesora/agente o pide ser atendida por alguien concreto (por ejemplo, Gianella)
 - chitchat: conversación casual sobre el spa/bienestar
 - unclear: no entiendes el mensaje
 

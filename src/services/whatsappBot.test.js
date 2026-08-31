@@ -14,7 +14,14 @@ const state = require('./whatsappBot/state');
 const rateLimit = require('./whatsappBot/rateLimit');
 const menus = require('./whatsappBot/menus');
 
-const TENANT = { id: 't1', slug: 'alma-spa' };
+const TENANT = {
+  id: 't1',
+  slug: 'alma-spa',
+  config: {
+    workDays: [1, 2, 3, 4, 5, 6, 7],
+    businessHours: { start: '00:00', end: '23:59' },
+  },
+};
 const CONN = { id: 'c1', tenantId: 't1', phoneNumberId: '999', status: 'activo' };
 const CONV = { id: 'conv1', tenantId: 't1', customerWaId: '593999111222', clientId: 'client1' };
 
@@ -496,6 +503,39 @@ test('"Hablar con recepción" marca escalada + envía confirmación', async () =
   });
   assert.match(sent[0].body, /recepción/);
   assert.equal(state.isEscalated(CONV.customerWaId), true);
+});
+
+test('solicitudes de atención humana se detectan aunque estén escritas de forma informal', () => {
+  const cases = [
+    'quiero una persona',
+    'necesito hablar con recepción',
+    'quiero con la gianella',
+    'quiero que me atienda Gianela',
+    'me puede pasar con una asesora por favor',
+    'quiero un humano de verdad',
+  ];
+  for (const message of cases) {
+    assert.equal(bot._internals.isReceptionRequest(message), true, message);
+    assert.equal(bot._internals.detectDeterministicIntent(message), 'escalate', message);
+  }
+});
+
+test('fuera de horario, conserva la solicitud para recepción y deja Almita disponible', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const { conversationUpdates } = installPrismaMocks();
+  const closedTenant = {
+    ...TENANT,
+    config: { workDays: [1, 2, 3, 4, 5, 6], businessHours: { start: '09:00', end: '12:00' } },
+  };
+  assert.equal(bot._internals.isReceptionOpenNow(closedTenant.config, new Date('2026-09-06T17:00:00.000Z')), false);
+  await bot._internals.handleEscalate({
+    tenant: closedTenant, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted',
+  });
+  assert.match(sent[0].body, /fuera de horario/i);
+  assert.match(sent[0].body, /Almita/);
+  assert.equal(state.isEscalated(CONV.customerWaId), false);
+  assert.ok(conversationUpdates.some((data) => data.labels?.includes('solicitar_recepcionista')));
 });
 
 test('tono "tú" detectado y persistido', async () => {

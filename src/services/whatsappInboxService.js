@@ -15,6 +15,7 @@ const DEFAULT_LABELS = [
   { key: 'seguimiento', text: 'Seguimiento', tone: 'purple' },
   { key: 'queja', text: 'Queja', tone: 'red' },
   { key: 'nueva_clienta', text: 'Nuevo cliente', tone: 'sky' },
+  { key: 'solicitar_recepcionista', text: 'Solicita recepción', tone: 'amber' },
 ];
 const DEFAULT_QUICK_REPLIES = [
   { key: 'saludo', icon: '👋', title: 'Saludo', text: 'Hola, gracias por escribir a Alma Spa. ¿En qué podemos ayudarte?' },

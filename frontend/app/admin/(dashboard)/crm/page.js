@@ -20,6 +20,7 @@ const DEFAULT_LABELS = [
   { key: "seguimiento", text: "Seguimiento", tone: "purple" },
   { key: "queja", text: "Queja", tone: "red" },
   { key: "nueva_clienta", text: "Nuevo cliente", tone: "sky" },
+  { key: "solicitar_recepcionista", text: "Solicita recepción", tone: "amber" },
 ];
 
 const LABEL_TONES = {

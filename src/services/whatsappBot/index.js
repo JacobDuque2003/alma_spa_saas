@@ -26,6 +26,8 @@ const intentCache = require('./intentCache');
 const crmEvents = require('../crmEventBus');
 const { normalizePhone, isValidE164, waIdToPhone } = require('../../utils/phone');
 const { SlotUnavailableError } = require('../../utils/errors');
+const { normalize: normalizeBusinessHours } = require('../../utils/businessHours');
+const { getTenantTimezone } = require('../../utils/timezone');
 
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
@@ -63,6 +65,11 @@ const APPOINTMENT_QUERY_WORDS = ['consultar', 'consulta', 'ver', 'saber', 'revis
 const RESCHEDULE_WORDS = ['reagendar', 'reagendo', 'reagendamiento', 'reprogramar', 'reprogramo', 'reprogramacion', 'cambiar', 'mover', 'cambio'];
 const BUSINESS_HOURS_WORDS = ['horario', 'horarios', 'atienden', 'atiende', 'abren', 'abre', 'cierran', 'cierra', 'atencion', 'atencion'];
 const FAREWELL_WORDS = ['gracias', 'listo', 'ok', 'okay', 'okey', 'perfecto', 'chao', 'chau', 'adios', 'adiós', 'bye', 'hasta luego', 'hasta pronto', 'nos vemos', 'todo bien', 'todo ok', 'todo okey'];
+const RECEPTION_LABEL = 'solicitar_recepcionista';
+const WEEKDAY_NAME_TO_INDEX = {
+  monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
+  friday: 5, saturday: 6, sunday: 7,
+};
 
 function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
@@ -160,6 +167,40 @@ function detectTone(text) {
   return null;
 }
 
+function isReceptionRequest(text) {
+  const t = normalizeSearchText(text);
+  if (!t) return false;
+  // Nombres pedidos expresamente por las clientas. Se mantienen variantes
+  // frecuentes de escritura para no depender de que la IA esté disponible.
+  if (/\b(gianella|gianela|giannella|gianella)\b/.test(t)) return true;
+  if (/^(4|humano|humana|asesor|asesora|agente|persona|alguien|recepcion|recepcionista)$/.test(t)) return true;
+  const person = '(persona|humano|humana|asesor(?:a)?|agente|recepcion(?:ista)?|alguien|equipo)';
+  return new RegExp(`\\b(hablar|comunicar|conectar|pasar|atender|atencion|quiero|quisiera|deseo|necesito|prefiero)\\b[^.!?]{0,80}\\b${person}\\b`).test(t)
+    || new RegExp(`\\b${person}\\b[^.!?]{0,80}\\b(por favor|ahora|real|de verdad)\\b`).test(t);
+}
+
+function isReceptionOpenNow(tenantConfig = {}, now = new Date()) {
+  const tz = getTenantTimezone(tenantConfig);
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' })
+    .format(now).toLowerCase();
+  const weekdayIndex = WEEKDAY_NAME_TO_INDEX[weekday];
+  const workDays = Array.isArray(tenantConfig?.workDays)
+    ? tenantConfig.workDays.map(Number)
+    : [1, 2, 3, 4, 5, 6];
+  if (!workDays.includes(weekdayIndex)) return false;
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(now);
+  const hour = parts.find((part) => part.type === 'hour')?.value || '00';
+  const minute = parts.find((part) => part.type === 'minute')?.value || '00';
+  const localTime = `${hour}:${minute}`;
+  const hours = normalizeBusinessHours(tenantConfig?.businessHours);
+  return [hours.morning, hours.afternoon].some((window) => (
+    window && localTime >= window.start && localTime < window.end
+  ));
+}
+
 function detectDeterministicIntent(text) {
   if (!text) return null;
   const t = String(text)
@@ -169,6 +210,7 @@ function detectDeterministicIntent(text) {
     .trim();
 
   if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
+  if (isReceptionRequest(t)) return 'escalate';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
   if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2) && hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1)) return 'list_services';
   if (hasAnyApproxToken(t, RESCHEDULE_WORDS, 2) && /\b(cita|reserva|turno|hora|espacio)\b/.test(t)) return 'reschedule';
@@ -182,7 +224,6 @@ function detectDeterministicIntent(text) {
   if (isExplicitNewBookingRequest(t)) return 'book_start';
   if (hasAnyApproxToken(t, BUSINESS_HOURS_WORDS, 1)) return 'business_hours';
   if (FAREWELL_WORDS.some((phrase) => t === normalizeSearchText(phrase) || t.includes(normalizeSearchText(phrase)))) return 'farewell';
-  if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
   return null;
 }
 
@@ -2541,13 +2582,45 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
 }
 
 async function handleEscalate({ tenant, connection, conv, waId, tone }) {
-  state.markEscalated(waId);
+  const receptionOpen = isReceptionOpenNow(tenant.config || {});
+  const labels = [...new Set([...(conv.labels || []), RECEPTION_LABEL])];
+
+  try {
+    await prisma.whatsAppConversation.update({
+      where: { id: conv.id },
+      data: receptionOpen
+        ? { labels, botActive: false, botPausedUntil: null, botState: null, status: 'open' }
+        : { labels, status: 'open' },
+    });
+    crmEvents.publish(tenant.id, 'conversation.reception.requested', {
+      tenantId: tenant.id,
+      conversationId: conv.id,
+      receptionOpen,
+      labels,
+    });
+  } catch (err) {
+    // La atención humana no debe perderse por un fallo secundario de la etiqueta.
+    logBot('warn', 'no se pudo marcar solicitud de recepción', { conversationId: conv.id, error: err.message });
+  }
+
+  if (receptionOpen) {
+    state.markEscalated(waId);
+    state.clearFlowState(waId);
+    const msg = tone === 'tu'
+      ? '👋 *Te conecto con recepción.*\n\nPor favor, espera un momento; una persona del equipo te atenderá lo antes posible 🌿'
+      : '👋 *Le conecto con recepción.*\n\nPor favor, espere un momento; una persona del equipo le atenderá lo antes posible 🌿';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  // Fuera de horario se conserva la etiqueta para que recepción vea el caso,
+  // pero Almita sigue disponible si la persona decide continuar por el bot.
   const msg = tone === 'tu'
-    ? '👋 *Te paso con recepción*\n\nAlguien te responderá pronto 🌿'
-    : '👋 *Le paso con recepción*\n\nAlguien le responderá pronto 🌿';
+    ? '🌙 *En este momento recepción está fuera de horario.*\n\nPuedes seguir usando Almita para ver servicios, consultar horarios disponibles o reservar. Si prefieres atención humana, déjanos tu requerimiento y recepción lo revisará en el próximo horario de atención 💛'
+    : '🌙 *En este momento recepción está fuera de horario.*\n\nPuede seguir usando Almita para ver servicios, consultar horarios disponibles o reservar. Si prefiere atención humana, déjenos su requerimiento y recepción lo revisará en el próximo horario de atención 💛';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
-  state.clearFlowState(waId);
 }
 
 async function handleBusinessHours({ tenant, connection, conv, waId, tone }) {
@@ -2594,6 +2667,8 @@ module.exports = {
     showBookingConfirmation,
     handleMyAppointment,
     handleEscalate,
+    isReceptionRequest,
+    isReceptionOpenNow,
     handleBusinessHours,
     handleFarewell,
     handleTextMessage,
