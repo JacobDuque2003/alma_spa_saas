@@ -772,7 +772,14 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
 function serviceCatalogDescription(service) {
   const description = String(service.description || '').replace(/\s+/g, ' ').trim();
   if (description) return description.slice(0, 180);
-  return `Servicio de ${menus.categoryDisplayName(service.category || 'bienestar')} con duración aproximada de ${service.durationMins || 60} minutos.`;
+  return null;
+}
+
+function serviceCatalogMeta(service) {
+  const duration = `${service.durationMins || 60} min`;
+  const price = Number(service.priceUsd || 0);
+  if (price > 0) return `$${price.toFixed(2)} · ${duration}`;
+  return `valor a confirmar · ${duration}`;
 }
 
 function buildServicesCatalogText(services, { tone } = {}) {
@@ -788,8 +795,9 @@ function buildServicesCatalogText(services, { tone } = {}) {
   for (const [category, items] of [...byCat.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     lines.push(`\n*${menus.categoryDisplayName(category)}*`);
     for (const service of items.sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
-      lines.push(`• _${service.name}_ — $${Number(service.priceUsd).toFixed(2)} · ${service.durationMins || 60} min`);
-      lines.push(`  ${serviceCatalogDescription(service)}`);
+      lines.push(`• _${service.name}_ — ${serviceCatalogMeta(service)}`);
+      const description = serviceCatalogDescription(service);
+      if (description) lines.push(`  ${description}`);
     }
   }
 
@@ -1027,8 +1035,8 @@ async function handleBookingServiceInfo({ tenant, connection, conv, waId, tone, 
   }
 
   const msg = tone === 'tu'
-    ? `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc)}\n\nDuración: ${svc.durationMins || 60} min · Valor: $${Number(svc.priceUsd).toFixed(2)}\n\nCuando quieras, dime qué día te queda bien.`
-    : `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc)}\n\nDuración: ${svc.durationMins || 60} min · Valor: $${Number(svc.priceUsd).toFixed(2)}\n\nCuando desee, dígame qué día le queda bien.`;
+    ? `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc) || 'Aún no tengo una descripción detallada cargada para este servicio.'}\n\n${serviceCatalogMeta(svc)}\n\nCuando quieras, dime qué día te queda bien.`
+    : `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc) || 'Aún no tengo una descripción detallada cargada para este servicio.'}\n\n${serviceCatalogMeta(svc)}\n\nCuando desee, dígame qué día le queda bien.`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }

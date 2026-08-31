@@ -974,6 +974,7 @@ test('Ronda G: "qué servicios tienen" responde catálogo completo en texto con 
       { id: 's2', name: 'Masaje relajante', category: 'corporal', priceUsd: 40, durationMins: 120, description: 'Masaje suave para aliviar tensión y descansar mejor.', active: true },
       { id: 's3', name: 'Terapias energéticas', category: 'terapias', priceUsd: 35, durationMins: 75, description: 'Armonización energética para equilibrar cuerpo y mente.', active: true },
       { id: 's4', name: 'Cumpleaños', category: 'recordatorio', priceUsd: 0, durationMins: 15, description: 'Servicio interno.', active: true },
+      { id: 's5', name: 'Reflexología', category: 'pies', priceUsd: 0, durationMins: 60, description: null, active: true },
     ],
   });
 
@@ -991,7 +992,11 @@ test('Ronda G: "qué servicios tienen" responde catálogo completo en texto con 
   assert.match(body, /Limpieza profunda para renovar la piel/);
   assert.match(body, /Masaje relajante/);
   assert.match(body, /Terapias energéticas/);
+  assert.match(body, /Reflexología/);
+  assert.match(body, /valor a confirmar · 60 min/);
   assert.doesNotMatch(body, /Cumpleaños/);
+  assert.doesNotMatch(body, /\$0\.00/);
+  assert.doesNotMatch(body, /Servicio de/);
   assert.ok(!sent.some((item) => item.kind === 'interactive'), 'no debe enviar botón de categorías cuando pidieron mensaje');
 });
 

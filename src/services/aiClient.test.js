@@ -47,3 +47,11 @@ test('classifyIntent: rejects when ANTHROPIC_API_KEY not set', async () => {
 test('MODEL is claude-haiku-4-5-20251001', () => {
   assert.equal(aiClient.MODEL, 'claude-haiku-4-5-20251001');
 });
+
+test('chat prompt: saludo normal no debe mencionar domingo/cerrado/reabrimos', () => {
+  const prompt = aiClient._internals.buildChatSystemPrompt({ tone: 'usted', services: [] });
+  assert.match(prompt, /En saludos normales, NO menciones/);
+  assert.match(prompt, /domingo/);
+  assert.match(prompt, /cerrado/);
+  assert.match(prompt, /reabrimos/);
+});
