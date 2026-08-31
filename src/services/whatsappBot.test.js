@@ -963,6 +963,76 @@ test('Ronda F: reserva usa date_text crudo y no confía en params.date de la IA'
   assert.equal(resolved, '2026-09-04');
 });
 
+// ─── Ronda G: consultas de catálogo y explicación contextual ────────
+
+test('Ronda G: "qué servicios tienen" responde catálogo completo en texto con descripciones', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Limpieza facial', category: 'facial', priceUsd: 30, durationMins: 75, description: 'Limpieza profunda para renovar la piel.', active: true },
+      { id: 's2', name: 'Masaje relajante', category: 'corporal', priceUsd: 40, durationMins: 120, description: 'Masaje suave para aliviar tensión y descansar mejor.', active: true },
+      { id: 's3', name: 'Terapias energéticas', category: 'terapias', priceUsd: 35, durationMins: 75, description: 'Armonización energética para equilibrar cuerpo y mente.', active: true },
+      { id: 's4', name: 'Cumpleaños', category: 'recordatorio', priceUsd: 0, durationMins: 15, description: 'Servicio interno.', active: true },
+    ],
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: 'que servicios nomás tienen?' } },
+  });
+
+  assert.ok(sent.length >= 1);
+  assert.equal(sent[0].kind, 'text');
+  const body = sent.map((item) => item.body || '').join('\n');
+  assert.match(body, /Limpieza facial/);
+  assert.match(body, /Limpieza profunda para renovar la piel/);
+  assert.match(body, /Masaje relajante/);
+  assert.match(body, /Terapias energéticas/);
+  assert.doesNotMatch(body, /Cumpleaños/);
+  assert.ok(!sent.some((item) => item.kind === 'interactive'), 'no debe enviar botón de categorías cuando pidieron mensaje');
+});
+
+test('Ronda G: "de qué trata eso" en reserva explica el servicio activo y no vuelve a pedir fecha', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    serviceById: {
+      s1: {
+        id: 's1',
+        tenantId: TENANT.id,
+        name: 'Masaje relajante',
+        category: 'corporal',
+        priceUsd: 40,
+        durationMins: 120,
+        description: 'Masaje suave para aliviar tensión y descansar mejor.',
+        active: true,
+      },
+    },
+  });
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 's1', serviceName: 'Masaje relajante' },
+    tone: 'usted',
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: 'de que trata eso?' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /Masaje relajante/);
+  assert.match(sent[0].body, /aliviar tensión/);
+  assert.match(sent[0].body, /qué día le queda bien/);
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.step, 'select_date');
+});
+
 // ─── P4: text confirm/cancel in booking confirm step ────────────────
 
 test('P4: "confirmo" text triggers booking confirmation', async () => {

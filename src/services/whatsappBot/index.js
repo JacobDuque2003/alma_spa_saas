@@ -160,12 +160,31 @@ function detectDeterministicIntent(text) {
 
   if (/^(hola|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
+  if (/\b(servicios|servicio|catalogo|tratamientos|precios)\b/.test(t)
+    && /\b(que|cuales|cuantos|tienen|ofrecen|nomas|son|hay)\b/.test(t)) return 'list_services';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda)\b/.test(t)) return 'book_start';
   if (/\bhacer una reserva\b/.test(t)) return 'book_start';
   if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
   if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
   return null;
+}
+
+function wantsCatalogInText(text, flowState = {}) {
+  const t = normalizeSearchText(text);
+  if (!t) return false;
+  if (/\b(servicios|servicio|catalogo|tratamientos|precios)\b/.test(t)
+    && /\b(que|cuales|cuantos|tienen|ofrecen|nomas|son|hay|explica|explicame)\b/.test(t)) return true;
+  if ((flowState.flow === 'listing_services' || flowState.booking?.step === 'select_service')
+    && /\b(que son|de que trata|explica|explicame|cada uno)\b/.test(t)) return true;
+  return false;
+}
+
+function wantsCurrentServiceInfo(text) {
+  const t = normalizeSearchText(text);
+  if (!t) return false;
+  return /\b(que es|de que trata|como es|explica|explicame|cuentame|que incluye|para que sirve|que hace)\b/.test(t)
+    && /\b(eso|este|esta|servicio|tratamiento|masaje|terapia)\b/.test(t);
 }
 
 function normalizeSearchText(text) {
@@ -323,7 +342,7 @@ async function loadVisibleServicesForBot(tenantId, { category } = {}) {
   if (category) where.category = category;
   const services = await prisma.service.findMany({
     where,
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, active: true },
+    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, description: true, active: true },
     orderBy: category ? { name: 'asc' } : [{ category: 'asc' }, { name: 'asc' }],
   });
   const visible = services.filter(isBotVisibleService);
@@ -483,6 +502,19 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
 
 async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyText }) {
   const flowState = state.getFlowState(waId) || {};
+
+  if (flowState.booking?.serviceId && wantsCurrentServiceInfo(bodyText)) {
+    return handleBookingServiceInfo({ tenant, connection, conv, waId, tone, serviceId: flowState.booking.serviceId });
+  }
+
+  if (wantsCatalogInText(bodyText, flowState)) {
+    await logBotInteraction(tenant.id, conv, {
+      userMessage: bodyText,
+      intent: 'list_services',
+      reply: null,
+    });
+    return handleListServices({ tenant, connection, conv, waId, tone, asText: true });
+  }
 
   // If we're in a booking flow and user sends text, handle contextually
   if (flowState.booking?.step === 'ask_name') {
@@ -670,7 +702,14 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
     }
 
     case 'list_services':
-      return handleListServices({ tenant, connection, conv, waId, tone });
+      return handleListServices({
+        tenant,
+        connection,
+        conv,
+        waId,
+        tone,
+        asText: wantsCatalogInText(userMessage, state.getFlowState(waId) || {}),
+      });
 
     case 'book':
     case 'book_start':
@@ -727,6 +766,61 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
     case 'unclear':
     default:
       return handleUnclear({ tenant, connection, conv, waId, tone, aiReply });
+  }
+}
+
+function serviceCatalogDescription(service) {
+  const description = String(service.description || '').replace(/\s+/g, ' ').trim();
+  if (description) return description.slice(0, 180);
+  return `Servicio de ${menus.categoryDisplayName(service.category || 'bienestar')} con duración aproximada de ${service.durationMins || 60} minutos.`;
+}
+
+function buildServicesCatalogText(services, { tone } = {}) {
+  const byCat = new Map();
+  for (const service of services) {
+    const category = String(service.category || 'Otros');
+    if (!byCat.has(category)) byCat.set(category, []);
+    byCat.get(category).push(service);
+  }
+
+  const lines = ['🌿 *Estos son nuestros servicios*'];
+
+  for (const [category, items] of [...byCat.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(`\n*${menus.categoryDisplayName(category)}*`);
+    for (const service of items.sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
+      lines.push(`• _${service.name}_ — $${Number(service.priceUsd).toFixed(2)} · ${service.durationMins || 60} min`);
+      lines.push(`  ${serviceCatalogDescription(service)}`);
+    }
+  }
+
+  lines.push(tone === 'tu'
+    ? '\nSi quieres, dime cuál te llama la atención y te cuento más o te ayudo a reservar.'
+    : '\nSi desea, dígame cuál le llama la atención y le cuento más o le ayudo a reservar.');
+
+  return lines.join('\n');
+}
+
+function splitMessage(text, maxLength = 3500) {
+  const chunks = [];
+  let current = '';
+  for (const block of String(text || '').split('\n\n')) {
+    const next = current ? `${current}\n\n${block}` : block;
+    if (next.length > maxLength && current) {
+      chunks.push(current);
+      current = block;
+    } else {
+      current = next;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+async function sendTextChunks({ tenant, connection, conv, waId, text }) {
+  const chunks = splitMessage(text);
+  for (const chunk of chunks) {
+    const r = await transport.sendText(connection, waId, chunk);
+    await recordBotMessage(tenant.id, conv, r, { body: chunk });
   }
 }
 
@@ -847,11 +941,17 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   return sendMainMenu({ tenant, connection, conv, waId, tone });
 }
 
-async function handleListServices({ tenant, connection, conv, waId, tone }) {
+async function handleListServices({ tenant, connection, conv, waId, tone, asText = false }) {
   const svcs = await loadVisibleServicesForBot(tenant.id);
   state.setFlowState(waId, { flow: 'listing_services', tone, unclearCount: 0 });
 
   const visible = svcs;
+  if (asText) {
+    const text = buildServicesCatalogText(visible, { tone });
+    await sendTextChunks({ tenant, connection, conv, waId, text });
+    return;
+  }
+
   if (visible.length <= 10) {
     const payload = menus.servicesList(visible, { tone });
     const r = await transport.sendInteractive(connection, waId, payload);
@@ -917,6 +1017,20 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
   const r2 = await transport.sendInteractive(connection, waId, backPayload);
   await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[botón volver]' });
   state.setFlowState(waId, { flow: 'service_detail', lastServiceId: serviceId, tone, unclearCount: 0 });
+}
+
+async function handleBookingServiceInfo({ tenant, connection, conv, waId, tone, serviceId }) {
+  const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
+  const svc = await serviceService.getService(botActor, serviceId);
+  if (!svc || svc.active === false) {
+    return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  const msg = tone === 'tu'
+    ? `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc)}\n\nDuración: ${svc.durationMins || 60} min · Valor: $${Number(svc.priceUsd).toFixed(2)}\n\nCuando quieras, dime qué día te queda bien.`
+    : `🌿 *_${svc.name}_*\n${serviceCatalogDescription(svc)}\n\nDuración: ${svc.durationMins || 60} min · Valor: $${Number(svc.priceUsd).toFixed(2)}\n\nCuando desee, dígame qué día le queda bien.`;
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -1349,6 +1463,7 @@ module.exports = {
     handleListServices,
     handleCategoryServices,
     handleServiceDetail,
+    handleBookingServiceInfo,
     handleBook,
     handleSmartBooking,
     handleBookingServiceSelected,
@@ -1367,6 +1482,9 @@ module.exports = {
     lookupClientByWaId,
     matchServiceByQuery,
     buildVisibleCategories,
+    wantsCatalogInText,
+    wantsCurrentServiceInfo,
+    buildServicesCatalogText,
     normalizeSearchText,
     extractRawDateText,
     resolveCalendarDate,
