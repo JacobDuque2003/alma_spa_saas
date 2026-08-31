@@ -274,6 +274,9 @@ function compactConversation(c) {
   if (!c) return null;
   let botStatus = c.botActive ? 'active' : 'handedOff';
   if (c.botActive && botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
+  const pendingMessageCount = conversationStatusForList(c) === 'resolved'
+    ? 0
+    : Math.max(Number(c.unreadCount || 0), Number(c.unreadRestoreCount || 0));
   return {
     id: c.id,
     customerWaId: c.customerWaId,
@@ -285,6 +288,7 @@ function compactConversation(c) {
     lastMessageAt: c.lastMessageAt,
     unreadCount: c.unreadCount,
     unreadRestoreCount: c.unreadRestoreCount ?? 0,
+    pendingMessageCount,
     manuallyMarkedUnread: Boolean(c.manuallyMarkedUnread),
     status: conversationStatusForList(c),
     withinWindow: isWithinWindow(c.lastInboundAt),
@@ -782,6 +786,7 @@ async function setStatus(actor, conversationId, status) {
   };
   if (status === 'resolved') {
     data.unreadCount = 0;
+    data.unreadRestoreCount = 0;
     data.manuallyMarkedUnread = false;
     data.botActive = true;
     data.botPausedUntil = null;

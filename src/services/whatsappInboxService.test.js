@@ -141,8 +141,8 @@ test('listConversations filter=sin_confirmar_hoy: cruza con Appointment.status p
 test('listConversations: botStatus usa botActive del registro (no N+1 query)', async () => {
   prisma.whatsAppConversation = {
     findMany: async () => [
-      { id: 'c1', customerWaId: '593111', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, labels: ['consulta'], archived: false, createdAt: new Date(), client: { id: 'cli1', fullName: 'Ana', whatsapp: '+593111', recordNumber: 'A-001' } },
-      { id: 'c2', customerWaId: '593222', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: false, labels: [], archived: false, createdAt: new Date(), client: null },
+      { id: 'c1', customerWaId: '593111', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: true, labels: ['consulta'], archived: false, createdAt: new Date(), unreadCount: 0, unreadRestoreCount: 3, status: 'pending', client: { id: 'cli1', fullName: 'Ana', whatsapp: '+593111', recordNumber: 'A-001' } },
+      { id: 'c2', customerWaId: '593222', tenantId: 't1', lastMessageAt: new Date(), lastInboundAt: new Date(), botActive: false, labels: [], archived: false, createdAt: new Date(), unreadCount: 2, unreadRestoreCount: 5, status: 'resolved', client: null },
     ],
     count: async () => 2,
   };
@@ -151,8 +151,10 @@ test('listConversations: botStatus usa botActive del registro (no N+1 query)', a
   assert.equal(items[0].botActive, true);
   assert.deepEqual(items[0].labels, ['consulta']);
   assert.equal(items[0].client.recordNumber, 'A-001');
+  assert.equal(items[0].pendingMessageCount, 3);
   assert.equal(items[1].botStatus, 'handedOff');
   assert.equal(items[1].botActive, false);
+  assert.equal(items[1].pendingMessageCount, 0);
 });
 
 test('listConversations: unread=true filtra conversaciones con mensajes pendientes', async () => {
@@ -188,6 +190,22 @@ test('reactivateBot: pone botActive=true y limpia botState', async () => {
   assert.equal(updateData.botState, null);
   assert.equal(result.botActive, true);
   assert.equal(botState._internals ? null : null, null); // state cleared
+});
+
+test('setStatus: resolver limpia contadores pendientes de la bandeja', async () => {
+  let updateData = null;
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999' }),
+    update: async ({ data }) => {
+      updateData = data;
+      return { id: 'c1', status: data.status, unreadCount: data.unreadCount, unreadRestoreCount: data.unreadRestoreCount };
+    },
+  };
+  const result = await inbox.setStatus({ id: 'u1', tenantId: 't1', role: 'personal' }, 'c1', 'resolved');
+  assert.equal(updateData.unreadCount, 0);
+  assert.equal(updateData.unreadRestoreCount, 0);
+  assert.equal(updateData.manuallyMarkedUnread, false);
+  assert.equal(result.status, 'resolved');
 });
 
 test('sendManualText: auto desactiva botActive', async () => {

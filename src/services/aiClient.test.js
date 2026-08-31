@@ -55,3 +55,10 @@ test('chat prompt: saludo normal no debe mencionar domingo/cerrado/reabrimos', (
   assert.match(prompt, /cerrado/);
   assert.match(prompt, /reabrimos/);
 });
+
+test('chat prompt: debe interpretar faltas ortográficas y gramática informal', () => {
+  const prompt = aiClient._internals.buildChatSystemPrompt({ tone: 'usted', services: [] });
+  assert.match(prompt, /faltas ortográficas/);
+  assert.match(prompt, /tildes omitidas/);
+  assert.match(prompt, /gramática informal/);
+});

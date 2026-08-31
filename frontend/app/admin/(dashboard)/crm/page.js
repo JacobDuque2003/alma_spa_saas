@@ -743,12 +743,15 @@ export default function CRMPage() {
     const isSelected = c.id === selectedId;
     const name = c.clientName || c.customerName || c.customerWaId;
     const labels = c.labels || [];
+    const pendingMessageCount = c.status === "resolved"
+      ? 0
+      : Math.max(Number(c.pendingMessageCount || 0), Number(c.unreadCount || 0), Number(c.unreadRestoreCount || 0));
     return (
       <button
         key={c.id}
         onClick={() => selectConversation(c.id)}
         className={`
-          w-full flex items-start gap-3 p-3 rounded-xl text-left
+          relative w-full flex items-start gap-3 p-3 pr-9 rounded-xl text-left
           transition-colors duration-150
           ${isSelected
             ? "bg-glow/40"
@@ -819,9 +822,9 @@ export default function CRMPage() {
             })}
           </div>
         </div>
-        {c.unreadCount > 0 && (
-          <span className="mt-1 flex min-w-5 h-5 flex-shrink-0 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm">
-            {c.unreadCount > 99 ? "99+" : c.unreadCount}
+        {pendingMessageCount > 0 && (
+          <span className="absolute right-3 top-3 flex min-w-5 h-5 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm">
+            {pendingMessageCount > 99 ? "99+" : pendingMessageCount}
           </span>
         )}
       </button>

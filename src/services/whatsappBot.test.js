@@ -582,6 +582,26 @@ test('palabra clave "menú" muestra menú sin llamar IA', async () => {
   assert.match(sent[0].payload.body.text, /Almita/);
 });
 
+test('Ronda H: intención tolera faltas, tildes omitidas y letras repetidas', () => {
+  assert.equal(bot._internals.detectDeterministicIntent('holaaaa'), 'greeting');
+  assert.equal(bot._internals.detectDeterministicIntent('que servcios nomas tienen'), 'list_services');
+  assert.equal(bot._internals.detectDeterministicIntent('quiero hacer una reseva'), 'book_start');
+});
+
+test('Ronda H: matchServiceByQuery tolera errores ortográficos en servicios', async () => {
+  installPrismaMocks({
+    services: [
+      { id: 's1', name: 'Masaje relajante', category: 'corporal', priceUsd: 30, durationMins: 120, active: true },
+      { id: 's2', name: 'Terapias energéticas', category: 'terapias', priceUsd: 35, durationMins: 75, active: true },
+    ],
+  });
+
+  const massage = await bot._internals.matchServiceByQuery(TENANT.id, 'masage relajnte');
+  assert.equal(massage.id, 's1');
+  const energy = await bot._internals.matchServiceByQuery(TENANT.id, 'terapia energetica');
+  assert.equal(energy.id, 's2');
+});
+
 test('servicesList acepta body personalizado', () => {
   const payload = menus.servicesList(
     [{ id: 's1', name: 'Masaje', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true }],

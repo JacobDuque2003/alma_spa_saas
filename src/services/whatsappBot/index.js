@@ -54,6 +54,11 @@ const MONTH_INDEX = {
   noviembre: 11,
   diciembre: 12,
 };
+const SERVICE_INTENT_WORDS = ['servicio', 'servicios', 'servcios', 'servcio', 'serbicio', 'catalogo', 'catalogos', 'tratamiento', 'tratamientos', 'precio', 'precios'];
+const QUESTION_INTENT_WORDS = ['que', 'q', 'k', 'cuales', 'cual', 'cuantos', 'tienen', 'tiene', 'ofrecen', 'ofrece', 'nomas', 'son', 'hay'];
+const BOOK_INTENT_WORDS = ['reservar', 'reserva', 'reservacion', 'reseva', 'reserba', 'agendar', 'ajendar', 'agenda', 'cita', 'sita'];
+const EXPLAIN_INTENT_WORDS = ['explica', 'explicame', 'cuentame', 'trata', 'incluye', 'sirve', 'hace'];
+const CURRENT_SERVICE_WORDS = ['eso', 'este', 'esta', 'servicio', 'tratamiento', 'masaje', 'terapia'];
 
 function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
@@ -158,12 +163,12 @@ function detectDeterministicIntent(text) {
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-  if (/^(hola|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
+  if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
-  if (/\b(servicios|servicio|catalogo|tratamientos|precios)\b/.test(t)
-    && /\b(que|cuales|cuantos|tienen|ofrecen|nomas|son|hay)\b/.test(t)) return 'list_services';
+  if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2) && hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1)) return 'list_services';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda)\b/.test(t)) return 'book_start';
+  if (/\b(quiero|quisiera|deseo|necesito|hacer|haser)\b/.test(t) && hasAnyApproxToken(t, BOOK_INTENT_WORDS, 2)) return 'book_start';
   if (/\bhacer una reserva\b/.test(t)) return 'book_start';
   if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
   if (/^(4|humano|asesor|asesora|recepcion|recepción|persona|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
@@ -173,8 +178,8 @@ function detectDeterministicIntent(text) {
 function wantsCatalogInText(text, flowState = {}) {
   const t = normalizeSearchText(text);
   if (!t) return false;
-  if (/\b(servicios|servicio|catalogo|tratamientos|precios)\b/.test(t)
-    && /\b(que|cuales|cuantos|tienen|ofrecen|nomas|son|hay|explica|explicame)\b/.test(t)) return true;
+  if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2)
+    && (hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1) || hasAnyApproxToken(t, EXPLAIN_INTENT_WORDS, 2))) return true;
   if ((flowState.flow === 'listing_services' || flowState.booking?.step === 'select_service')
     && /\b(que son|de que trata|explica|explicame|cada uno)\b/.test(t)) return true;
   return false;
@@ -183,8 +188,8 @@ function wantsCatalogInText(text, flowState = {}) {
 function wantsCurrentServiceInfo(text) {
   const t = normalizeSearchText(text);
   if (!t) return false;
-  return /\b(que es|de que trata|como es|explica|explicame|cuentame|que incluye|para que sirve|que hace)\b/.test(t)
-    && /\b(eso|este|esta|servicio|tratamiento|masaje|terapia)\b/.test(t);
+  return /\b(que es|de que trata|como es|q es|k es|para que)\b/.test(t)
+    || (hasAnyApproxToken(t, EXPLAIN_INTENT_WORDS, 2) && hasAnyApproxToken(t, CURRENT_SERVICE_WORDS, 1));
 }
 
 function normalizeSearchText(text) {
@@ -194,6 +199,63 @@ function normalizeSearchText(text) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function tokenizeForMatch(text) {
+  return normalizeSearchText(text)
+    .replace(/[^a-z0-9ñ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function levenshteinDistance(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  if (left === right) return 0;
+  if (!left) return right.length;
+  if (!right) return left.length;
+  const prev = Array.from({ length: right.length + 1 }, (_, i) => i);
+  const cur = Array(right.length + 1);
+  for (let i = 1; i <= left.length; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= right.length; j++) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= right.length; j++) prev[j] = cur[j];
+  }
+  return prev[right.length];
+}
+
+function tokenLooksLike(token, target, maxDistance = 1) {
+  const a = normalizeSearchText(token).replace(/[^a-z0-9ñ]/g, '');
+  const b = normalizeSearchText(target).replace(/[^a-z0-9ñ]/g, '');
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length <= 2 || b.length <= 2) return false;
+  const tolerance = Math.min(maxDistance, b.length <= 5 ? 1 : 2);
+  return levenshteinDistance(a, b) <= tolerance;
+}
+
+function hasAnyApproxToken(text, targets, maxDistance = 1) {
+  const tokens = tokenizeForMatch(text);
+  return targets.some((target) => tokens.some((token) => tokenLooksLike(token, target, maxDistance)));
+}
+
+function serviceMatchScore(query, serviceName) {
+  const q = normalizeSearchText(query);
+  const name = normalizeSearchText(serviceName);
+  if (!q || !name) return 0;
+  if (name.includes(q) || q.includes(name)) return 1;
+
+  const queryTokens = tokenizeForMatch(q).filter((token) => token.length > 2);
+  const nameTokens = tokenizeForMatch(name).filter((token) => token.length > 2);
+  if (!queryTokens.length || !nameTokens.length) return 0;
+
+  const matched = nameTokens.filter((nameToken) => (
+    queryTokens.some((queryToken) => tokenLooksLike(queryToken, nameToken, nameToken.length <= 6 ? 1 : 2))
+  )).length;
+  return matched / nameTokens.length;
 }
 
 function localDateParts(referenceDate = new Date(), timeZone = menus.SPA_TZ) {
@@ -400,10 +462,15 @@ async function matchServiceByQuery(tenantId, query) {
   const q = normalizeSearchText(query);
   if (!q) return null;
   const services = await loadVisibleServicesForBot(tenantId);
-  return services.find(s => normalizeSearchText(s.name).includes(q))
+  const direct = services.find(s => normalizeSearchText(s.name).includes(q))
     || services.find(s => q.includes(normalizeSearchText(s.name)))
-    || services.find(s => q.includes(normalizeSearchText(s.name).slice(0, 6)))
-    || null;
+    || services.find(s => q.includes(normalizeSearchText(s.name).slice(0, 6)));
+  if (direct) return direct;
+
+  const scored = services
+    .map((service) => ({ service, score: serviceMatchScore(q, service.name) }))
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.score >= 0.6 ? scored[0].service : null;
 }
 
 // ─── Entry point ───────────────────────────────────────────────
@@ -1484,6 +1551,7 @@ module.exports = {
     handleEscalate,
     handleTextMessage,
     handleUnclear,
+    detectDeterministicIntent,
     routeIntent,
     getDailyCostForConversation,
     logBotInteraction,
