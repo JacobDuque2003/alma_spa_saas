@@ -4,10 +4,17 @@ const requirePermission = require('../middleware/requirePermission');
 const appointmentService = require('../services/appointmentService');
 const prisma = require('../utils/prisma');
 const { resolveTenantId } = require('../utils/tenantScope');
+const agendaEvents = require('../services/crmEventBus');
 
 const router = express.Router();
 
 router.use(authenticate, requirePermission('agenda'));
+
+// La agenda y el CRM comparten el canal de eventos por tenant.  Mantenerlo
+// antes de /:id evita que Express interprete "events" como un id de cita.
+router.get('/events', (req, res) => {
+  agendaEvents.subscribe(req.user.tenantId, res);
+});
 
 router.get('/', async (req, res, next) => {
   try {

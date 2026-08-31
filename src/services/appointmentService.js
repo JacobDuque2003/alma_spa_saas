@@ -4,6 +4,7 @@ const { BadRequestError, SlotUnavailableError } = require('../utils/errors');
 const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
+const agendaEvents = require('./crmEventBus');
 const { getTenantTimezone, localDayBoundsUTC, localTimeToUTC } = require('../utils/timezone');
 const { normalize: normalizeBusinessHours, isRangeInsideBusinessHours } = require('../utils/businessHours');
 
@@ -90,6 +91,18 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
 
 function isResourceFree(appointments, resourceKey, resourceId, start, end) {
   return !appointments.some((a) => a[resourceKey] === resourceId && overlaps(a.startsAt, a.endsAt, start, end));
+}
+
+function notifyAgenda(tenantId, event, appointment) {
+  if (!tenantId || !appointment?.id) return;
+  // Solo se envía la referencia necesaria: el panel vuelve a pedir la cita
+  // desde su API autenticada, sin exponer datos de la persona por SSE.
+  agendaEvents.publish(tenantId, event, {
+    appointmentId: appointment.id,
+    startsAt: appointment.startsAt,
+    status: appointment.status,
+    at: new Date().toISOString(),
+  });
 }
 
 async function getCompatibleRooms(db, tenantId, service) {
@@ -386,6 +399,8 @@ async function createPublicBooking(tenantId, payload) {
   bookingNotifier.notifyBookingCreated(tenantId, result.client, result.appointments)
     .catch((err) => console.warn('[BOOKING-NOTIFIER] catch externo:', err?.message));
 
+  result.appointments.forEach((appointment) => notifyAgenda(tenantId, 'appointment.created', appointment));
+
   return result;
 }
 
@@ -413,7 +428,9 @@ async function cancelBookingByToken(confirmationToken) {
   if (appointment.startsAt.getTime() < Date.now()) {
     throw new BadRequestError('No se puede cancelar una cita que ya pasó');
   }
-  return prisma.appointment.update({ where: { confirmationToken }, data: { status: 'cancelado' } });
+  const updated = await prisma.appointment.update({ where: { confirmationToken }, data: { status: 'cancelado' } });
+  notifyAgenda(updated.tenantId, 'appointment.status.updated', updated);
+  return updated;
 }
 
 async function confirmBookingByToken(confirmationToken) {
@@ -428,7 +445,9 @@ async function confirmBookingByToken(confirmationToken) {
   if (appointment.status === 'confirmado') {
     return appointment; // idempotente
   }
-  return prisma.appointment.update({ where: { confirmationToken }, data: { status: 'confirmado' } });
+  const updated = await prisma.appointment.update({ where: { confirmationToken }, data: { status: 'confirmado' } });
+  notifyAgenda(updated.tenantId, 'appointment.status.updated', updated);
+  return updated;
 }
 
 // --- CRUD autenticado (panel de staff) ---
@@ -549,7 +568,7 @@ async function createManualAppointment(actor, data) {
   }
 
   try {
-    return await prisma.appointment.create({
+    const appointment = await prisma.appointment.create({
       data: {
         tenantId,
         clientId: data.clientId,
@@ -565,6 +584,8 @@ async function createManualAppointment(actor, data) {
         priceUsd: service.priceUsd,
       },
     });
+    notifyAgenda(tenantId, 'appointment.created', appointment);
+    return appointment;
   } catch (err) {
     if (err.code === 'P2002') {
       throw new SlotUnavailableError();
@@ -620,7 +641,9 @@ async function updateAppointment(actor, id, changes) {
   }
 
   try {
-    return await prisma.appointment.update({ where: { id }, data });
+    const appointment = await prisma.appointment.update({ where: { id }, data });
+    notifyAgenda(target.tenantId, 'appointment.updated', appointment);
+    return appointment;
   } catch (err) {
     if (err.code === 'P2002') {
       throw new SlotUnavailableError();
@@ -638,7 +661,9 @@ async function updateStatus(actor, id, status) {
   if (!target) return null;
   assertTenantScope(actor, target.tenantId);
 
-  return prisma.appointment.update({ where: { id }, data: { status } });
+  const appointment = await prisma.appointment.update({ where: { id }, data: { status } });
+  notifyAgenda(target.tenantId, 'appointment.status.updated', appointment);
+  return appointment;
 }
 
 module.exports = {

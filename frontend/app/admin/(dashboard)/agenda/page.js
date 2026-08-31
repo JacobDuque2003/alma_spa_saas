@@ -251,8 +251,8 @@ export default function AgendaPage() {
   const effectiveView = isMobile ? "day" : view;
   const filteredAppointments = appointments;
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       let from, to;
       if (effectiveView === "day") {
@@ -274,12 +274,27 @@ export default function AgendaPage() {
     } catch {
       setAppointments([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [selectedDate, effectiveView]);
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  // Cambios originados por Almita, la reserva pública u otro miembro del
+  // equipo llegan por este stream. La agenda vuelve a pedir únicamente el
+  // rango que la persona está viendo, por lo que la tarjeta cambia sin que
+  // tenga que recargar toda la pantalla.
+  useEffect(() => {
+    const source = new EventSource("/api/appointments/events");
+    const refreshAgenda = () => { fetchData({ silent: true }); };
+    const eventNames = ["appointment.created", "appointment.updated", "appointment.status.updated"];
+    eventNames.forEach((name) => source.addEventListener(name, refreshAgenda));
+    return () => {
+      eventNames.forEach((name) => source.removeEventListener(name, refreshAgenda));
+      source.close();
+    };
   }, [fetchData]);
 
   // La configuración del tenant (businessHours) casi no cambia — se pide una
