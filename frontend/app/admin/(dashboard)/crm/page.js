@@ -7,7 +7,7 @@ import {
   MessageSquare, StickyNote, Tag, Phone, Calendar, Hash, ChevronRight,
   Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
   ChevronDown, ArrowDown, Edit3, Settings, Paperclip, Download, FileText,
-  ImageIcon, Volume2, Video,
+  ImageIcon, Volume2, Video, LockKeyhole, Reply,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -129,6 +129,7 @@ export default function CRMPage() {
   const [editingQuickReplyKey, setEditingQuickReplyKey] = useState(null);
   const labelConfig = useMemo(() => labelMapFrom(labelDefs), [labelDefs]);
   const selectedName = selected?.client?.fullName || selected?.customerName || selected?.customerWaId || "";
+  const canReplyInWindow = Boolean(selected?.withinWindow && !sending);
   const chatMatches = useMemo(() => {
     const term = chatSearch.trim().toLowerCase();
     if (!term) return [];
@@ -242,6 +243,13 @@ export default function CRMPage() {
       setNotes(data || []);
     } catch { setNotes([]); }
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!selected?.withinWindow) {
+      setBody("");
+      setShowQuickReplies(false);
+    }
+  }, [selected?.id, selected?.withinWindow]);
 
   useEffect(() => { fetchNotes(); }, [fetchNotes]);
 
@@ -387,6 +395,10 @@ export default function CRMPage() {
   // ─── Actions ─────────────────────────────────────────────────
   async function sendText() {
     if (!body.trim() || !selectedId) return;
+    if (!selected?.withinWindow) {
+      toast.error("La ventana de 24 horas terminó. Solo puedes enviar una plantilla o recordatorio.");
+      return;
+    }
     setSending(true);
     try {
       await authFetch(`/crm/conversations/${selectedId}/messages`, { method: "POST", body: { body } });
@@ -822,6 +834,27 @@ export default function CRMPage() {
     );
   }
 
+  function interactiveReplySource(messageIndex) {
+    return messages.slice(0, messageIndex).reverse().find((message) => (
+      message.direction === "outbound"
+      && message.type === "interactive"
+      && message.interactivePayload
+    ));
+  }
+
+  function renderInteractiveReplyContext(source) {
+    const payload = source?.interactivePayload;
+    const sourceText = payload?.header?.text || payload?.body?.text || "Opciones de Alma Spa";
+    return (
+      <div className="mb-2 border-l-[3px] border-emerald-500 bg-emerald-50/80 px-2.5 py-2 text-xs">
+        <div className="mb-0.5 flex items-center gap-1 font-semibold text-emerald-700">
+          <Reply size={12} /> Almita
+        </div>
+        <p className="line-clamp-2 whitespace-pre-wrap text-emerald-950/75">{sourceText}</p>
+      </div>
+    );
+  }
+
   // ─── Render helpers ──────────────────────────────────────────
   function renderConversationCard(c) {
     const isSelected = c.id === selectedId;
@@ -913,7 +946,7 @@ export default function CRMPage() {
     );
   }
 
-  function renderMessageBubble(m) {
+  function renderMessageBubble(m, messageIndex) {
     const isOutbound = m.direction === "outbound";
     const isBot = m.senderType === "bot" || (isOutbound && !m.sentByUserId);
     const isHuman = m.senderType === "agent" || (isOutbound && !!m.sentByUserId);
@@ -928,16 +961,17 @@ export default function CRMPage() {
       template: "Plantilla enviada",
     };
     const interactivePreview = m.type === "interactive" ? m.interactivePayload : null;
+    const interactiveReply = !isOutbound && m.type === "interactive"
+      ? interactiveReplySource(messageIndex)
+      : null;
 
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
-          max-w-[75%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm
-          ${isBot
-            ? "bg-emerald-50 border border-emerald-200 text-bronze-deep"
-            : isHuman
-              ? "bg-glow/60 text-bronze-deep"
-              : "bg-white text-bronze-deep"
+          max-w-[78%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm
+          ${isOutbound
+            ? "rounded-tr-md border border-emerald-200 bg-[#dcf8c6] text-slate-800"
+            : "rounded-tl-md border border-slate-200 bg-white text-slate-800"
           }
         `}>
           {isOutbound && (
@@ -953,6 +987,7 @@ export default function CRMPage() {
               )}
             </div>
           )}
+          {interactiveReply && renderInteractiveReplyContext(interactiveReply)}
           {renderMediaContent(m)}
           {m.type === "image" && !m.mediaId && (
             <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/50 p-2 text-xs text-bronze">
@@ -964,8 +999,8 @@ export default function CRMPage() {
               {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
             </p>
           )}
-          <p className="text-right text-[10px] text-warm-gray mt-1.5">
-            {timeStr(m.createdAt)} {m.status ? `· ${m.status}` : ""}
+          <p className="text-right text-[10px] text-slate-500 mt-1.5">
+            {timeStr(m.createdAt)} {isOutbound && m.status ? `· ${m.status}` : ""}
           </p>
         </div>
       </div>
@@ -1181,7 +1216,7 @@ export default function CRMPage() {
             onScroll={handleMessagesScroll}
             className="h-full overflow-y-auto p-4 flex flex-col gap-3"
           >
-            {messages.map((m) => renderMessageBubble(m))}
+            {messages.map((m, index) => renderMessageBubble(m, index))}
             <div ref={messagesEndRef} />
           </div>
           {showScrollBottom && (
@@ -1314,14 +1349,26 @@ export default function CRMPage() {
           </div>
         )}
 
+        {!selected.withinWindow && (
+          <div className="mx-4 mb-2 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+            <LockKeyhole size={16} className="mt-0.5 flex-shrink-0 text-amber-700" />
+            <div>
+              <p className="font-semibold">La ventana de 24 horas terminó</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-amber-800">No se pueden enviar mensajes, archivos ni respuestas rápidas. Use un recordatorio con plantilla si necesita reabrir la conversación.</p>
+            </div>
+          </div>
+        )}
+
         {/* Input */}
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-border bg-white/80 backdrop-blur-sm">
+        <div className={`flex items-center gap-2 border-t border-border px-4 py-3 backdrop-blur-sm ${selected.withinWindow ? "bg-white/80" : "bg-slate-50"}`}>
           <input
             ref={fileInputRef}
             type="file"
             className="hidden"
+            disabled={!canReplyInWindow}
             accept="image/jpeg,image/png,image/webp,audio/*,video/mp4,video/3gpp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
             onChange={(event) => {
+              if (!canReplyInWindow) return;
               const file = event.target.files?.[0];
               event.target.value = "";
               if (file) sendAttachment(file);
@@ -1330,6 +1377,7 @@ export default function CRMPage() {
           <button
             data-quick-replies-trigger
             onClick={() => {
+              if (!canReplyInWindow) return;
               setShowQuickReplies((v) => !v);
               setShowAssignees(false);
               setChatSearchOpen(false);
@@ -1338,15 +1386,18 @@ export default function CRMPage() {
               w-9 h-9 rounded-full flex items-center justify-center text-sm flex-shrink-0
               transition-colors duration-150
               ${showQuickReplies ? "bg-gold text-white" : "bg-gold/20 text-bronze"}
+              ${!canReplyInWindow ? "cursor-not-allowed opacity-40" : ""}
             `}
+            disabled={!canReplyInWindow}
+            title={selected.withinWindow ? "Respuestas rápidas" : "No puedes responder fuera de la ventana de 24 horas"}
           >
             {"✨"}
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={!selected.withinWindow || sending}
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze transition-colors hover:bg-glow/40 disabled:opacity-40"
-            title="Adjuntar archivo"
+            disabled={!canReplyInWindow}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze transition-colors hover:bg-glow/40 disabled:cursor-not-allowed disabled:opacity-40"
+            title={selected.withinWindow ? "Adjuntar archivo" : "No puedes adjuntar fuera de la ventana de 24 horas"}
           >
             <Paperclip size={16} />
           </button>
@@ -1354,15 +1405,15 @@ export default function CRMPage() {
             className="flex-1 px-4 py-2.5 rounded-full border border-border bg-white text-sm text-bronze-deep
                        placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40
                        disabled:opacity-50"
-            placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Han pasado más de 24h — envía un recordatorio"}
+            placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Mensajes bloqueados: la ventana de 24 horas terminó"}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            disabled={!selected.withinWindow || sending}
+            disabled={!canReplyInWindow}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
           />
           <button
             onClick={sendText}
-            disabled={!selected.withinWindow || sending || !body.trim()}
+            disabled={!canReplyInWindow || !body.trim()}
             className="w-9 h-9 rounded-full bg-bronze text-white flex items-center justify-center flex-shrink-0
                        hover:bg-bronze-deep transition-colors duration-150 disabled:opacity-40"
           >
