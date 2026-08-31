@@ -908,6 +908,61 @@ test('Ronda E: si la IA trae service_info con reply, primero cambia el servicio 
   assert.equal(state.getFlowState(CONV.customerWaId).booking.serviceId, 'energeticas');
 });
 
+// ─── Ronda F: cálculo de fechas en JS ───────────────────────────────
+
+test('Ronda F: resuelve cada día de la semana desde referencias distintas', () => {
+  const { resolveCalendarDate } = bot._internals;
+  const cases = [
+    ['lunes', '2026-08-26T12:00:00-05:00', '2026-08-31'],
+    ['martes', '2026-08-26T12:00:00-05:00', '2026-09-01'],
+    ['miércoles', '2026-08-26T12:00:00-05:00', '2026-08-26'],
+    ['jueves', '2026-08-26T12:00:00-05:00', '2026-08-27'],
+    ['viernes', '2026-08-29T12:00:00-05:00', '2026-09-04'],
+    ['sábado', '2026-08-29T12:00:00-05:00', '2026-08-29'],
+    ['domingo', '2026-08-29T12:00:00-05:00', '2026-08-30'],
+  ];
+
+  for (const [rawDateText, referenceDate, expected] of cases) {
+    assert.equal(
+      resolveCalendarDate(rawDateText, { referenceDate: new Date(referenceDate) }),
+      expected,
+      `${rawDateText} desde ${referenceDate}`,
+    );
+  }
+});
+
+test('Ronda F: resuelve hoy, mañana, pasado mañana y cruces de mes', () => {
+  const { resolveCalendarDate } = bot._internals;
+  const cases = [
+    ['hoy', '2026-08-30T12:00:00-05:00', '2026-08-30'],
+    ['mañana', '2026-08-30T12:00:00-05:00', '2026-08-31'],
+    ['pasado mañana', '2026-08-30T12:00:00-05:00', '2026-09-01'],
+    ['el 5', '2026-08-30T12:00:00-05:00', '2026-09-05'],
+    ['31/12', '2026-12-30T12:00:00-05:00', '2026-12-31'],
+    ['1/1', '2026-12-30T12:00:00-05:00', '2027-01-01'],
+    ['5 de septiembre', '2026-08-30T12:00:00-05:00', '2026-09-05'],
+  ];
+
+  for (const [rawDateText, referenceDate, expected] of cases) {
+    assert.equal(
+      resolveCalendarDate(rawDateText, { referenceDate: new Date(referenceDate) }),
+      expected,
+      `${rawDateText} desde ${referenceDate}`,
+    );
+  }
+});
+
+test('Ronda F: reserva usa date_text crudo y no confía en params.date de la IA', () => {
+  const { resolveBookingDate } = bot._internals;
+  const resolved = resolveBookingDate(
+    { date: '2026-09-01', date_text: 'viernes' },
+    null,
+    { referenceDate: new Date('2026-08-29T12:00:00-05:00') },
+  );
+
+  assert.equal(resolved, '2026-09-04');
+});
+
 // ─── P4: text confirm/cancel in booking confirm step ────────────────
 
 test('P4: "confirmo" text triggers booking confirmation', async () => {

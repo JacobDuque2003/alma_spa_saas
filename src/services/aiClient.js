@@ -210,11 +210,12 @@ Intenciones:
 - unclear: no entiendes el mensaje
 
 EXTRACCIÓN DE FECHA Y HORA (solo para book_service):
-Cuando la clienta menciona día y/o hora al reservar, extrae:
-- params.date = fecha ISO YYYY-MM-DD (calculada desde HOY: "lunes"→próximo lunes, "mañana"→${todayISO} +1 día, "hoy"→${todayISO}, "viernes"→próximo viernes. Si el día ya pasó esta semana, usa la próxima semana. Domingos NO son válidos→usa lunes siguiente)
+Cuando la clienta menciona día y/o hora al reservar, extrae SOLO la intención en crudo:
+- params.date_text = texto de fecha tal como se entiende del mensaje ("lunes", "viernes", "hoy", "mañana", "pasado mañana", "el 5", "5 de septiembre")
+- NUNCA devuelvas params.date ni calcules fechas de calendario. JavaScript convierte date_text a fecha ISO usando America/Guayaquil.
 - params.time = hora en formato HH:mm 24h ("5pm"→"17:00", "las 3"→"15:00", "9 de la mañana"→"09:00", "en la mañana"→"09:00", "en la tarde"→"15:00")
 - Si no menciona fecha o hora, NO incluir ese campo en params.
-Ejemplo: "quiero masaje relajante para el lunes a las 5pm" → params: {"service_query":"Masaje Relajante","date":"YYYY-MM-DD","time":"17:00"}`.trim();
+Ejemplo: "quiero masaje relajante para el lunes a las 5pm" → params: {"service_query":"Masaje Relajante","date_text":"lunes","time":"17:00"}`.trim();
 }
 
 async function chat(userMessage, context = {}) {

@@ -30,6 +30,30 @@ const { SlotUnavailableError } = require('../../utils/errors');
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
 const HIDDEN_SERVICE_NAMES = new Set(['cumpleanos', 'cumpleaños', 'valoracion', 'valoración']);
+const WEEKDAY_INDEX = {
+  domingo: 0,
+  lunes: 1,
+  martes: 2,
+  miercoles: 3,
+  jueves: 4,
+  viernes: 5,
+  sabado: 6,
+};
+const MONTH_INDEX = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  setiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12,
+};
 
 function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
@@ -151,6 +175,139 @@ function normalizeSearchText(text) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function localDateParts(referenceDate = new Date(), timeZone = menus.SPA_TZ) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(referenceDate);
+  const pick = (type) => Number(parts.find((part) => part.type === type)?.value);
+  return {
+    year: pick('year'),
+    month: pick('month'),
+    day: pick('day'),
+  };
+}
+
+function isoFromParts(year, month, day) {
+  return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10);
+}
+
+function addDaysToISO(isoDate, days) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function normalizeYear(yearText, currentYear) {
+  if (!yearText) return currentYear;
+  const raw = Number(yearText);
+  if (!Number.isInteger(raw)) return currentYear;
+  return raw < 100 ? 2000 + raw : raw;
+}
+
+function resolveCalendarDate(rawDateText, { referenceDate = new Date(), timeZone = menus.SPA_TZ } = {}) {
+  const raw = normalizeSearchText(rawDateText);
+  if (!raw) return null;
+
+  const todayParts = localDateParts(referenceDate, timeZone);
+  const todayISO = isoFromParts(todayParts.year, todayParts.month, todayParts.day);
+  const todayUTC = new Date(Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day));
+
+  if (/\bpasado manana\b/.test(raw)) return addDaysToISO(todayISO, 2);
+  if (/\bmanana\b/.test(raw)) return addDaysToISO(todayISO, 1);
+  if (/\bhoy\b/.test(raw)) return todayISO;
+
+  const weekdayMatch = raw.match(/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/);
+  if (weekdayMatch) {
+    const targetDay = WEEKDAY_INDEX[weekdayMatch[1]];
+    const currentDay = todayUTC.getUTCDay();
+    const delta = (targetDay - currentDay + 7) % 7;
+    return addDaysToISO(todayISO, delta);
+  }
+
+  const slashMatch = raw.match(/\b(\d{1,2})\s*[/-]\s*(\d{1,2})(?:\s*[/-]\s*(\d{2,4}))?\b/);
+  if (slashMatch) {
+    const day = Number(slashMatch[1]);
+    const month = Number(slashMatch[2]);
+    let year = normalizeYear(slashMatch[3], todayParts.year);
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+    let candidate = isoFromParts(year, month, day);
+    if (!slashMatch[3] && candidate < todayISO) {
+      year += 1;
+      candidate = isoFromParts(year, month, day);
+    }
+    return candidate;
+  }
+
+  const namedMonthMatch = raw.match(/\b(?:el\s+)?(\d{1,2})\s+de\s+([a-z]+)(?:\s+de\s+(\d{2,4}))?\b/);
+  if (namedMonthMatch) {
+    const day = Number(namedMonthMatch[1]);
+    const month = MONTH_INDEX[namedMonthMatch[2]];
+    let year = normalizeYear(namedMonthMatch[3], todayParts.year);
+    if (!month || day < 1 || day > daysInMonth(year, month)) return null;
+    let candidate = isoFromParts(year, month, day);
+    if (!namedMonthMatch[3] && candidate < todayISO) {
+      year += 1;
+      candidate = isoFromParts(year, month, day);
+    }
+    return candidate;
+  }
+
+  const bareDayMatch = raw.match(/^(?:el\s+)?(\d{1,2})$/) || raw.match(/\bel\s+(\d{1,2})\b/);
+  if (bareDayMatch) {
+    const day = Number(bareDayMatch[1]);
+    let year = todayParts.year;
+    let month = todayParts.month;
+    if (day < 1 || day > 31) return null;
+    if (day > daysInMonth(year, month)) return null;
+    let candidate = isoFromParts(year, month, day);
+    if (candidate < todayISO) {
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+      if (day > daysInMonth(year, month)) return null;
+      candidate = isoFromParts(year, month, day);
+    }
+    return candidate;
+  }
+
+  return null;
+}
+
+function extractRawDateText(text) {
+  const raw = normalizeSearchText(text);
+  if (!raw) return null;
+  const relative = raw.match(/\bpasado manana\b|\bmanana\b|\bhoy\b/);
+  if (relative) return relative[0];
+  const weekday = raw.match(/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/);
+  if (weekday) return weekday[0];
+  const slashDate = raw.match(/\b\d{1,2}\s*[/-]\s*\d{1,2}(?:\s*[/-]\s*\d{2,4})?\b/);
+  if (slashDate) return slashDate[0];
+  const namedDate = raw.match(/\b(?:el\s+)?\d{1,2}\s+de\s+[a-z]+(?:\s+de\s+\d{2,4})?\b/);
+  if (namedDate) return namedDate[0];
+  const bareDay = raw.match(/\bel\s+\d{1,2}\b/);
+  if (bareDay) return bareDay[0];
+  return null;
+}
+
+function resolveBookingDate(params = {}, userMessage = null, options = {}) {
+  const rawDateText = params.date_text
+    || params.dateText
+    || params.date_raw
+    || params.dateRaw
+    || params.raw_date
+    || params.rawDate
+    || extractRawDateText(userMessage);
+  return resolveCalendarDate(rawDateText, options);
 }
 
 function isBotVisibleService(service) {
@@ -373,7 +530,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
       intent: deterministicIntent,
       reply: null,
     });
-    return routeIntent({ tenant, connection, conv, waId, tone, intent: deterministicIntent });
+    return routeIntent({ tenant, connection, conv, waId, tone, intent: deterministicIntent, userMessage: bodyText });
   }
 
   // Tier 2: intent cache lookup
@@ -387,7 +544,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     await logBotInteraction(tenant.id, conv, {
       userMessage: bodyText, intent: cached.intent, reply: cached.reply,
     });
-    return routeIntent({ tenant, connection, conv, waId, tone, intent: cached.intent, aiReply: cached.reply });
+    return routeIntent({ tenant, connection, conv, waId, tone, intent: cached.intent, aiReply: cached.reply, userMessage: bodyText });
   }
 
   // Tier 3: AI (if available)
@@ -483,12 +640,13 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     intent: aiResult.intent,
     aiReply: aiResult.replyText,
     params: aiResult.params,
+    userMessage: bodyText,
   });
 }
 
 // ─── Intent router ─────────────────────────────────────────────
 
-async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply, params }) {
+async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply, params, userMessage }) {
   switch (intent) {
     case 'menu':
       logBot('info', 'cayó a menú', { intent, hasReply: Boolean(aiReply), desdeHandler: 'routeIntent:menu' });
@@ -522,8 +680,9 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
         if (svc) {
-          if (params.date) {
-            return handleSmartBooking({ tenant, connection, conv, waId, tone, service: svc, date: params.date, time: params.time || null, aiReply });
+          const resolvedDate = resolveBookingDate(params, userMessage);
+          if (resolvedDate) {
+            return handleSmartBooking({ tenant, connection, conv, waId, tone, service: svc, date: resolvedDate, time: params.time || null, aiReply });
           }
           return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
         }
@@ -1208,6 +1367,10 @@ module.exports = {
     lookupClientByWaId,
     matchServiceByQuery,
     buildVisibleCategories,
+    normalizeSearchText,
+    extractRawDateText,
+    resolveCalendarDate,
+    resolveBookingDate,
     handleSmartBooking,
   },
 };
