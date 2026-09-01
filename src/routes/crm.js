@@ -108,7 +108,13 @@ router.post('/conversations/:id/mark-read', async (req, res, next) => {
   try {
     const conv = await inboxService.markRead(req.user, req.params.id);
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
-    res.json({ id: conv.id, unreadCount: conv.unreadCount, lastReadAt: conv.lastReadAt });
+    res.json({
+      id: conv.id,
+      unreadCount: conv.unreadCount,
+      manuallyMarkedUnread: conv.manuallyMarkedUnread,
+      status: conv.status,
+      lastReadAt: conv.lastReadAt,
+    });
   } catch (err) { next(err); }
 });
 

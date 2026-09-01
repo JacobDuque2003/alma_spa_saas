@@ -249,7 +249,7 @@ test('"Menú principal" cancela cualquier flujo y vuelve al menú real', async (
   assert.equal(nextState.bookingForOther, null);
 });
 
-test('reservar para otra persona pide teléfono, nombre y dirección antes del servicio', async () => {
+test('reservar para otra persona acepta nombre y teléfono juntos antes de pedir dirección', async () => {
   resetState();
   const sent = installTransportMocks();
   const { clientCreates } = installPrismaMocks({
@@ -262,17 +262,11 @@ test('reservar para otra persona pide teléfono, nombre y dirección antes del s
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book_for_other' } } },
   });
-  assert.match(sent.at(-1).body, /número de WhatsApp/i);
+  assert.match(sent.at(-1).body, /cómo se llama/i);
 
   await bot.handleInboundMessage({
     tenant: TENANT, connection: CONN, conv: CONV,
-    incoming: { type: 'text', text: { body: '0993629257' } },
-  });
-  assert.match(sent.at(-1).body, /nombre completo/i);
-
-  await bot.handleInboundMessage({
-    tenant: TENANT, connection: CONN, conv: CONV,
-    incoming: { type: 'text', text: { body: 'María Pérez' } },
+    incoming: { type: 'text', text: { body: 'Mi nombre es María Pérez y mi número es 0993629257' } },
   });
   assert.match(sent.at(-1).body, /dirección/i);
 
@@ -289,6 +283,30 @@ test('reservar para otra persona pide teléfono, nombre y dirección antes del s
   assert.equal(sent.at(-1).kind, 'interactive');
   assert.equal(state.getFlowState(CONV.customerWaId).booking.clientName, 'María Pérez');
   assert.equal(state.getFlowState(CONV.customerWaId).booking.forOther, true);
+});
+
+test('reservar para otra persona conserva el flujo si nombre y teléfono llegan separados', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    services: [{ id: 's1', name: 'Masaje relajante', category: 'corporal', priceUsd: 30, durationMins: 60, active: true }],
+  });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_book_for_other' } } },
+  });
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'Jacob Duque' } },
+  });
+  assert.match(sent.at(-1).body, /número de WhatsApp/i);
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: '0993629257' } },
+  });
+  assert.match(sent.at(-1).body, /dirección/i);
 });
 
 test('consulta de citas disponibles pide servicio antes de mostrar horarios', async () => {
@@ -526,7 +544,8 @@ test('fuera de horario, conserva la solicitud para recepción y deja Almita disp
   const { conversationUpdates } = installPrismaMocks();
   const closedTenant = {
     ...TENANT,
-    config: { workDays: [1, 2, 3, 4, 5, 6], businessHours: { start: '09:00', end: '12:00' } },
+    // Día imposible: la prueba no debe depender de la fecha u hora de ejecución.
+    config: { workDays: [8], businessHours: { start: '09:00', end: '12:00' } },
   };
   assert.equal(bot._internals.isReceptionOpenNow(closedTenant.config, new Date('2026-09-06T17:00:00.000Z')), false);
   await bot._internals.handleEscalate({

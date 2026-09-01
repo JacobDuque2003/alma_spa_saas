@@ -667,15 +667,39 @@ async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone,
   }
 }
 
+function extractPhoneFromRecipientText(text) {
+  const raw = String(text || '');
+  const candidates = raw.match(/(?:\+?\d[\d\s().-]{6,}\d)/g) || [];
+  for (const candidate of candidates) {
+    const phone = normalizePhone(candidate);
+    if (isValidE164(phone)) return phone;
+  }
+  const fallback = normalizePhone(raw);
+  return isValidE164(fallback) ? fallback : '';
+}
+
+function extractRecipientName(text) {
+  const withoutPhone = String(text || '').replace(/(?:\+?\d[\d\s().-]{6,}\d)/g, ' ');
+  const withoutLabels = withoutPhone
+    .replace(/\b(?:mi\s+nombre(?:\s+completo)?|nombre(?:\s+completo)?|soy|me\s+llamo)\s*(?:es)?\b/gi, ' ')
+    .replace(/\b(?:mi|el)?\s*(?:n[uú]mero|tel[eé]fono|celular|whatsapp)(?:\s+es)?\b/gi, ' ')
+    .replace(/\b(?:y|es|el|la)\b/gi, ' ')
+    .replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (withoutLabels.length < 3 || withoutLabels.length > 100) return '';
+  return withoutLabels;
+}
+
 async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyText = null }) {
   const fs = state.getFlowState(waId) || {};
   const bookingForOther = fs.bookingForOther;
 
   if (!bookingForOther) {
-    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { step: 'phone' }, clientName: fs.clientName, tone, unclearCount: 0 });
+    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { step: 'name' }, clientName: fs.clientName, tone, unclearCount: 0 });
     const msg = tone === 'tu'
-      ? '👤 Claro. ¿Cuál es el número de WhatsApp de la persona para quien quieres reservar?'
-      : '👤 Claro. ¿Cuál es el número de WhatsApp de la persona para quien desea reservar?';
+      ? '👤 Claro. ¿Cómo se llama la persona para quien quieres reservar? Si prefieres, envíame su nombre y número juntos, por ejemplo: *Jacob Pérez, 0993629257*.'
+      : '👤 Claro. ¿Cómo se llama la persona para quien desea reservar? Si prefiere, envíeme su nombre y número juntos, por ejemplo: *Jacob Pérez, 0993629257*.';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return;
@@ -685,7 +709,7 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
   if (!answer) return;
 
   if (bookingForOther.step === 'phone') {
-    const phone = normalizePhone(answer);
+    const phone = extractPhoneFromRecipientText(answer);
     if (!isValidE164(phone)) {
       const msg = tone === 'tu'
         ? '💛 Escríbeme un número válido, por ejemplo: *0993629257*.'
@@ -732,7 +756,16 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
       return handleBook({ tenant, connection, conv, waId, tone });
     }
 
-    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { step: 'name', phone }, clientName: fs.clientName, tone, unclearCount: 0 });
+    const fullName = bookingForOther.fullName || extractRecipientName(answer);
+    if (fullName) {
+      state.setFlowState(waId, { ...fs, flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'address', phone, fullName }, clientName: fs.clientName, tone, unclearCount: 0 });
+      const msg = '📍 Perfecto. ¿Me comparte su dirección?';
+      const r = await transport.sendText(connection, waId, msg);
+      await recordBotMessage(tenant.id, conv, r, { body: msg });
+      return;
+    }
+
+    state.setFlowState(waId, { ...fs, flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'name', phone }, clientName: fs.clientName, tone, unclearCount: 0 });
     const msg = '💛 Perfecto. ¿Cuál es su nombre completo?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
@@ -740,14 +773,22 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
   }
 
   if (bookingForOther.step === 'name') {
-    if (answer.length < 3 || answer.length > 100) {
+    const fullName = extractRecipientName(answer);
+    if (!fullName) {
       const msg = '💛 Por favor, escriba su nombre completo.';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return;
     }
-    state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'address', fullName: answer }, clientName: fs.clientName, tone, unclearCount: 0 });
-    const msg = '📍 Ahora, ¿me comparte su dirección?';
+    const phone = extractPhoneFromRecipientText(answer);
+    state.setFlowState(waId, { ...fs, flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'phone', fullName }, clientName: fs.clientName, tone, unclearCount: 0 });
+    if (isValidE164(phone)) {
+      // El cliente puede escribir: "Soy Jacob y mi número es 099...".
+      // Reutilizamos la misma validación y búsqueda de ficha que en el paso
+      // de teléfono, sin pedirle que repita ningún dato.
+      return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText: phone });
+    }
+    const msg = '📱 Gracias. ¿Cuál es su número de WhatsApp?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return;
@@ -881,6 +922,13 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
       : null;
   const priorState = state.getFlowState(waId) || {};
   const tone = detectTone(bodyText) || priorState.tone || 'usted';
+
+  // Aunque una conversación antigua todavía no esté enlazada a la ficha del
+  // contacto, no puede interrumpir el alta de la persona para quien se está
+  // reservando. Este flujo se reanuda antes del onboarding del remitente.
+  if (priorState.bookingForOther && bodyText) {
+    return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText });
+  }
 
   // Una conversación antigua puede no estar enlazada aunque la clienta ya
   // exista. Solo iniciamos el alta cuando el número no existe realmente.
@@ -1486,14 +1534,14 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     state.setFlowState(waId, {
       flow: 'booking_for_other',
       booking: { ...fs.booking, recipientChoice: 'other' },
-      bookingForOther: { step: 'phone', continuation: 'same_day_booking' },
+      bookingForOther: { step: 'name', continuation: 'same_day_booking' },
       clientName: fs.clientName,
       tone,
       unclearCount: 0,
     });
     const msg = tone === 'tu'
-      ? '👤 Perfecto. ¿Cuál es el número de WhatsApp de la persona para quien quieres reservar?'
-      : '👤 Perfecto. ¿Cuál es el número de WhatsApp de la persona para quien desea reservar?';
+      ? '👤 Perfecto. ¿Cómo se llama la persona para quien quieres reservar? Puedes enviarme también su número en el mismo mensaje.'
+      : '👤 Perfecto. ¿Cómo se llama la persona para quien desea reservar? Puede enviarme también su número en el mismo mensaje.';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return;

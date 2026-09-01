@@ -218,22 +218,13 @@ export default function CRMPage() {
       // Abrir la conversación la devuelve a su estado natural: leída y abierta.
       if (conv.unreadCount > 0 && chatIsVisible && mobileChatIsOpen) {
         authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" })
-          .then(() => {
-            setSelected((cur) => cur?.id === selectedId ? { ...cur, unreadCount: 0, lastReadAt: new Date().toISOString() } : cur);
+          .then((updated) => {
+            setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated, unreadCount: 0 } : cur);
             setConversations((prev) => prev.map((item) => (
-              item.id === selectedId ? { ...item, unreadCount: 0 } : item
+              item.id === selectedId ? { ...item, ...updated, unreadCount: 0 } : item
             )));
           })
           .catch(() => null);
-      }
-      if (conv.status === "pending" && chatIsVisible && mobileChatIsOpen) {
-        authFetch(`/crm/conversations/${selectedId}/status`, {
-          method: "POST",
-          body: { status: "open" },
-        }).then((updated) => {
-          setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated } : cur);
-          setConversations((prev) => prev.map((item) => item.id === selectedId ? { ...item, ...updated } : item));
-        }).catch(() => null);
       }
     } catch (err) {
       if (!silent) toast.error(err.message);
@@ -905,11 +896,6 @@ export default function CRMPage() {
                 <CircleDot size={10} /> Abierto
               </span>
             )}
-            {c.status === "pending" && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold">
-                <CircleDot size={10} /> Pendiente
-              </span>
-            )}
             {c.status === "resolved" && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold">
                 <CheckCircle2 size={10} /> Resuelto
@@ -1497,7 +1483,7 @@ export default function CRMPage() {
         {/* Status actions */}
         <div className="mx-3 mt-2 rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-warm-gray">Acciones</p>
-          <div className="grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => changeStatus(isResolved ? "open" : "resolved")}
               className={`flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition-colors duration-150 ${
@@ -1508,6 +1494,14 @@ export default function CRMPage() {
             >
               <CheckCircle2 size={18} />
               <span>Resolver</span>
+            </button>
+            <button
+              onClick={markUnread}
+              className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-[#e6edf7] bg-[#f7f9fe] px-2 text-[11px] font-semibold text-slate-500 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700"
+              title="Marcar la conversación como no leída"
+            >
+              <RefreshCw size={18} />
+              <span>No leído</span>
             </button>
           </div>
           <button

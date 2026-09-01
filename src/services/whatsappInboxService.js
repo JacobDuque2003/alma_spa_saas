@@ -734,6 +734,10 @@ async function setReadState(actor, conversationId, unread) {
         unreadCount: 0,
         unreadRestoreCount: 0,
         manuallyMarkedUnread: false,
+        // Abrir un chat lo devuelve a su estado natural. Conservamos los
+        // estados finales (resuelto/archivado), pero un chat pendiente pasa a
+        // "abierto" para que la bandeja pueda mostrar su único badge.
+        ...(conv.status === 'pending' ? { status: 'open' } : {}),
         lastReadAt: new Date(),
       };
   const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });

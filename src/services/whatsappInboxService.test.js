@@ -211,7 +211,7 @@ test('setStatus: resolver limpia contadores pendientes de la bandeja', async () 
 test('setReadState: marcar leído borra el número de mensajes nuevos', async () => {
   let updateData = null;
   prisma.whatsAppConversation = {
-    findUnique: async () => ({ id: 'c1', tenantId: 't1', unreadCount: 4, unreadRestoreCount: 4 }),
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', unreadCount: 4, unreadRestoreCount: 4, status: 'pending' }),
     update: async ({ data }) => {
       updateData = data;
       return { id: 'c1', ...data };
@@ -222,6 +222,7 @@ test('setReadState: marcar leído borra el número de mensajes nuevos', async ()
   assert.equal(updateData.unreadCount, 0);
   assert.equal(updateData.unreadRestoreCount, 0);
   assert.equal(updateData.manuallyMarkedUnread, false);
+  assert.equal(updateData.status, 'open', 'al abrir una conversación debe mostrar el badge Abierto');
   assert.ok(updateData.lastReadAt instanceof Date);
   assert.equal(result.unreadCount, 0);
 });
