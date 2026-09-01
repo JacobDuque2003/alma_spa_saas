@@ -65,6 +65,13 @@ app.use('/crm', express.json({
   limit: '12mb',
 }));
 
+// La importación de fichas recibe un Excel como data URL para poder validar y
+// previsualizarlo antes de persistir. Queda aislada del resto de la API.
+app.use('/clients', express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; },
+  limit: '8mb',
+}));
+
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
   limit: '256kb',

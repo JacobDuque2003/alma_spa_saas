@@ -31,6 +31,11 @@ const LABEL_TONES = {
   red:     { label: "Rojo",    bg: "bg-red-100",     fg: "text-red-700",     dot: "bg-red-500",     ring: "border-red-200" },
   sky:     { label: "Celeste", bg: "bg-sky-100",     fg: "text-sky-700",     dot: "bg-sky-500",     ring: "border-sky-200" },
   rose:    { label: "Rosa",    bg: "bg-rose-100",    fg: "text-rose-700",    dot: "bg-rose-500",    ring: "border-rose-200" },
+  indigo:  { label: "Índigo",  bg: "bg-indigo-100",  fg: "text-indigo-700",  dot: "bg-indigo-500",  ring: "border-indigo-200" },
+  cyan:    { label: "Turquesa",bg: "bg-cyan-100",    fg: "text-cyan-700",    dot: "bg-cyan-500",    ring: "border-cyan-200" },
+  lime:    { label: "Lima",    bg: "bg-lime-100",    fg: "text-lime-800",    dot: "bg-lime-500",    ring: "border-lime-200" },
+  orange:  { label: "Naranja", bg: "bg-orange-100",  fg: "text-orange-700",  dot: "bg-orange-500",  ring: "border-orange-200" },
+  fuchsia: { label: "Fucsia",  bg: "bg-fuchsia-100", fg: "text-fuchsia-700", dot: "bg-fuchsia-500", ring: "border-fuchsia-200" },
   neutral: { label: "Arena",   bg: "bg-cream",       fg: "text-bronze",      dot: "bg-warm-gray",   ring: "border-border" },
 };
 
@@ -532,10 +537,19 @@ export default function CRMPage() {
         body: { unread: true },
       });
       toast.success("Marcada como no leída");
-      setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated } : cur);
       setConversations((prev) => prev.map((item) => (
         item.id === selectedId ? { ...item, ...updated } : item
       )));
+      // Al devolver una conversación a "No leído" la soltamos de la vista
+      // activa: así la bandeja queda lista para que recepción escoja el
+      // siguiente chat pendiente, en vez de aparentar que sigue abierto.
+      setSelectedId(null);
+      setSelected(null);
+      setMessages([]);
+      setNotes([]);
+      setMobileView("list");
+      setFilter("pending");
+      fetchConversations(true);
     } catch (err) {
       toast.error(err.message);
     }
@@ -925,8 +939,8 @@ export default function CRMPage() {
               const cfg = labelConfig[l];
               if (!cfg) return null;
               return (
-                <span key={l} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${cfg.bg} ${cfg.fg}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                <span key={l} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${cfg.bg} ${cfg.fg}`}>
+                  <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
                   {cfg.text}
                 </span>
               );
@@ -1438,7 +1452,7 @@ export default function CRMPage() {
     return (
       <div className={`
         flex flex-col h-full bg-[#f8fbff]
-        ${isMobile ? "w-full" : "w-[300px] flex-shrink-0 border-l border-border"}
+        ${isMobile ? "w-full" : "w-[370px] flex-shrink-0 border-l border-border"}
       `}>
         {isMobile && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
@@ -1471,6 +1485,9 @@ export default function CRMPage() {
                 <span className="flex items-center gap-1">
                   <Calendar size={11} /> Cliente desde {dateStr(linkedClient.createdAt || selected.createdAt)}
                 </span>
+                {linkedClient.email && <span className="truncate">✉️ {linkedClient.email}</span>}
+                {linkedClient.address && <span className="leading-relaxed">📍 {linkedClient.address}</span>}
+                {linkedClient.birthday && <span>🎂 Cumpleaños: {dateStr(linkedClient.birthday)}</span>}
               </>
             ) : (
               <span className="rounded-xl bg-cream/70 px-3 py-2 text-bronze">
@@ -1573,7 +1590,7 @@ export default function CRMPage() {
                               key={key}
                               onClick={() => toggleLabel(key)}
                               className={`
-                                inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium
+                                inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold
                                 transition-all duration-150
                                 ${active
                                   ? `${cfg.bg} ${cfg.fg} border-current`
@@ -1581,7 +1598,7 @@ export default function CRMPage() {
                                 }
                               `}
                             >
-                              <span className={`w-2 h-2 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
+                              <span className={`w-2.5 h-2.5 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
                               {label.text}
                             </button>
                           );

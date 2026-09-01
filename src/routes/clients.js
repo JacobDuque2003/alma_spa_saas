@@ -8,6 +8,7 @@ const clientIntakeService = require('../services/clientIntakeService');
 const treatmentHistoryService = require('../services/treatmentHistoryService');
 const clientPlanService = require('../services/clientPlanService');
 const ledgerService = require('../services/ledgerService');
+const clientImportService = require('../services/clientImportService');
 
 const router = express.Router();
 
@@ -26,7 +27,13 @@ const ownerOnly = [authenticate, requireRole('superadmin', 'dueno')];
 
 function csvCell(value) {
   if (value === null || value === undefined) return '';
-  return `"${String(value).replaceAll('"', '""')}"`;
+  const text = String(value);
+  // Evita que un valor importado (por ejemplo una dirección que empieza con
+  // '=') se ejecute como fórmula al abrir la exportación en Excel.
+  const formulaLike = /^[=@]/.test(text)
+    || (/^[+-]/.test(text) && !/^\+\d{7,15}$/.test(text));
+  const safe = formulaLike ? `'${text}` : text;
+  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 function clientsToCsv(clients) {
@@ -36,6 +43,7 @@ function clientsToCsv(clients) {
     ['whatsapp', 'WhatsApp'],
     ['email', 'Email'],
     ['address', 'Dirección'],
+    ['cedula', 'Cédula'],
     ['birthday', 'Cumpleaños'],
     ['age', 'Edad'],
     ['active', 'Estado'],
@@ -102,6 +110,32 @@ router.get('/clients/export', clientExport, async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="clientes-alma-spa.csv"');
     res.send(clientsToCsv(clients));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Se declara antes de /clients/:clientId para que "therapists" no sea tomado
+// como un identificador de ficha.
+router.get('/clients/therapists', clientHistoryEdit, async (req, res, next) => {
+  try {
+    res.json(await treatmentHistoryService.listAvailableTherapists(req.user));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/clients/import/preview', clientEdit, async (req, res, next) => {
+  try {
+    res.json(await clientImportService.previewImport(req.user, req.body?.fileData));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/clients/import', clientEdit, async (req, res, next) => {
+  try {
+    res.json(await clientImportService.importClients(req.user, req.body?.fileData));
   } catch (err) {
     next(err);
   }

@@ -34,6 +34,7 @@ export function ClientForm({
   const [email, setEmail] = useState(initial.email || "");
   const [recordNumber, setRecordNumber] = useState(initial.recordNumber || "");
   const [address, setAddress] = useState(initial.address || "");
+  const [cedula, setCedula] = useState(initial.cedula || "");
   const [birthday, setBirthday] = useState(initial.birthday ? String(initial.birthday).slice(0, 10) : "");
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
@@ -54,6 +55,7 @@ export function ClientForm({
         email: email.trim() || null,
         recordNumber: recordNumber.trim() || null,
         address: address.trim() || null,
+        cedula: cedula.trim() || null,
         birthday: birthday || null,
       });
     } catch (err) {
@@ -85,6 +87,10 @@ export function ClientForm({
           <label style={labelStyle}>Dirección</label>
           <input style={inputStyle} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Barrio, calle o referencia" />
         </div>
+      </div>
+      <div>
+        <label style={labelStyle}>Cédula (opcional)</label>
+        <input style={inputStyle} value={cedula} onChange={(e) => setCedula(e.target.value)} placeholder="Ej: 1101234567" inputMode="numeric" maxLength={32} />
       </div>
       <div>
         <label style={labelStyle}>Cumpleaños (opcional)</label>

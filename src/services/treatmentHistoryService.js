@@ -38,9 +38,26 @@ async function listTreatments(actor, clientId) {
   const records = await prisma.treatmentHistory.findMany({
     where: { tenantId: client.tenantId, clientId },
     orderBy: { sessionDate: 'desc' },
-    include: { service: { select: { id: true, name: true } } },
+    include: {
+      service: { select: { id: true, name: true } },
+      therapist: { select: { id: true, name: true } },
+    },
   });
   return records.map(toDTO);
+}
+
+async function listAvailableTherapists(actor) {
+  if (!actor?.tenantId) return [];
+  return prisma.user.findMany({
+    where: {
+      tenantId: actor.tenantId,
+      role: { in: STAFF_ROLES },
+      active: true,
+      canAttendAppointments: true,
+    },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
 }
 
 async function createTreatment(actor, clientId, data) {
@@ -127,4 +144,4 @@ async function deleteTreatment(actor, id) {
   return { id };
 }
 
-module.exports = { listTreatments, createTreatment, updateTreatment, deleteTreatment };
+module.exports = { listTreatments, listAvailableTherapists, createTreatment, updateTreatment, deleteTreatment };

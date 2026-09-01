@@ -42,14 +42,12 @@ function dayKeyFromDateStr(dateStr) {
 }
 
 function roomBusinessHours(room, tenantConfig, dateStr) {
-  // Una cabina con schedule propio (ej. Cabina 7 - TERAPIAS, solo miércoles)
-  // opera EXCLUSIVAMENTE los días listados ahí. Un día ausente de ese
-  // schedule significa cerrada ese día, no "usa el horario general del
-  // tenant" — normalizeBusinessHours(undefined) devolvería el default
-  // hardcodeado, que no es lo que queremos aquí.
+  // El schedule propio es una excepción de horario. Cabina 7 conserva su
+  // jornada especial de los miércoles, pero los demás días queda disponible
+  // dentro del horario normal del spa en vez de permanecer inutilizada.
   if (room?.schedule && typeof room.schedule === 'object') {
     const special = room.schedule[dayKeyFromDateStr(dateStr)];
-    return special ? normalizeBusinessHours(special) : { morning: null, afternoon: null };
+    return special ? normalizeBusinessHours(special) : normalizeBusinessHours(tenantConfig?.businessHours);
   }
   return normalizeBusinessHours(tenantConfig?.businessHours);
 }
@@ -63,7 +61,9 @@ function generateSlotsForService(dateStr, businessHours, timezone, service) {
     const start = minutesFromHHMM(win.start);
     const latest = minutesFromHHMM(win.end) - blockMins;
     for (let m = start; m <= latest; m += SLOT_STEP_MINS) {
-      slots.push(localTimeToUTC(dateStr, hhmmFromMinutes(m), timezone));
+      const slot = localTimeToUTC(dateStr, hhmmFromMinutes(m), timezone);
+      // Nunca ofrecemos un horario que ya pasó, incluso si se consulta hoy.
+      if (slot.getTime() > Date.now()) slots.push(slot);
     }
   }
   return slots;
@@ -274,6 +274,9 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
 async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientId, serviceId, startsAt, modality, status }) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
+  }
+  if (!(startsAt instanceof Date) || Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= Date.now()) {
+    throw new BadRequestError('No se puede reservar una fecha u horario que ya pasó');
   }
   const mod = 'spa';
 
@@ -513,6 +516,9 @@ async function createManualAppointment(actor, data) {
   }
 
   const startsAt = new Date(data.startsAt);
+  if (Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= Date.now()) {
+    throw new BadRequestError('No se puede reservar una fecha u horario que ya pasó');
+  }
   const endsAt = addMinutes(startsAt, totalBlockMins(service));
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
   const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
@@ -608,6 +614,9 @@ async function updateAppointment(actor, id, changes) {
   if (data.startsAt || data.roomId !== undefined || data.staffId !== undefined) {
     const service = await prisma.service.findUnique({ where: { id: target.serviceId } });
     const startsAt = data.startsAt || target.startsAt;
+    if (data.startsAt && (Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= Date.now())) {
+      throw new BadRequestError('No se puede reprogramar a una fecha u horario que ya pasó');
+    }
     const endsAt = addMinutes(startsAt, totalBlockMins(service));
     data.endsAt = endsAt;
     const tenant = await prisma.tenant.findUnique({ where: { id: target.tenantId }, select: { config: true } });

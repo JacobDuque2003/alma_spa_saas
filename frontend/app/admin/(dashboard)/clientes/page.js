@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Search, X, ArrowLeft, Pencil, Trash2, Download, ArrowUpDown, Copy } from "lucide-react";
+import { Loader2, Search, X, ArrowLeft, Pencil, Trash2, Download, Upload, ArrowUpDown, Copy } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { ClientForm } from "@/components/client-form";
 import { NewClientModal } from "@/components/new-client-modal";
+import { ClientImportModal } from "@/components/client-import-modal";
 import { useToast } from "@/components/toast-provider";
 import { formatEcuadorPhone } from "@/lib/phone-format";
 
@@ -406,10 +407,12 @@ export default function ClientesPage() {
   const [showDeleteClient, setShowDeleteClient] = useState(false);
   const [showEditIntake, setShowEditIntake] = useState(false);
   const [showNewClient, setShowNewClient] = useState(false);
+  const [showImportClients, setShowImportClients] = useState(false);
   const editClientAnim = useAnimatedMount(showEditClient, 220);
   const deleteClientAnim = useAnimatedMount(showDeleteClient, 220);
   const editIntakeAnim = useAnimatedMount(showEditIntake, 220);
   const newClientAnim = useAnimatedMount(showNewClient, 220);
+  const importClientsAnim = useAnimatedMount(showImportClients, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
 
   function openClientDetail(clientId) {
@@ -549,6 +552,13 @@ export default function ClientesPage() {
           }}
         />
       )}
+      {importClientsAnim.shouldRender && (
+        <ClientImportModal
+          phase={importClientsAnim.phase}
+          onClose={() => setShowImportClients(false)}
+          onImported={() => fetchClients()}
+        />
+      )}
       {/* Sidebar list */}
       {(!selectedId || (isMobile && !mobileShowDetail)) && (
       <div
@@ -598,6 +608,9 @@ export default function ClientesPage() {
                   {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                   Exportar
                 </button>
+              )}
+              {canEditClients && (
+                <button type="button" onClick={() => setShowImportClients(true)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 16px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.38)", background: "#FDFCFA", color: "#8C6E50", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flex: isMobile ? 1 : "initial" }}><Upload size={14} />Importar Excel</button>
               )}
               {canEditClients && (
                 <button
@@ -957,6 +970,7 @@ function ClientPersonalSummaryCard({ client, appointments, canEdit, onEdit, onCo
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
           <PersonalInfoItem label="Ficha" value={client?.recordNumber || "Sin número"} />
           <PersonalInfoItem label="Teléfono" value={formatEcuadorPhone(client?.whatsapp) || "Sin teléfono"} />
+          <PersonalInfoItem label="Cédula" value={client?.cedula || "Sin cédula"} />
           <PersonalInfoItem
             label="Correo"
             value={email}
@@ -1226,7 +1240,7 @@ function EditClientModal({ client, phase, onClose, onSaved }) {
   return (
     <ClientModalShell title="Editar clienta" phase={phase} onClose={onClose}>
       <ClientForm
-        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, recordNumber: client.recordNumber, address: client.address, birthday: client.birthday }}
+        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, recordNumber: client.recordNumber, address: client.address, cedula: client.cedula, birthday: client.birthday }}
         onCancel={onClose}
         submitLabel="Guardar"
         onSubmit={async (payload) => {
@@ -1406,7 +1420,9 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
   const [services, setServices] = useState([]);
+  const [therapists, setTherapists] = useState([]);
   const [serviceId, setServiceId] = useState("");
+  const [therapistId, setTherapistId] = useState("");
   const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1416,12 +1432,19 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
 
   useEffect(() => {
     if (!showForm || !canEdit) return;
-    authFetch("/services").then((s) => setServices(Array.isArray(s) ? s.filter((x) => x.active) : [])).catch(() => {});
+    Promise.all([
+      authFetch("/services").catch(() => []),
+      authFetch("/clients/therapists").catch(() => []),
+    ]).then(([serviceRows, therapistRows]) => {
+      setServices(Array.isArray(serviceRows) ? serviceRows.filter((x) => x.active) : []);
+      setTherapists(Array.isArray(therapistRows) ? therapistRows : []);
+    });
   }, [showForm, canEdit]);
 
   function resetForm() {
     setEditingTreatment(null);
     setServiceId("");
+    setTherapistId("");
     setSessionDate(new Date().toISOString().split("T")[0]);
     setNotes("");
     setError("");
@@ -1435,6 +1458,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
   function openEdit(treatment) {
     setEditingTreatment(treatment);
     setServiceId(treatment.serviceId || treatment.service?.id || "");
+    setTherapistId(treatment.therapistId || treatment.therapist?.id || "");
     setSessionDate(treatment.sessionDate ? new Date(treatment.sessionDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
     setNotes(treatment.notes || "");
     setError("");
@@ -1448,10 +1472,10 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
     setError("");
     try {
       if (editingTreatment) {
-        await authFetch(`/treatments/${editingTreatment.id}`, { method: "PATCH", body: { sessionDate, notes: notes || null } });
+        await authFetch(`/treatments/${editingTreatment.id}`, { method: "PATCH", body: { sessionDate, notes: notes || null, therapistId: therapistId || undefined } });
         toast.success("Tratamiento actualizado");
       } else {
-        await authFetch(`/clients/${clientId}/treatments`, { method: "POST", body: { serviceId, sessionDate, notes: notes || undefined } });
+        await authFetch(`/clients/${clientId}/treatments`, { method: "POST", body: { serviceId, sessionDate, notes: notes || undefined, therapistId: therapistId || undefined } });
         toast.success("Tratamiento agregado");
       }
       setShowForm(false);
@@ -1468,7 +1492,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
   const statusInfo = {
     pendiente: { label: "Reservó, falta confirmar", color: "#A89A87", bg: "rgba(168,154,135,0.14)" },
     pendiente_bot: { label: "Confirmada por clienta vía WhatsApp", color: "#8C6E50", bg: "rgba(201,168,118,0.15)" },
-    confirmado: { label: "Asistió / confirmada", color: "#6F7F45", bg: "rgba(111,127,69,0.12)" },
+    confirmado: { label: "Confirmada", color: "#6F7F45", bg: "rgba(111,127,69,0.12)" },
     cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
     no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },
   };
@@ -1498,6 +1522,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
       {canEdit && showForm && (
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, padding: 14, background: "rgba(201,168,118,0.08)", borderRadius: 10 }}>
           <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Servicio</label><select value={serviceId} onChange={(e) => setServiceId(e.target.value)} disabled={Boolean(editingTreatment)} style={{ ...inputSt, appearance: "none", cursor: editingTreatment ? "not-allowed" : "pointer", opacity: editingTreatment ? 0.72 : 1 }}><option value="">Seleccionar...</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+          <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Terapeuta que atendió</label><select value={therapistId} onChange={(e) => setTherapistId(e.target.value)} style={{ ...inputSt, appearance: "none", cursor: "pointer" }}><option value="">Usar mi usuario si soy terapeuta</option>{therapists.map((therapist) => <option key={therapist.id} value={therapist.id}>{therapist.name}</option>)}</select></div>
           <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Fecha</label><input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} style={inputSt} /></div>
           <div><label style={{ display: "block", fontSize: 11, color: "#A89A87", marginBottom: 4 }}>Notas (opcional)</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputSt, resize: "vertical" }} placeholder="Observaciones del tratamiento..." /></div>
           {error && <p style={{ fontSize: 12, color: "#C25450", margin: 0 }}>{error}</p>}
@@ -1537,6 +1562,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
                     <div style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.service?.name || "Tratamiento"}</span>
                       <span style={{ fontSize: 12, color: "#A89A87" }}>{shortDate(t.sessionDate)} · Tratamiento registrado</span>
+                      {t.therapist?.name && <span style={{ display: "block", fontSize: 12, color: "#8C6E50", marginTop: 2 }}>Atendió: {t.therapist.name}</span>}
                     </div>
                     {canEdit && <div style={{ display: "flex", gap: 6 }}>
                       <button className="alma-pencil-button" type="button" onClick={() => openEdit(t)} aria-label="Editar tratamiento" style={{ width: 30, height: 30, borderRadius: 999, border: "1px solid rgba(168,154,135,0.35)", background: "#FDFCFA", color: "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Pencil className="alma-pencil-icon" size={14} /></button>

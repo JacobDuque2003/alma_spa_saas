@@ -103,11 +103,11 @@ test('primer mensaje texto dispara menú principal con Almita', async () => {
   assert.equal(sent[0].payload.type, 'list');
   assert.match(sent[0].payload.body.text, /Almita/);
   const rows = sent[0].payload.action.sections[0].rows.map((r) => r.id);
-  assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_book_for_other', 'menu_recommend_service', 'menu_my_appointment', 'menu_escalate']);
+  assert.deepEqual(rows, ['menu_list_services', 'menu_book', 'menu_book_for_other', 'menu_recommend_service', 'menu_promotions', 'menu_my_appointment', 'menu_escalate']);
   assert.deepEqual(messageCreates[0].interactivePayload, sent[0].payload);
 });
 
-test('número nuevo pide nombre y dirección, crea la clienta y la etiqueta', async () => {
+test('número nuevo completa nombre, dirección y cédula antes de crear la ficha', async () => {
   resetState();
   const sent = installTransportMocks();
   const { clientCreates, conversationUpdates } = installPrismaMocks();
@@ -120,15 +120,19 @@ test('número nuevo pide nombre y dirección, crea la clienta y la etiqueta', as
   assert.match(sent.at(-1).body, /dirección/i);
 
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Av. Amazonas y Naciones Unidas' } } });
+  assert.match(sent.at(-1).body, /cédula/i);
+
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: '1101234567' } } });
   assert.deepEqual(clientCreates[0], {
     tenantId: TENANT.id,
     fullName: 'María Pérez',
     whatsapp: '+593999111222',
     address: 'Av. Amazonas y Naciones Unidas',
+    cedula: '1101234567',
   });
   assert.ok(conversationUpdates.some((data) => data.labels?.includes('nueva_clienta')));
   assert.equal(sent.at(-1).kind, 'interactive');
-  assert.equal(sent.at(-1).payload.action.sections[0].rows.length, 6);
+  assert.equal(sent.at(-1).payload.action.sections[0].rows.length, 7);
 });
 
 test('ver servicios muestra servicios directos paginados y permite volver', async () => {
@@ -363,7 +367,7 @@ test('menú principal cae a texto si Meta rechaza el interactivo', async () => {
   assert.equal(sent[0].kind, 'interactive');
   assert.equal(sent[1].kind, 'text');
   assert.match(sent[1].body, /1\. Ver servicios/);
-  assert.match(sent[1].body, /6\. Hablar con recepción/);
+  assert.match(sent[1].body, /7\. Hablar con recepción/);
 });
 
 test('opciones numéricas funcionan sin IA', async () => {

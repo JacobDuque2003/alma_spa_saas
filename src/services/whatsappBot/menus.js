@@ -3,6 +3,7 @@ const MAIN_MENU_IDS = {
   BOOK: 'menu_book',
   BOOK_FOR_OTHER: 'menu_book_for_other',
   RECOMMEND: 'menu_recommend_service',
+  PROMOTIONS: 'menu_promotions',
   MY_APPOINTMENT: 'menu_my_appointment',
   ESCALATE: 'menu_escalate',
 };
@@ -86,6 +87,7 @@ function mainMenu({ tone, clientName, compact = false } = {}) {
             { id: MAIN_MENU_IDS.BOOK, title: 'Reservar cita', description: '📅 Agenda tu hora por la web' },
             { id: MAIN_MENU_IDS.BOOK_FOR_OTHER, title: 'Reservar para alguien', description: '👤 Agenda para otra persona' },
             { id: MAIN_MENU_IDS.RECOMMEND, title: 'No sé qué elegir', description: '✨ Cuéntame qué estás buscando' },
+            { id: MAIN_MENU_IDS.PROMOTIONS, title: 'Promociones y catálogo', description: '🌸 Novedades de Alma Spa' },
             { id: MAIN_MENU_IDS.MY_APPOINTMENT, title: 'Mi cita', description: '📋 Consulta tu próxima cita' },
             { id: MAIN_MENU_IDS.ESCALATE, title: 'Hablar con recepción', description: '👋 Te conectamos con el equipo' },
           ],
@@ -107,8 +109,9 @@ ${instruction}
 2. Reservar cita
 3. Reservar para otra persona
 4. No sé qué elegir
-5. Consultar mi cita
-6. Hablar con recepción`;
+5. Promociones y catálogo
+6. Consultar mi cita
+7. Hablar con recepción`;
 }
 
 function serviceEmoji(service) {

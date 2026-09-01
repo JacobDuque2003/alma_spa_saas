@@ -35,6 +35,7 @@ const CLIENT_SAFE_SELECT = {
   whatsapp: true,
   email: true,
   address: true,
+  cedula: true,
   birthday: true,
   active: true,
   createdAt: true,
@@ -52,6 +53,7 @@ function toClientSafeDto(client) {
     whatsapp: client.whatsapp,
     email: client.email,
     address: client.address,
+    cedula: client.cedula,
     birthday: client.birthday ? toISODate(client.birthday) : null,
     age: client.birthday ? computeAge(new Date(client.birthday), new Date()) : null,
     active: client.active,
@@ -110,6 +112,7 @@ async function listClients(actor, query = {}) {
         { recordNumber: { contains: q, mode: 'insensitive' } },
         { whatsapp: { contains: q } },
         { email: { contains: q, mode: 'insensitive' } },
+        { cedula: { contains: q } },
       ];
       // Búsqueda de teléfono tolerante al formato local: si el input es
       // numérico (con o sin +), buscamos también por los últimos dígitos.
@@ -164,6 +167,7 @@ async function searchClients(actor, query = {}) {
     { recordNumber: { contains: q, mode: 'insensitive' } },
     { whatsapp: { contains: q } },
     { email: { contains: q, mode: 'insensitive' } },
+    { cedula: { contains: q } },
   ];
 
   // Búsqueda tolerante a números locales de Ecuador: "0993629256" encuentra
@@ -226,12 +230,12 @@ async function lookupClient(tenantId, whatsapp) {
  * se crea o actualiza como parte de la misma operación atómica que crea
  * su ClientIntake y sus Appointment.
  */
-async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address }) {
+async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address, cedula }) {
   const normalized = normalizePhone(whatsapp);
   return tx.client.upsert({
     where: { tenantId_whatsapp: { tenantId, whatsapp: normalized } },
-    update: { fullName, email, ...(address !== undefined ? { address } : {}) },
-    create: { tenantId, fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}) },
+    update: { fullName, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
+    create: { tenantId, fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
   });
 }
 
@@ -259,6 +263,7 @@ async function createClient(actor, data) {
         whatsapp,
         email: data.email ? String(data.email).trim().toLowerCase() : null,
         address: data.address ? String(data.address).trim() : null,
+        cedula: data.cedula ? String(data.cedula).trim() : null,
         birthday,
       },
       select: CLIENT_SAFE_SELECT,
@@ -306,6 +311,9 @@ async function updateClient(actor, clientId, changes) {
   }
   if (changes.address !== undefined) {
     data.address = changes.address ? String(changes.address).trim() : null;
+  }
+  if (changes.cedula !== undefined) {
+    data.cedula = changes.cedula ? String(changes.cedula).trim() : null;
   }
   if (changes.whatsapp !== undefined) {
     const normalized = normalizePhone(changes.whatsapp);

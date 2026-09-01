@@ -26,7 +26,7 @@ function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, clie
 const basePayload = (overrides = {}) => ({
   fullName: 'Cliente Nuevo',
   whatsapp: '+593999000001',
-  selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'spa' }],
+  selections: [{ serviceId: 'srv1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'spa' }],
   ...overrides,
 });
 
@@ -108,7 +108,7 @@ test('createPublicBooking rechaza modality domicilio aunque el servicio la tenga
     () =>
       appointmentService.createPublicBooking(
         't1',
-        basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X' }] })
+        basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X' }] })
       ),
     (err) => err.status === 400 && /domicilio/.test(err.message)
   );
@@ -130,7 +130,7 @@ test('createPublicBooking rechaza modality domicilio aunque el servicio sí la o
   await assert.rejects(
     () => appointmentService.createPublicBooking(
       't1',
-      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X 123' }] })
+      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'domicilio', homeAddress: 'Av. X 123' }] })
     ),
     (err) => err.status === 400 && /domicilio/.test(err.message)
   );
@@ -159,7 +159,7 @@ test('createPublicBooking rechaza citas fuera del horario dividido', async () =>
   await assert.rejects(
     () => appointmentService.createPublicBooking(
       't1',
-      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2026-08-01T17:00:00.000Z', modality: 'spa' }] })
+      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2099-08-01T17:00:00.000Z', modality: 'spa' }] })
     ),
     (err) => err.status === 400 && /fuera del horario/.test(err.message)
   );
@@ -221,7 +221,7 @@ test('createManualAppointment rechaza gabinete incompatible con la categoria del
   await assert.rejects(
     () => appointmentService.createManualAppointment(
       { role: 'dueno', tenantId: 't1' },
-      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', roomId: 'room-corporal', startsAt: '2026-08-01T14:00:00.000Z', modality: 'presencial' }
+      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', roomId: 'room-corporal', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
     ),
     (err) => err.status === 400 && /cabina seleccionada/.test(err.message)
   );
@@ -236,8 +236,8 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
       findMany: async () => [{
         roomId: 'room1',
         staffId: 'staff2',
-        startsAt: new Date('2026-08-01T14:00:00.000Z'),
-        endsAt: new Date('2026-08-01T15:15:00.000Z'),
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
       }],
       create: async (args) => ({ id: 'appt1', ...args.data }),
     },
@@ -245,7 +245,7 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
 
   const result = await appointmentService.createManualAppointment(
     { role: 'dueno', tenantId: 't1' },
-    { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2026-08-01T14:00:00.000Z', modality: 'presencial' }
+    { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
   );
 
   assert.equal(result.roomId, 'room2');
@@ -278,8 +278,8 @@ test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita act
       findUnique: async () => ({ id: 'appt1', tenantId: 't1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1' }),
       findMany: async () => [{
         id: 'other', roomId: 'room1', staffId: 'staff1',
-        startsAt: new Date('2026-08-01T14:00:00.000Z'),
-        endsAt: new Date('2026-08-01T15:15:00.000Z'),
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
       }],
     },
   });
@@ -288,11 +288,11 @@ test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita act
     tenantId: 't1',
     tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
     appointmentId: 'appt1',
-    date: '2026-08-01',
+    date: '2099-08-01',
   });
 
-  assert.equal(slots.includes('2026-08-01T14:00:00.000Z'), false, 'no ofrece un bloque que cruza una cita existente');
-  assert.equal(slots.includes('2026-08-01T15:15:00.000Z'), true, 'ofrece el siguiente bloque completo disponible');
+  assert.equal(slots.includes('2099-08-01T14:00:00.000Z'), false, 'no ofrece un bloque que cruza una cita existente');
+  assert.equal(slots.includes('2099-08-01T15:15:00.000Z'), true, 'ofrece el siguiente bloque completo disponible');
 });
 
 test('listAppointments permite filtrar historial por clienta sin salir del tenant', async () => {
@@ -327,7 +327,7 @@ test('updateAppointment rechaza reprogramar fuera del horario dividido', async (
         serviceId: 'srv1',
         roomId: 'room1',
         staffId: 'staff1',
-        startsAt: new Date('2026-08-01T14:00:00.000Z'),
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
       }),
       findMany: async () => [],
       update: async () => {
@@ -340,7 +340,7 @@ test('updateAppointment rechaza reprogramar fuera del horario dividido', async (
     () => appointmentService.updateAppointment(
       { role: 'dueno', tenantId: 't1' },
       'appt1',
-      { startsAt: '2026-08-01T17:00:00.000Z' }
+      { startsAt: '2099-08-01T17:00:00.000Z' }
     ),
     (err) => err.status === 400 && /fuera del horario/.test(err.message)
   );

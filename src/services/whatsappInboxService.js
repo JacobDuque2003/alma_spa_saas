@@ -7,11 +7,12 @@ const crmEvents = require('./crmEventBus');
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TZ_OFFSET_MINUTES = -5 * 60; // America/Guayaquil (UTC-5, sin DST). Fallback si Tenant.config no lo trae.
-const LABEL_TONES = ['blue', 'amber', 'emerald', 'purple', 'red', 'sky', 'rose', 'neutral'];
+const LABEL_TONES = ['blue', 'amber', 'emerald', 'purple', 'red', 'sky', 'rose', 'indigo', 'cyan', 'lime', 'orange', 'fuchsia', 'neutral'];
 const DEFAULT_LABELS = [
   { key: 'consulta', text: 'Consulta', tone: 'blue' },
   { key: 'reserva_pendiente', text: 'Reserva pendiente', tone: 'amber' },
   { key: 'cita_confirmada', text: 'Cita confirmada', tone: 'emerald' },
+  { key: 'cita_reprogramada', text: 'Cita reprogramada', tone: 'purple' },
   { key: 'seguimiento', text: 'Seguimiento', tone: 'purple' },
   { key: 'queja', text: 'Queja', tone: 'red' },
   { key: 'nueva_clienta', text: 'Nuevo cliente', tone: 'sky' },
@@ -45,6 +46,32 @@ const ALLOWED_MEDIA_TYPES = [
   'text/plain',
   'text/csv',
 ];
+
+// La auditoría no debe impedir que recepción pueda atender una conversación.
+// Si el registro falla se deja evidencia en servidor, pero la acción CRM ya
+// realizada permanece disponible para el equipo.
+async function writeConversationAudit(actor, conversation, detail) {
+  if (!prisma.adminAuditLog?.create || !actor?.id || !actor?.email) return;
+  try {
+    await prisma.adminAuditLog.create({
+      data: {
+        tenantId: conversation.tenantId,
+        actorId: actor.id,
+        actorEmail: actor.email,
+        entity: 'whatsapp',
+        entityId: conversation.id,
+        action: 'update',
+        detail,
+      },
+    });
+  } catch (err) {
+    console.error('[CRM_AUDIT] no se pudo registrar acción de bandeja', {
+      conversationId: conversation.id,
+      actorId: actor.id,
+      error: err?.message,
+    });
+  }
+}
 
 function isWithinWindow(lastInboundAt) {
   if (!lastInboundAt) return false;
@@ -244,6 +271,8 @@ async function loadConversationForActor(actor, conversationId) {
           fullName: true,
           whatsapp: true,
           email: true,
+          address: true,
+          birthday: true,
           active: true,
           createdAt: true,
         },
@@ -381,6 +410,8 @@ async function listConversations(actor, query) {
           fullName: true,
           whatsapp: true,
           email: true,
+          address: true,
+          birthday: true,
           active: true,
           createdAt: true,
         },
@@ -741,6 +772,12 @@ async function setReadState(actor, conversationId, unread) {
         lastReadAt: new Date(),
       };
   const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+  await writeConversationAudit(actor, conv, {
+    event: nextUnread ? 'marked_unread' : 'marked_read',
+    unread: nextUnread,
+    previousStatus: conv.status,
+    nextStatus: updated.status,
+  });
   publishConversationEvent(conv.tenantId, nextUnread ? 'conversation.marked_unread' : 'conversation.marked_read', {
     conversationId: conv.id,
     unreadCount: updated.unreadCount,
@@ -778,6 +815,11 @@ async function updateConversation(actor, conversationId, changes) {
     if (unreadCount === 0) data.lastReadAt = new Date();
   }
   const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
+  await writeConversationAudit(actor, conv, {
+    event: 'status_changed',
+    previousStatus: conv.status,
+    nextStatus: updated.status,
+  });
   publishConversationEvent(conv.tenantId, 'conversation.updated', { conversationId: conv.id });
   return updated;
 }

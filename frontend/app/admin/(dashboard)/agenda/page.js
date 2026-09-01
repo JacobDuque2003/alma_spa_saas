@@ -755,7 +755,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
                 </span>
               </div>
               <div style={{ fontSize: 13, color: "#8C6E50" }}>
-                {appt.service?.name}
+                {appt.staff?.name || "Terapeuta por asignar"}
               </div>
               <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#A89A87" }}>
                 <span>{time} · {dur} min</span>
@@ -996,7 +996,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       {appt.client?.fullName || "Cliente"}
                     </div>
                     <div style={{ opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {appt.service?.name}
+                      {appt.staff?.name || "Terapeuta por asignar"}
                     </div>
                   </button>
                 );
@@ -1017,13 +1017,11 @@ const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "frida
 function windowsForRoomOnDate(room, tenantConfig, dateStr) {
   const fallback = { morning: { start: "09:00", end: "12:00" }, afternoon: { start: "15:00", end: "20:00" } };
   if (room?.schedule && typeof room.schedule === "object") {
-    // Cabina con schedule propio: SOLO opera los días listados. Un día
-    // ausente = cerrada todo el día (coherente con roomBusinessHours del
-    // backend, ronda 2026-08-20).
+    // El schedule propio es una excepción: Cabina 7 conserva su horario
+    // especial del miércoles y usa el horario general en los demás días.
     const dayKey = DAY_KEYS[new Date(`${dateStr}T12:00:00`).getDay()];
     const special = room.schedule[dayKey];
-    if (!special) return { morning: null, afternoon: null };
-    return { morning: special.morning || null, afternoon: special.afternoon || null };
+    if (special) return { morning: special.morning || null, afternoon: special.afternoon || null };
   }
   const bh = tenantConfig?.businessHours;
   if (!bh) return fallback;
@@ -1206,7 +1204,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                       <span style={{ opacity: noShow ? 0.9 : 0.72, flexShrink: 0 }}>{formatTime(appt.startsAt)}</span>
                     </div>
                     <div style={{ marginTop: 3, opacity: noShow ? 0.85 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {appt.service?.name}
+                      {appt.staff?.name || "Terapeuta por asignar"}
                     </div>
                     {appt.indications && (
                       <div style={{ marginTop: 3, opacity: noShow ? 0.75 : 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
@@ -1343,7 +1341,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                 }}
               >
                 <span style={{ fontWeight: 600 }}>{appt.client?.fullName || "Cliente"}</span>
-                <span style={{ opacity: 0.85 }}>{appt.service?.name}</span>
+                <span style={{ opacity: 0.85 }}>{appt.staff?.name || "Terapeuta por asignar"}</span>
                 <span style={{ opacity: 0.7, marginLeft: "auto" }}>{formatTime(appt.startsAt)}</span>
               </button>
             );
@@ -1546,9 +1544,9 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
       const newRoom = rooms.find((r) => r.id === (updated.roomId || editRoomId));
       const newStaff = staffList.find((s) => s.id === (updated.staffId || editStaffId));
       onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: newRoom || appt.room, staff: newStaff || appt.staff });
-      toast.success("Cita reprogramada");
+      toast.success("Cita actualizada");
     } catch (err) {
-      toast.error(err.message || "Error al reprogramar");
+      toast.error(err.message || "No se pudo actualizar la cita");
     } finally {
       setSaving(false);
     }
@@ -1672,7 +1670,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                     <button disabled={saving} onClick={() => changeStatus("cancelado")} style={pillBtn("rgba(194,84,80,0.1)", "#C25450", "1px solid rgba(194,84,80,0.3)")}>Cancelar cita</button>
                     <button disabled={saving} onClick={() => changeStatus("no_show")} style={pillBtn("rgba(168,154,135,0.15)", "#A89A87", "1px solid rgba(168,154,135,0.4)")}>No asistió</button>
                   </div>
-                  <button disabled={saving} onClick={() => setEditing(true)} style={pillBtn("#8C6E50", "#F7F5F0")}>Reprogramar</button>
+                  <button disabled={saving} onClick={() => setEditing(true)} style={pillBtn("#8C6E50", "#F7F5F0")}>Editar cita / terapeuta</button>
                 </div>
               </>
             )}

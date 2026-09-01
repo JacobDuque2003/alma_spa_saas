@@ -100,6 +100,19 @@ async function humanAlreadyReplied(tenantId, conversationId) {
   return !!anyHuman;
 }
 
+async function appendConversationLabels(conv, labels) {
+  if (!conv?.id || !Array.isArray(labels) || !labels.length) return;
+  try {
+    await prisma.whatsAppConversation.update({
+      where: { id: conv.id },
+      data: { labels: [...new Set([...(conv.labels || []), ...labels])] },
+    });
+  } catch (err) {
+    // Una etiqueta no debe impedir que una reserva ya confirmada llegue al cliente.
+    logBot('warn', 'no se pudieron actualizar etiquetas de conversación', { conversationId: conv.id, error: err.message });
+  }
+}
+
 async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', body = null }) {
   if (!sendResult?.ok) {
     logBot('warn', 'Meta rechazó respuesta', {
@@ -215,7 +228,11 @@ function detectDeterministicIntent(text) {
   if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2) && hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1)) return 'list_services';
   if (hasAnyApproxToken(t, RESCHEDULE_WORDS, 2) && /\b(cita|reserva|turno|hora|espacio)\b/.test(t)) return 'reschedule';
   if (/\b(cambiar|mover)\b.*\b(mi|la)\b.*\b(cita|reserva|hora)\b/.test(t)) return 'reschedule';
-  if (/^(3|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
+  if (/^(3|reservar para alguien|reservar para otra persona|agendar para alguien)$/.test(t)) return 'book_for_other';
+  if (/^(4|no se que elegir|no sé que elegir|orientame|oriéntame)$/.test(t)) return 'recommend';
+  if (/^(5|promociones|promocion|promoción|catalogo alma spa|catálogo alma spa)$/.test(t)) return 'promotions';
+  if (/^(6|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
+  if (/^(7|recepcion|recepción|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
   if (/\b(mi cita|mis citas|cita)\b/.test(t) && (hasAnyApproxToken(t, APPOINTMENT_QUERY_WORDS, 1) || /\bque dia|cuando|a que hora\b/.test(t))) return 'my_appointment';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda|cita)\b/.test(t)) return 'book_start';
@@ -633,6 +650,31 @@ async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone,
   }
 
   if (onboarding.step === 'address') {
+    state.setFlowState(waId, {
+      flow: 'new_client',
+      newClient: { step: 'cedula', fullName: onboarding.fullName, address: answer },
+      tone,
+      unclearCount: 0,
+    });
+    const prompt = tone === 'tu'
+      ? 'Gracias 💛 Para completar tu ficha, ¿me compartes tu número de cédula? Si prefieres no hacerlo ahora, escribe *Omitir*.'
+      : 'Gracias 💛 Para completar su ficha, ¿me comparte su número de cédula? Si prefiere no hacerlo ahora, escriba *Omitir*.';
+    const r = await transport.sendText(connection, waId, prompt);
+    await recordBotMessage(tenant.id, conv, r, { body: prompt });
+    return;
+  }
+
+  if (onboarding.step === 'cedula') {
+    const omitted = /^(omitir|prefiero no|no deseo|no tengo)$/i.test(answer);
+    const cedula = omitted ? null : answer.replace(/\s+/g, ' ').trim();
+    if (!omitted && (cedula.length < 6 || cedula.length > 32)) {
+      const retry = tone === 'tu'
+        ? '¿Puedes revisar el número de cédula? También puedes escribir *Omitir* para continuar. 🌿'
+        : '¿Puede revisar el número de cédula? También puede escribir *Omitir* para continuar. 🌿';
+      const r = await transport.sendText(connection, waId, retry);
+      await recordBotMessage(tenant.id, conv, r, { body: retry });
+      return;
+    }
     let client;
     try {
       client = await prisma.client.create({
@@ -640,7 +682,8 @@ async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone,
           tenantId: tenant.id,
           fullName: onboarding.fullName,
           whatsapp: waIdToPhone(waId),
-          address: answer,
+          address: onboarding.address,
+          cedula,
         },
       });
     } catch (err) {
@@ -1279,6 +1322,15 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
     case 'book_start':
       return handleBook({ tenant, connection, conv, waId, tone, aiReply });
 
+    case 'book_for_other':
+      return handleBookForOther({ tenant, connection, conv, waId, tone });
+
+    case 'recommend':
+      return handleServiceRecommendation({ tenant, connection, conv, waId, tone });
+
+    case 'promotions':
+      return handlePromotions({ tenant, connection, conv, waId });
+
     case 'book_service': {
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
@@ -1474,8 +1526,14 @@ async function handleServiceRecommendation({ tenant, connection, conv, waId, ton
   const previous = state.getFlowState(waId) || {};
   state.setFlowState(waId, { ...previous, flow: 'recommend_service', tone, unclearCount: 0 });
   const msg = tone === 'tu'
-    ? '✨ Cuéntame qué te gustaría mejorar o cómo quieres sentirte. Te orientaré con opciones de bienestar; si hay dolor fuerte, reciente o persistente, es mejor consultar a un profesional de salud.'
-    : '✨ Cuénteme qué le gustaría mejorar o cómo quiere sentirse. Le orientaré con opciones de bienestar; si hay dolor fuerte, reciente o persistente, es mejor consultar a un profesional de salud.';
+    ? '✨ Cuéntame qué te gustaría mejorar o cómo quieres sentirte. Te orientaré con opciones de bienestar y, si lo prefieres, podemos agendar una *valoración personalizada en Alma Spa* para recomendarte el servicio más adecuado. Si hay dolor fuerte, reciente o persistente, es mejor consultar a un profesional de salud.'
+    : '✨ Cuénteme qué le gustaría mejorar o cómo quiere sentirse. Le orientaré con opciones de bienestar y, si lo prefiere, podemos agendar una *valoración personalizada en Alma Spa* para recomendarle el servicio más adecuado. Si hay dolor fuerte, reciente o persistente, es mejor consultar a un profesional de salud.';
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
+async function handlePromotions({ tenant, connection, conv, waId }) {
+  const msg = '🌸 *Promociones y catálogo Alma Spa*\n\nDescubra nuestras promociones, novedades y bienestar en Instagram:\nhttps://www.instagram.com/alma_spaholistica/\n\n📖 *Catálogo de servicios*\nhttps://drive.google.com/file/d/12_6QAi4ZwMlLElp0QgbrGh5WmZF4WWRE/view\n\n🔗 También puede ver todos nuestros enlaces aquí:\nhttps://linktr.ee/almaspa_02';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }
@@ -1678,6 +1736,9 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   }
   if (selectionId === menus.MAIN_MENU_IDS.RECOMMEND) {
     return handleServiceRecommendation({ tenant, connection, conv, waId, tone });
+  }
+  if (selectionId === menus.MAIN_MENU_IDS.PROMOTIONS) {
+    return handlePromotions({ tenant, connection, conv, waId });
   }
   if (selectionId === menus.MAIN_MENU_IDS.MY_APPOINTMENT) {
     return handleMyAppointment({ tenant, connection, conv, waId, tone });
@@ -2257,6 +2318,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
       : `✨ *Listo, ${booking.clientName} — su espacio está reservado*\n\n🌿 _${booking.serviceName}_\n📅 ${capitalize(fechaStr)}\n🕐 ${formatHora12(horaStr)}\n\nLe esperamos con mucho cariño 💛`;
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
+    await appendConversationLabels(conv, ['cita_confirmada']);
 
     state.setFlowState(waId, { flow: 'menu', booking: null, clientName: booking.clientName, tone, unclearCount: 0 });
 
@@ -2570,6 +2632,7 @@ async function handleRescheduleConfirm({ tenant, connection, conv, waId, tone })
       : `✨ *Listo, actualicé su espacio*\n\n🌿 _${reschedule.serviceName}_\n📅 ${capitalize(fecha)}\n🕐 ${formatHora12(hora)}\n\nLe esperamos con mucho cariño 💛`;
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
+    await appendConversationLabels(conv, ['cita_reprogramada']);
     state.setFlowState(waId, { flow: 'menu', reschedule: null, clientName: fs.clientName, tone, unclearCount: 0 });
   } catch (err) {
     logBot('warn', 'error al reprogramar cita', { error: err.message, appointmentId: reschedule.appointmentId });

@@ -245,6 +245,21 @@ test('setReadState: marcar no leído persiste la marca manual y al menos un cont
   assert.equal(result.manuallyMarkedUnread, true);
 });
 
+test('acciones de bandeja guardan el usuario que marcó una conversación', async () => {
+  let auditData = null;
+  prisma.whatsAppConversation = {
+    findUnique: async () => ({ id: 'c1', tenantId: 't1', unreadCount: 0, unreadRestoreCount: 0, status: 'open' }),
+    update: async ({ data }) => ({ id: 'c1', ...data }),
+  };
+  prisma.adminAuditLog = { create: async ({ data }) => { auditData = data; return { id: 'a1', ...data }; } };
+
+  await inbox.setReadState({ id: 'u1', email: 'recepcion@alma.test', tenantId: 't1', role: 'personal' }, 'c1', true);
+  assert.equal(auditData.actorId, 'u1');
+  assert.equal(auditData.actorEmail, 'recepcion@alma.test');
+  assert.equal(auditData.entity, 'whatsapp');
+  assert.equal(auditData.detail.event, 'marked_unread');
+});
+
 test('sendManualText: auto desactiva botActive', async () => {
   let updateData = null;
   mockTransport({

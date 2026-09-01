@@ -760,12 +760,6 @@ export default function ConfiguracionPage() {
           </div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(180px, 1fr))", gap: 14 }}>
-              <SummaryCard label="Servicios activos" value={`${activeServices.length}`} detail="Solo oferta visible para reservas" />
-              <SummaryCard label="Bloque promedio" value={averageBlockMins ? `${averageBlockMins} min` : "—"} detail="Incluye la pausa entre sesiones" />
-              <SummaryCard label="Precio promedio" value={activeServices.length ? money(averagePrice) : "—"} detail="Solo servicios habilitados" />
-            </div>
-
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.55fr) minmax(320px, 0.85fr)", gap: isMobile ? 14 : 18, alignItems: "start" }}>
             {/* Servicios y precios */}
             <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
@@ -926,4 +920,3 @@ export default function ConfiguracionPage() {
     </div>
   );
 }
-

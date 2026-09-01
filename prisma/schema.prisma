@@ -188,6 +188,7 @@ model Client {
   whatsapp  String
   email     String?
   address   String?
+  cedula    String?
   birthday  DateTime? @db.Date
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
@@ -540,6 +541,7 @@ enum AuditEntity {
   room
   category
   auth
+  whatsapp
 }
 
 enum AuditAction {
