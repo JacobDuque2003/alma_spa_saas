@@ -8,7 +8,7 @@ import {
   Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
   ChevronDown, ArrowDown, Edit3, Settings, Paperclip, Download, FileText,
   ImageIcon, Volume2, Video, LockKeyhole, Reply,
-  X,
+  X, ZoomIn, ZoomOut, RotateCcw,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -105,6 +105,9 @@ export default function CRMPage() {
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState("");
   const [draftAttachment, setDraftAttachment] = useState(null);
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState("");
+  const [mediaViewer, setMediaViewer] = useState(null);
+  const [mediaZoom, setMediaZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -137,11 +140,6 @@ export default function CRMPage() {
   const [quickReplyConfigMode, setQuickReplyConfigMode] = useState(false);
   const [quickReplyDraft, setQuickReplyDraft] = useState({ key: "", icon: "💬", title: "", text: "" });
   const [editingQuickReplyKey, setEditingQuickReplyKey] = useState(null);
-  const attachmentPreviewUrl = useMemo(() => (
-    draftAttachment?.type?.startsWith("image/") && typeof URL !== "undefined"
-      ? URL.createObjectURL(draftAttachment)
-      : ""
-  ), [draftAttachment]);
   const labelConfig = useMemo(() => labelMapFrom(labelDefs), [labelDefs]);
   const hasPermission = useCallback((key) => (
     ["superadmin", "dueno"].includes(user?.role) || Boolean(user?.permissions?.[key])
@@ -169,9 +167,15 @@ export default function CRMPage() {
     ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
   }, [chatSearch, chatMatches.length, selected, selectedName, labelConfig]);
 
-  useEffect(() => () => {
-    if (attachmentPreviewUrl) URL.revokeObjectURL(attachmentPreviewUrl);
-  }, [attachmentPreviewUrl]);
+  useEffect(() => {
+    if (!draftAttachment?.type?.startsWith("image/") || typeof URL === "undefined") {
+      setAttachmentPreviewUrl("");
+      return undefined;
+    }
+    const previewUrl = URL.createObjectURL(draftAttachment);
+    setAttachmentPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [draftAttachment]);
 
   // ─── Data fetching ──────────────────────────────────────────
   const fetchConversations = useCallback(async (silent = false) => {
@@ -707,6 +711,10 @@ export default function CRMPage() {
       if (selected?.labels?.includes(key)) {
         await toggleLabel(key);
       }
+      if (editingLabelKey === key) {
+        setEditingLabelKey(null);
+        setLabelDraft({ key: "", text: "", tone: "blue" });
+      }
     } catch (err) {
       toast.error(err.message || "No se pudo eliminar la etiqueta");
     }
@@ -794,6 +802,57 @@ export default function CRMPage() {
     return /^\[(imagen|audio|video|documento|sticker|ubicación|interactivo|mensaje)\]$/i.test(String(value).trim());
   }
 
+  function openMediaViewer(src, label) {
+    setMediaZoom(1);
+    setMediaViewer({ src, label });
+  }
+
+  function renderMediaViewer() {
+    if (!mediaViewer) return null;
+    const adjustZoom = (delta) => setMediaZoom((current) => Math.min(4, Math.max(0.5, Number((current + delta).toFixed(2)))));
+    return (
+      <div
+        className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/85 p-4"
+        onClick={() => setMediaViewer(null)}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mediaViewer.label || "Imagen ampliada"}
+      >
+        <div
+          className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-[#171717] shadow-2xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white">
+            <p className="min-w-0 truncate text-sm font-medium">{mediaViewer.label || "Imagen"}</p>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => adjustZoom(-0.25)} className="rounded-lg p-2 hover:bg-white/10" title="Alejar"><ZoomOut size={18} /></button>
+              <span className="min-w-12 text-center text-xs tabular-nums text-white/75">{Math.round(mediaZoom * 100)}%</span>
+              <button onClick={() => adjustZoom(0.25)} className="rounded-lg p-2 hover:bg-white/10" title="Acercar"><ZoomIn size={18} /></button>
+              <button onClick={() => setMediaZoom(1)} className="rounded-lg p-2 hover:bg-white/10" title="Restablecer zoom"><RotateCcw size={17} /></button>
+              <button onClick={() => setMediaViewer(null)} className="ml-1 rounded-lg p-2 hover:bg-white/10" title="Cerrar"><X size={19} /></button>
+            </div>
+          </div>
+          <div
+            className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6"
+            onWheel={(event) => {
+              event.preventDefault();
+              adjustZoom(event.deltaY < 0 ? 0.2 : -0.2);
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaViewer.src}
+              alt={mediaViewer.label || "Imagen ampliada"}
+              className="max-h-none max-w-none select-none object-contain transition-transform duration-150"
+              style={{ maxWidth: "min(100%, 1100px)", maxHeight: "calc(100vh - 150px)", transform: `scale(${mediaZoom})` }}
+              draggable="false"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderMediaContent(m) {
     if (!m.mediaId) return null;
     const mediaUrl = `/api/proxy/crm/messages/${m.id}/media`;
@@ -802,11 +861,11 @@ export default function CRMPage() {
     if (m.type === "image" || m.type === "sticker" || m.type === "gift") {
       const compactSticker = m.type === "sticker" || m.type === "gift";
       return (
-        <a
-          href={mediaUrl}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => openMediaViewer(mediaUrl, label)}
           className={`mb-2 block overflow-hidden ${compactSticker ? "w-fit rounded-xl bg-transparent" : "rounded-xl border border-border/70 bg-white/40"}`}
+          title="Abrir imagen"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -816,7 +875,7 @@ export default function CRMPage() {
               ? "max-h-40 max-w-[160px] object-contain"
               : "max-h-72 w-full object-cover"}
           />
-        </a>
+        </button>
       );
     }
 
@@ -1463,8 +1522,10 @@ export default function CRMPage() {
           {draftAttachment && (
             <div className="absolute bottom-[76px] left-4 z-20 flex max-w-[min(360px,calc(100%-2rem))] items-center gap-2 rounded-2xl border border-border bg-white p-2 shadow-lg">
               {attachmentPreviewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={attachmentPreviewUrl} alt="Vista previa" className="h-16 w-16 rounded-xl object-cover" />
+                <button type="button" onClick={() => openMediaViewer(attachmentPreviewUrl, draftAttachment.name || "Imagen pegada")} title="Abrir vista previa">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={attachmentPreviewUrl} alt="Vista previa" className="h-16 w-16 rounded-xl object-cover" />
+                </button>
               ) : (
                 <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-cream text-bronze"><FileText size={22} /></span>
               )}
@@ -1537,6 +1598,7 @@ export default function CRMPage() {
     const name = linkedClient?.fullName || selected.customerName || selected.customerWaId;
     const labels = selected.labels || [];
     const isResolved = selected.status === "resolved";
+    const labelDraftTone = LABEL_TONES[labelDraft.tone] || LABEL_TONES.neutral;
 
     return (
       <div className={`
@@ -1686,12 +1748,12 @@ export default function CRMPage() {
                                   transition-all duration-150
                                   ${active
                                     ? `${cfg.bg} ${cfg.fg} border-current`
-                                  : "bg-white text-warm-gray border-border hover:bg-cream"
+                                  : `bg-white ${cfg.fg} ${cfg.ring} hover:brightness-[0.98]`
                                   }
                                   ${!canManageLabels ? "cursor-not-allowed opacity-60" : ""}
                                 `}
                               >
-                                <span className={`w-2.5 h-2.5 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
+                                <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
                                 {label.text}
                               </button>
                             );
@@ -1703,49 +1765,46 @@ export default function CRMPage() {
                       </>
                     ) : (
                       <div className="grid gap-3">
-                        <div className="grid gap-1.5">
-                          {labelDefs.map((label) => {
-                            const cfg = labelConfig[label.key] || LABEL_TONES.neutral;
-                            return (
-                              <div
-                                key={label.key}
-                                className="flex items-center gap-2 rounded-xl bg-white/70 p-2"
-                              >
-                                <span className={`inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${cfg.bg} ${cfg.fg}`}>
-                                  <span className={`h-2 w-2 rounded-full ${cfg.dot}`} />
-                                  <span className="truncate">{label.text}</span>
-                                </span>
-                                <button
-                                  onClick={() => startEditingLabel(label)}
-                                  className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-cream hover:text-bronze"
-                                  title="Editar etiqueta"
-                                >
-                                  <Edit3 size={12} />
-                                </button>
-                                <button
-                                  onClick={() => removeLabel(label.key)}
-                                  className="flex h-7 w-7 items-center justify-center rounded-full text-warm-gray hover:bg-red-50 hover:text-red-500"
-                                  title="Eliminar etiqueta"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <label className="grid gap-1.5 text-xs font-semibold text-bronze-deep">
+                          Editar una etiqueta
+                          <select
+                            value={editingLabelKey || "__new__"}
+                            onChange={(event) => {
+                              const nextKey = event.target.value;
+                              const nextLabel = labelDefs.find((label) => label.key === nextKey);
+                              if (nextLabel) startEditingLabel(nextLabel);
+                              else {
+                                setEditingLabelKey(null);
+                                setLabelDraft({ key: "", text: "", tone: "blue" });
+                              }
+                            }}
+                            className="rounded-xl border border-border bg-white px-3 py-2 text-sm font-medium text-bronze-deep focus:outline-none focus:ring-2 focus:ring-gold/40"
+                          >
+                            <option value="__new__">+ Crear etiqueta nueva</option>
+                            {labelDefs.map((label) => <option key={label.key} value={label.key}>{label.text}</option>)}
+                          </select>
+                        </label>
                         <div className="rounded-2xl border border-border bg-white/70 p-3">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-warm-gray">Vista previa</span>
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${labelDraftTone.bg} ${labelDraftTone.fg}`}>
+                              <span className={`h-2 w-2 rounded-full ${labelDraftTone.dot}`} />
+                              {labelDraft.text.trim() || "Nueva etiqueta"}
+                            </span>
+                          </div>
                           <input
                             value={labelDraft.text}
                             onChange={(e) => setLabelDraft((d) => ({ ...d, text: e.target.value }))}
                             placeholder="Nombre de etiqueta"
                             className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-bronze-deep placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
                           />
-                          <div className="mt-2 flex flex-wrap gap-1.5">
+                          <p className="mt-3 text-xs font-medium text-warm-gray">Color</p>
+                          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
                             {Object.entries(LABEL_TONES).map(([tone, cfg]) => (
                               <button
                                 key={tone}
                                 onClick={() => setLabelDraft((d) => ({ ...d, tone }))}
-                                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${cfg.bg} ${cfg.fg} ${
+                                className={`inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] font-medium ${cfg.bg} ${cfg.fg} ${
                                   labelDraft.tone === tone ? cfg.ring : "border-transparent"
                                 }`}
                               >
@@ -1761,15 +1820,22 @@ export default function CRMPage() {
                             >
                               {editingLabelKey ? "Guardar cambios" : "Crear etiqueta"}
                             </button>
-                            <button
-                              onClick={() => {
-                                setEditingLabelKey(null);
-                                setLabelDraft({ key: "", text: "", tone: "blue" });
-                              }}
-                              className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
-                            >
-                              Limpiar
-                            </button>
+                            {editingLabelKey ? (
+                              <button
+                                onClick={() => removeLabel(editingLabelKey)}
+                                className="rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                title="Eliminar esta etiqueta"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setLabelDraft({ key: "", text: "", tone: "blue" })}
+                                className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-bronze hover:bg-cream"
+                              >
+                                Limpiar
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1835,27 +1901,33 @@ export default function CRMPage() {
   // ─── Layout ───────────────────────────────────────────────
   if (isMobile) {
     return (
-      <div className="flex flex-col h-full">
-        {mobileView === "list" && renderConversationList()}
-        {mobileChat.shouldRender && (
-          <div className={`flex-1 flex flex-col alma-slide-right alma-anim-${mobileChat.phase}`}>
-            {renderChatColumn()}
-          </div>
-        )}
-        {mobilePanel.shouldRender && (
-          <div className={`flex-1 flex flex-col alma-slide-right alma-anim-${mobilePanel.phase}`}>
-            {renderClientPanel()}
-          </div>
-        )}
-      </div>
+      <>
+        <div className="flex flex-col h-full">
+          {mobileView === "list" && renderConversationList()}
+          {mobileChat.shouldRender && (
+            <div className={`flex-1 flex flex-col alma-slide-right alma-anim-${mobileChat.phase}`}>
+              {renderChatColumn()}
+            </div>
+          )}
+          {mobilePanel.shouldRender && (
+            <div className={`flex-1 flex flex-col alma-slide-right alma-anim-${mobilePanel.phase}`}>
+              {renderClientPanel()}
+            </div>
+          )}
+        </div>
+        {renderMediaViewer()}
+      </>
     );
   }
 
   return (
-    <div className="flex h-full">
-      {renderConversationList()}
-      {renderChatColumn()}
-      {renderClientPanel()}
-    </div>
+    <>
+      <div className="flex h-full">
+        {renderConversationList()}
+        {renderChatColumn()}
+        {renderClientPanel()}
+      </div>
+      {renderMediaViewer()}
+    </>
   );
 }

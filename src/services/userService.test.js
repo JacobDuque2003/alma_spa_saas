@@ -94,6 +94,51 @@ test('updateUser aplica cambios normalmente cuando no hay conflicto', async () =
   assert.equal(result.active, false);
 });
 
+test('updateUser permite ajustar rol y disponibilidad de citas, creando permisos al volver a personal', async () => {
+  let updateData = null;
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'u5', isProtected: false, tenantId: 't1', role: 'dueno' }),
+      update: async (args) => {
+        updateData = args.data;
+        return { id: 'u5', ...args.data, rolePermission: null };
+      },
+    },
+    rolePermission: {
+      upsert: async () => ({ id: 'rp5', agenda: false }),
+    },
+  });
+
+  const result = await userService.updateUser(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    'u5',
+    { role: 'personal', canAttendAppointments: true }
+  );
+
+  assert.deepEqual(updateData, { role: 'personal', canAttendAppointments: true });
+  assert.equal(result.role, 'personal');
+  assert.equal(result.canAttendAppointments, true);
+  assert.equal(result.rolePermission.id, 'rp5');
+});
+
+test('updateUser no permite cambiar el propio rol ni roles fuera de la lista', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'a1', isProtected: false, tenantId: 't1', role: 'dueno' }),
+    },
+  });
+  const actor = { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' };
+
+  await assert.rejects(
+    () => userService.updateUser(actor, 'a1', { role: 'personal' }),
+    (err) => err.status === 400 && /propio rol/.test(err.message)
+  );
+  await assert.rejects(
+    () => userService.updateUser(actor, 'a1', { role: 'superadmin' }),
+    (err) => err.status === 400 && /Rol no permitido/.test(err.message)
+  );
+});
+
 test('deleteUser rechaza que el superadmin se elimine a sí mismo', async () => {
   mockPrisma({
     user: {

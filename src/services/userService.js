@@ -158,9 +158,20 @@ async function updateUser(actor, targetUserId, changes) {
     throw new BadRequestError('No puedes desactivar tu propia cuenta');
   }
 
+  if (changes.role !== undefined) {
+    if (!ALLOWED_ROLES_FOR_CREATION.includes(changes.role)) {
+      throw new BadRequestError('Rol no permitido. Solo se puede usar Terapeuta o Dueña');
+    }
+    if (actor.id === targetUserId && changes.role !== target.role) {
+      throw new BadRequestError('No puedes cambiar tu propio rol');
+    }
+  }
+
   const data = {};
   if (changes.name !== undefined) data.name = changes.name;
   if (changes.active !== undefined) data.active = changes.active;
+  if (changes.role !== undefined) data.role = changes.role;
+  if (changes.canAttendAppointments !== undefined) data.canAttendAppointments = !!changes.canAttendAppointments;
   if (changes.password) data.passwordHash = await hashPassword(changes.password);
   if (changes.accessSchedule !== undefined) {
     const err = validateSchedule(changes.accessSchedule);
@@ -169,7 +180,18 @@ async function updateUser(actor, targetUserId, changes) {
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.update({ where: { id: targetUserId }, data });
+    const user = await tx.user.update({
+      where: { id: targetUserId },
+      data,
+      include: { rolePermission: true },
+    });
+    if (changes.role === 'personal' && target.role !== 'personal') {
+      user.rolePermission = await tx.rolePermission.upsert({
+        where: { userId: targetUserId },
+        update: {},
+        create: { userId: targetUserId, ...normalizePermissions() },
+      });
+    }
     const action = resolveAction('user', data, target);
     const safeChanges = { ...data };
     delete safeChanges.passwordHash;

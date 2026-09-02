@@ -453,6 +453,20 @@ export default function PersonalPage() {
     }
   }
 
+  async function updateAccountSettings(changes) {
+    if (!selected || selected.isProtected) return;
+    setSaving(true);
+    try {
+      const updated = await authFetch(`/users/${selected.id}`, { method: "PATCH", body: changes });
+      setUsers((prev) => prev.map((account) => (account.id === selected.id ? { ...account, ...updated } : account)));
+      toast.success(changes.role ? "Rol actualizado" : "Disponibilidad para citas actualizada");
+    } catch (err) {
+      toast.error(err.message || "No se pudo actualizar la cuenta");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteAccount() {
     if (!deleteTarget || deleteTarget.isProtected) return;
     setDeleting(true);
@@ -736,32 +750,61 @@ export default function PersonalPage() {
                 <b style={{ display: "block", color: "#6B5540" }}>Cuenta de plataforma protegida</b>
                 El backend bloquea edición, eliminación y cambios de permisos para esta cuenta. Este panel solo muestra el estado.
               </div>
-            ) : selected.role !== "personal" ? (
-              <>
-                <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 16px" }}>
-                  Esta cuenta tiene acceso completo por su rol. Se muestra el alcance para que la dueña pueda revisarlo con la misma claridad que el personal.
-                </p>
-                <PermissionGroupList value={FULL_ACCESS_PERMISSIONS} onChange={() => {}} compact={isMobile} readOnly />
-                <ScheduleSummary schedule={selected.accessSchedule} />
-              </>
             ) : (
               <>
-                <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 20px" }}>
-                  Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
-                </p>
-                <PermissionGroupList value={draft} onChange={updatePermission} compact={isMobile} />
-                <AccessScheduleEditor
-                  compact
-                  user={selected}
-                  onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))}
-                />
+                <section style={{ marginBottom: 16, border: "1px solid rgba(168,154,135,0.28)", borderRadius: 16, padding: 16, background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))" }}>
+                  <b style={{ display: "block", fontSize: 14, color: "#6B5540" }}>Rol y atención de citas</b>
+                  <p style={{ margin: "4px 0 14px", fontSize: 12, lineHeight: 1.5, color: "#A89A87" }}>Define el acceso de la cuenta y si puede aparecer como terapeuta disponible al crear o editar una reserva.</p>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#6B5540", marginBottom: 6 }}>Rol de la cuenta</label>
+                  <select
+                    value={selected.role}
+                    disabled={saving || selected.id === currentUser?.id}
+                    onChange={(event) => updateAccountSettings({ role: event.target.value })}
+                    style={{ ...inputStyle, marginBottom: 12, opacity: selected.id === currentUser?.id ? 0.65 : 1 }}
+                  >
+                    <option value="personal">Terapeuta / personal</option>
+                    <option value="dueno">Dueña</option>
+                  </select>
+                  {selected.id === currentUser?.id && <p style={{ margin: "-5px 0 12px", fontSize: 11, color: "#A89A87" }}>Por seguridad, una cuenta no puede cambiar su propio rol.</p>}
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: saving ? "wait" : "pointer" }}>
+                    <span>
+                      <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>Puede atender y ser asignada en citas</span>
+                      <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "#A89A87" }}>Al activarlo, estará disponible como terapeuta en la agenda.</span>
+                    </span>
+                    <span aria-hidden="true" style={{ width: 42, height: 24, borderRadius: 999, padding: 3, background: selected.canAttendAppointments ? "#8C6E50" : "rgba(168,154,135,0.25)", border: selected.canAttendAppointments ? "1px solid #8C6E50" : "1px solid rgba(168,154,135,0.35)", flexShrink: 0 }}>
+                      <span style={{ display: "block", width: 16, height: 16, borderRadius: "50%", background: "#FDFCFA", transform: selected.canAttendAppointments ? "translateX(18px)" : "translateX(0)", transition: "transform var(--motion-fast) var(--ease-spring)" }} />
+                    </span>
+                    <input type="checkbox" checked={!!selected.canAttendAppointments} disabled={saving} onChange={(event) => updateAccountSettings({ canAttendAppointments: event.target.checked })} style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
+                  </label>
+                </section>
+
+                {selected.role !== "personal" ? (
+                  <>
+                    <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 16px" }}>
+                      Esta cuenta tiene acceso completo por su rol. Se muestra el alcance para que la dueña pueda revisarlo con la misma claridad que el personal.
+                    </p>
+                    <PermissionGroupList value={FULL_ACCESS_PERMISSIONS} onChange={() => {}} compact={isMobile} readOnly />
+                    <ScheduleSummary schedule={selected.accessSchedule} />
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 20px" }}>
+                      Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
+                    </p>
+                    <PermissionGroupList value={draft} onChange={updatePermission} compact={isMobile} />
+                    <AccessScheduleEditor
+                      compact
+                      user={selected}
+                      onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, accessSchedule: updated.accessSchedule } : u)))}
+                    />
+                  </>
+                )}
 
                 {loadError && (
                   <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>
                     {loadError}
                   </div>
                 )}
-
               </>
             )}
             </div>
