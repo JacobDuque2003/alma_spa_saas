@@ -64,6 +64,7 @@ const CURRENT_SERVICE_WORDS = ['eso', 'este', 'esta', 'servicio', 'tratamiento',
 const APPOINTMENT_QUERY_WORDS = ['consultar', 'consulta', 'ver', 'saber', 'revisar', 'proxima', 'prox'];
 const RESCHEDULE_WORDS = ['reagendar', 'reagendo', 'reagendamiento', 'reprogramar', 'reprogramo', 'reprogramacion', 'cambiar', 'mover', 'cambio'];
 const BUSINESS_HOURS_WORDS = ['horario', 'horarios', 'atienden', 'atiende', 'abren', 'abre', 'cierran', 'cierra', 'atencion', 'atencion'];
+const LOCATION_WORDS = ['donde', 'ubicacion', 'direccion', 'ubican', 'ubicado', 'ubicada', 'llegar', 'llego'];
 const FAREWELL_WORDS = ['gracias', 'listo', 'ok', 'okay', 'okey', 'perfecto', 'chao', 'chau', 'adios', 'adiós', 'bye', 'hasta luego', 'hasta pronto', 'nos vemos', 'todo bien', 'todo ok', 'todo okey'];
 const RECEPTION_LABEL = 'solicitar_recepcionista';
 const WEEKDAY_NAME_TO_INDEX = {
@@ -233,6 +234,10 @@ function detectDeterministicIntent(text) {
   if (/^(5|promociones|promocion|promoción|catalogo alma spa|catálogo alma spa)$/.test(t)) return 'promotions';
   if (/^(6|mi cita|mis citas|consultar cita|ver cita)$/.test(t)) return 'my_appointment';
   if (/^(7|recepcion|recepción|hablar con recepcion|hablar con recepción)$/.test(t)) return 'escalate';
+  if (
+    hasAnyApproxToken(t, LOCATION_WORDS.filter((word) => word !== 'donde'), 1)
+    || /\bdonde\b.*\b(?:queda|quedan|esta|estan|spa|local|ubicad|encuentra)\b/.test(t)
+  ) return 'location';
   if (/\b(mi cita|mis citas|cita)\b/.test(t) && (hasAnyApproxToken(t, APPOINTMENT_QUERY_WORDS, 1) || /\bque dia|cuando|a que hora\b/.test(t))) return 'my_appointment';
   if (/^(2|reservar|reserva|agendar|agenda|cita|quiero reservar|quiero agendar)$/.test(t)) return 'book_start';
   if (/\b(quiero|quisiera|deseo|necesito).*\b(reservar|reserva|agendar|agenda|cita)\b/.test(t)) return 'book_start';
@@ -1378,6 +1383,9 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
 
     case 'business_hours':
       return handleBusinessHours({ tenant, connection, conv, waId, tone });
+
+    case 'location':
+      return handleLocation({ tenant, connection, conv, waId });
 
     case 'farewell':
       return handleFarewell({ tenant, connection, conv, waId, tone });
@@ -2752,6 +2760,12 @@ async function handleBusinessHours({ tenant, connection, conv, waId, tone }) {
   const msg = tone === 'tu'
     ? '🕐 *Nuestro horario de atención*\n\nLunes a sábado:\n🌤️ 9:00 a. m. a 12:00 p. m.\n🌙 3:00 p. m. a 8:00 p. m.\n\nDomingos descansamos 🌿'
     : '🕐 *Nuestro horario de atención*\n\nLunes a sábado:\n🌤️ 9:00 a. m. a 12:00 p. m.\n🌙 3:00 p. m. a 8:00 p. m.\n\nDomingos descansamos 🌿';
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
+async function handleLocation({ tenant, connection, conv, waId }) {
+  const msg = '📍 Estamos en *Juan de Salinas y Av. Héroes de Paquisha.* 🌿';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }

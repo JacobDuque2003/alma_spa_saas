@@ -1021,7 +1021,22 @@ test('Ronda H: intención tolera faltas, tildes omitidas y letras repetidas', ()
 test('Ronda I: consulta de cita, horario y despedida se entienden sin IA', () => {
   assert.equal(bot._internals.detectDeterministicIntent('quiero consultar mi cita'), 'my_appointment');
   assert.equal(bot._internals.detectDeterministicIntent('a que hora atienden'), 'business_hours');
+  assert.equal(bot._internals.detectDeterministicIntent('dónde queda el spa'), 'location');
   assert.equal(bot._internals.detectDeterministicIntent('todo okey gracias'), 'farewell');
+});
+
+test('ubicación responde con la dirección oficial del spa', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: '¿Dónde queda el spa?' } },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].body, /Juan de Salinas y Av\. Héroes de Paquisha/i);
 });
 
 test('reprogramar cita se entiende sin IA, incluso con una falta común', () => {

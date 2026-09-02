@@ -10,7 +10,7 @@ const MAX_RETRIES = 1;
 
 const INTENT_ENUM = [
   'menu', 'list_services', 'service_info', 'book',
-  'my_appointment', 'reschedule', 'cancel', 'business_hours', 'farewell', 'escalate', 'unclear',
+  'my_appointment', 'reschedule', 'cancel', 'business_hours', 'location', 'farewell', 'escalate', 'unclear',
 ];
 
 const SYSTEM_PROMPT = `Eres el asistente virtual de Alma Spa, un spa en Zamora, Ecuador.
@@ -31,6 +31,7 @@ Reglas:
 - Si quiere cambiar, mover, reagendar o reprogramar su cita, usa "reschedule".
 - Si quiere cancelar, usa "cancel".
 - Si pregunta por horario de atención, usa "business_hours".
+- Si pregunta dónde queda el spa, su dirección, ubicación o cómo llegar, usa "location".
 - Si se despide, agradece o cierra la conversación, usa "farewell".`;
 
 // Haiku 4.5 pricing (per 1M tokens): input $1.00, output $5.00
@@ -138,7 +139,7 @@ async function classifyIntent(userMessage, { tone = 'usted' } = {}) {
 const CHAT_INTENTS = [
   'greeting', 'list_services', 'service_info', 'suggest_service',
   'book_start', 'book_service', 'my_appointment', 'reschedule', 'cancel',
-  'business_hours', 'farewell', 'escalate', 'chitchat', 'unclear',
+  'business_hours', 'location', 'farewell', 'escalate', 'chitchat', 'unclear',
 ];
 
 function buildServiceCatalog(services) {
@@ -166,6 +167,7 @@ function buildChatSystemPrompt(context = {}) {
   return `Eres Almita, la asistente de Alma Spa Holística en Zamora, Ecuador.
 Tu esencia: cálida, breve y serena. Un toque espiritual pero siempre accesible — nunca solemne ni pretenciosa.
 Horario: lunes a sábado, mañana 9:00-12:00, tarde 15:00-20:00. Domingos cerrado.
+Ubicación: Juan de Salinas y Av. Héroes de Paquisha.
 Filosofía: bienestar integral cuerpo-mente-espíritu.
 HOY: ${todayISO} (${dayName}).
 
@@ -217,6 +219,7 @@ Intenciones:
 - reschedule: quiere cambiar, mover, reagendar o reprogramar su cita
 - cancel: quiere cancelar una cita
 - business_hours: pregunta horario de atención, días abiertos/cerrados o a qué hora atienden
+- location: pregunta dónde queda el spa, su dirección, ubicación o cómo llegar
 - farewell: agradece, se despide o cierra la conversación
 - escalate: quiere hablar con una persona, recepción, asesora/agente o pide ser atendida por alguien concreto (por ejemplo, Gianella)
 - chitchat: conversación casual sobre el spa/bienestar
