@@ -66,6 +66,15 @@ function resetState() { state._reset(); rateLimit._reset(); }
 
 // ─── Core behavior tests ──────────────────────────────────────
 
+test('extrae nombres de reserva aunque lleguen mezclados con frases y teléfono', () => {
+  const { extractRecipientName } = bot._internals;
+
+  assert.equal(extractRecipientName('Se llama Daniela Tapia y el número es 099 876 5432'), 'Daniela Tapia');
+  assert.equal(extractRecipientName('Mi hermana Sofía Andrade, celular 099 876 5432'), 'Sofía Andrade');
+  assert.equal(extractRecipientName('quiero reservar para Camila de los Ángeles Pérez'), 'Camila de los Ángeles Pérez');
+  assert.equal(extractRecipientName('quiero agendar una cita'), '');
+});
+
 test('bot no responde si botActive === false', async () => {
   resetState();
   const sent = installTransportMocks();
@@ -244,7 +253,7 @@ test('"Menú principal" cancela cualquier flujo y vuelve al menú real', async (
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
-  assert.equal(sent[0].payload.action.button, '☰ Ver opciones');
+  assert.equal(sent[0].payload.action.button, 'Ver opciones');
   assert.match(sent[0].payload.body.text, /Qué le gustaría explorar ahora/i);
   const nextState = state.getFlowState(CONV.customerWaId);
   assert.equal(nextState.flow, 'menu');
@@ -270,7 +279,7 @@ test('reservar para otra persona acepta nombre y teléfono juntos antes de pedir
 
   await bot.handleInboundMessage({
     tenant: TENANT, connection: CONN, conv: CONV,
-    incoming: { type: 'text', text: { body: 'Mi nombre es María Pérez y mi número es 0993629257' } },
+    incoming: { type: 'text', text: { body: 'Se llama Daniela Tapia y el número es 099 876 5432' } },
   });
   assert.match(sent.at(-1).body, /dirección/i);
 
@@ -280,12 +289,12 @@ test('reservar para otra persona acepta nombre y teléfono juntos antes de pedir
   });
   assert.deepEqual(clientCreates[0], {
     tenantId: TENANT.id,
-    fullName: 'María Pérez',
-    whatsapp: '+593993629257',
+    fullName: 'Daniela Tapia',
+    whatsapp: '+593998765432',
     address: 'Av. Amazonas y Naciones Unidas',
   });
   assert.equal(sent.at(-1).kind, 'interactive');
-  assert.equal(state.getFlowState(CONV.customerWaId).booking.clientName, 'María Pérez');
+  assert.equal(state.getFlowState(CONV.customerWaId).booking.clientName, 'Daniela Tapia');
   assert.equal(state.getFlowState(CONV.customerWaId).booking.forOther, true);
 });
 
@@ -302,13 +311,13 @@ test('reservar para otra persona conserva el flujo si nombre y teléfono llegan 
   });
   await bot.handleInboundMessage({
     tenant: TENANT, connection: CONN, conv: CONV,
-    incoming: { type: 'text', text: { body: 'Jacob Duque' } },
+    incoming: { type: 'text', text: { body: 'Sofía Andrade' } },
   });
   assert.match(sent.at(-1).body, /número de WhatsApp/i);
 
   await bot.handleInboundMessage({
     tenant: TENANT, connection: CONN, conv: CONV,
-    incoming: { type: 'text', text: { body: '0993629257' } },
+    incoming: { type: 'text', text: { body: '099 876 5432' } },
   });
   assert.match(sent.at(-1).body, /dirección/i);
 });
@@ -399,7 +408,7 @@ test('"No sé qué elegir" abre la conversación de orientación', async () => {
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: menus.MAIN_MENU_IDS.RECOMMEND } } },
   });
-  assert.match(sent.at(-1).body, /Cuénteme qué le gustaría mejorar/i);
+  assert.match(sent.at(-1).body, /Cuéntame qué te gustaría mejorar/i);
   assert.equal(state.getFlowState(CONV.customerWaId).flow, 'recommend_service');
 });
 
@@ -486,10 +495,10 @@ test('"Mi cita" sin cliente → invita directamente a escoger un servicio', asyn
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_my_appointment' } } },
   });
-  assert.match(sent[0].body, /No encontré reservas a su nombre/);
+  assert.match(sent[0].body, /No encontré reservas a tu nombre/);
   assert.equal(sent[1].kind, 'interactive');
   assert.equal(sent[1].payload.action.button, 'Ver servicios');
-  assert.match(sent[1].payload.body.text, /Elija su servicio/i);
+  assert.match(sent[1].payload.body.text, /Elige tu servicio/i);
 });
 
 test('"Mi cita" con cita próxima → devuelve detalles', async () => {
@@ -716,7 +725,7 @@ test('IA agenda por texto: extrae servicio, fecha y hora y pasa a la confirmaci�
     });
     assert.equal(sent.at(-1).kind, 'interactive');
     assert.equal(sent.at(-1).payload.type, 'button');
-    assert.match(sent.at(-1).payload.body.text, /Confirmo su espacio/i);
+    assert.match(sent.at(-1).payload.body.text, /Confirmo tu espacio/i);
   } finally {
     aiClient.isAvailable = originalIsAvailable;
     aiClient.chat = originalChat;
@@ -1019,7 +1028,7 @@ test('sin IA, "reagendar mi cita" inicia el flujo de fechas de la reserva existe
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'interactive');
   assert.equal(sent[0].payload.action.button, 'Elegir día');
-  assert.match(sent[0].payload.body.text, /Su cita actual es/);
+  assert.match(sent[0].payload.body.text, /Tu cita actual es/);
   assert.equal(state.getFlowState(CONV.customerWaId)?.reschedule?.appointmentId, 'appt1');
   assert.equal(state.getFlowState(CONV.customerWaId)?.reschedule?.currentTime, '09:00');
 });

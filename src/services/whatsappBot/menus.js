@@ -66,19 +66,19 @@ function greeting(tone, clientName) {
 }
 
 function verbYouCan(tone) {
-  return tone === 'tu' ? '¿En qué te puedo ayudar?' : '¿En qué le puedo ayudar?';
+  return tone === 'tu' ? '¿Cómo te puedo ayudar hoy?' : '¿En qué le puedo ayudar?';
 }
 
 function mainMenu({ tone, clientName, compact = false } = {}) {
   const body = compact
-    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría explorar ahora?' : '🌿 ¿Qué le gustaría explorar ahora?')
+    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría hacer hoy?' : '🌿 ¿Qué le gustaría explorar ahora?')
     : `${greeting(tone, clientName)}\n${verbYouCan(tone)}`;
   return {
     type: 'list',
     body: { text: body },
     footer: { text: 'Alma Spa · Zamora 🌿' },
     action: {
-      button: '☰ Ver opciones',
+      button: 'Ver opciones',
       sections: [
         {
           title: 'Menú',
@@ -100,7 +100,7 @@ function mainMenu({ tone, clientName, compact = false } = {}) {
 function mainMenuText({ tone, clientName, compact = false } = {}) {
   const instruction = tone === 'tu' ? 'Responde con una opción:' : 'Responda con una opción:';
   const intro = compact
-    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría explorar ahora?' : '🌿 ¿Qué le gustaría explorar ahora?')
+    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría hacer hoy?' : '🌿 ¿Qué le gustaría explorar ahora?')
     : `${greeting(tone, clientName)}\n${verbYouCan(tone)}`;
   return `${intro}
 

@@ -723,15 +723,22 @@ function extractPhoneFromRecipientText(text) {
 
 function extractRecipientName(text) {
   const withoutPhone = String(text || '').replace(/(?:\+?\d[\d\s().-]{6,}\d)/g, ' ');
-  const withoutLabels = withoutPhone
-    .replace(/\b(?:mi\s+nombre(?:\s+completo)?|nombre(?:\s+completo)?|soy|me\s+llamo)\s*(?:es)?\b/gi, ' ')
-    .replace(/\b(?:mi|el)?\s*(?:n[uú]mero|tel[eé]fono|celular|whatsapp)(?:\s+es)?\b/gi, ' ')
-    .replace(/\b(?:y|es|el|la)\b/gi, ' ')
+  const marker = /\b(?:mi\s+nombre(?:\s+completo)?|nombre(?:\s+completo)?|soy|me\s+llamo|se\s+llama|la\s+persona\s+(?:se\s+llama|es)|para\s+quien\s+(?:es|quiero)|es\s+para)\s*(?:es)?\s+(.+)/i.exec(withoutPhone);
+  let candidate = marker?.[1] || withoutPhone;
+  candidate = candidate
+    .replace(/^.*?\bpara\s+/i, '')
+    .replace(/(?:\s*(?:,|y)?\s*(?:el|su|mi)?\s*(?:n[uú]mero(?:\s+(?:de\s+)?(?:tel[eé]fono|whatsapp))?|tel[eé]fono|celular|whatsapp)\s*(?:es)?\s*.*)$/i, '')
+    .replace(/^\s*(?:mi\s+amiga|mi\s+mam[aá]|mi\s+pap[aá]|mi\s+hermana|mi\s+hermano|la\s+persona)\s+/i, '')
     .replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (withoutLabels.length < 3 || withoutLabels.length > 100) return '';
-  return withoutLabels;
+
+  const words = candidate.split(/\s+/).filter(Boolean);
+  const reserved = new Set(['quiero', 'reservar', 'reserva', 'agendar', 'cita', 'para', 'favor', 'gracias', 'hola']);
+  if (candidate.length < 2 || candidate.length > 100 || words.length > 6 || words.some((word) => reserved.has(word.toLowerCase()))) {
+    return '';
+  }
+  return candidate;
 }
 
 async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyText = null }) {
@@ -741,8 +748,8 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
   if (!bookingForOther) {
     state.setFlowState(waId, { flow: 'booking_for_other', bookingForOther: { step: 'name' }, clientName: fs.clientName, tone, unclearCount: 0 });
     const msg = tone === 'tu'
-      ? '👤 Claro. ¿Cómo se llama la persona para quien quieres reservar? Si prefieres, envíame su nombre y número juntos, por ejemplo: *Jacob Pérez, 0993629257*.'
-      : '👤 Claro. ¿Cómo se llama la persona para quien desea reservar? Si prefiere, envíeme su nombre y número juntos, por ejemplo: *Jacob Pérez, 0993629257*.';
+      ? '👤 Claro. ¿Cómo se llama la persona para quien quieres reservar? Si prefieres, envíame su nombre y número juntos, por ejemplo: *Sofía Andrade, 099 876 5432*.'
+      : '👤 Claro. ¿Cómo se llama la persona para quien desea reservar? Si prefiere, envíeme su nombre y número juntos, por ejemplo: *Sofía Andrade, 099 876 5432*.';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return;
@@ -755,8 +762,8 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
     const phone = extractPhoneFromRecipientText(answer);
     if (!isValidE164(phone)) {
       const msg = tone === 'tu'
-        ? '💛 Escríbeme un número válido, por ejemplo: *0993629257*.'
-        : '💛 Escríbame un número válido, por ejemplo: *0993629257*.';
+        ? '💛 Escríbeme un número válido, por ejemplo: *099 876 5432*.'
+        : '💛 Escríbame un número válido, por ejemplo: *099 876 5432*.';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return;
@@ -793,7 +800,9 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
         tone,
         unclearCount: 0,
       });
-      const msg = '👤 *' + existing.fullName + '* ya está registrado. Ahora elija el servicio para su cita:';
+      const msg = tone === 'tu'
+        ? '👤 *' + existing.fullName + '* ya está registrado. Ahora elige el servicio para su cita:'
+        : '👤 *' + existing.fullName + '* ya está registrado. Ahora elija el servicio para su cita:';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return handleBook({ tenant, connection, conv, waId, tone });
@@ -802,7 +811,7 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
     const fullName = bookingForOther.fullName || extractRecipientName(answer);
     if (fullName) {
       state.setFlowState(waId, { ...fs, flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'address', phone, fullName }, clientName: fs.clientName, tone, unclearCount: 0 });
-      const msg = '📍 Perfecto. ¿Me comparte su dirección?';
+      const msg = tone === 'tu' ? '📍 Perfecto. ¿Me compartes su dirección?' : '📍 Perfecto. ¿Me comparte su dirección?';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return;
@@ -818,7 +827,7 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
   if (bookingForOther.step === 'name') {
     const fullName = extractRecipientName(answer);
     if (!fullName) {
-      const msg = '💛 Por favor, escriba su nombre completo.';
+      const msg = tone === 'tu' ? '💛 Escríbeme su nombre completo, por favor.' : '💛 Por favor, escriba su nombre completo.';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return;
@@ -826,7 +835,7 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
     const phone = extractPhoneFromRecipientText(answer);
     state.setFlowState(waId, { ...fs, flow: 'booking_for_other', bookingForOther: { ...bookingForOther, step: 'phone', fullName }, clientName: fs.clientName, tone, unclearCount: 0 });
     if (isValidE164(phone)) {
-      // El cliente puede escribir: "Soy Jacob y mi número es 099...".
+      // La persona puede enviar nombre y número en cualquier orden.
       // Reutilizamos la misma validación y búsqueda de ficha que en el paso
       // de teléfono, sin pedirle que repita ningún dato.
       return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText: phone });
@@ -839,7 +848,7 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
 
   if (bookingForOther.step === 'address') {
     if (answer.length < 5 || answer.length > 200) {
-      const msg = '📍 Por favor, comparta una dirección más completa.';
+      const msg = tone === 'tu' ? '📍 Compárteme una dirección un poco más completa, por favor.' : '📍 Por favor, comparta una dirección más completa.';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
       return;
@@ -884,7 +893,9 @@ async function handleBookForOther({ tenant, connection, conv, waId, tone, bodyTe
       tone,
       unclearCount: 0,
     });
-    const msg = '✨ *Listo, ' + client.fullName + ' ya está registrado.* Ahora elija el servicio para su cita:';
+    const msg = tone === 'tu'
+      ? '✨ *Listo, ' + client.fullName + ' ya está registrado.* Ahora elige el servicio para su cita:'
+      : '✨ *Listo, ' + client.fullName + ' ya está registrado.* Ahora elija el servicio para su cita:';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return handleBook({ tenant, connection, conv, waId, tone });
@@ -964,7 +975,7 @@ async function handleInboundMessage({ tenant, connection, conv, incoming }) {
         || null
       : null;
   const priorState = state.getFlowState(waId) || {};
-  const tone = detectTone(bodyText) || priorState.tone || 'usted';
+  const tone = detectTone(bodyText) || priorState.tone || 'tu';
 
   // Aunque una conversación antigua todavía no esté enlazada a la ficha del
   // contacto, no puede interrumpir el alta de la persona para quien se está
@@ -2796,6 +2807,7 @@ module.exports = {
     buildServicesCatalogText,
     normalizeSearchText,
     extractRawDateText,
+    extractRecipientName,
     resolveCalendarDate,
     resolveBookingDate,
     handleSmartBooking,

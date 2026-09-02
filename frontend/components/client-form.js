@@ -72,7 +72,7 @@ export function ClientForm({
       </div>
       <div>
         <label style={labelStyle}>Teléfono</label>
-        <input style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="0993629256" />
+        <input style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="099 876 5432" />
       </div>
       <div>
         <label style={labelStyle}>Correo (opcional)</label>
