@@ -198,7 +198,9 @@ export default function CRMPage() {
 
   useEffect(() => {
     authFetch("/crm/labels")
-      .then((data) => setLabelDefs(data.items?.length ? data.items : DEFAULT_LABELS))
+      // Una lista vacía es una configuración real: no mostramos etiquetas de
+      // ejemplo que el servidor rechazaría al intentar aplicarlas.
+      .then((data) => setLabelDefs(Array.isArray(data.items) ? data.items : DEFAULT_LABELS))
       .catch(() => setLabelDefs(DEFAULT_LABELS));
   }, []);
 
@@ -493,14 +495,17 @@ export default function CRMPage() {
       ? current.filter((l) => l !== label)
       : [...current, label];
     try {
-      await authFetch(`/crm/conversations/${selectedId}/labels`, {
+      const updated = await authFetch(`/crm/conversations/${selectedId}/labels`, {
         method: "PUT",
         body: { labels: next },
       });
-      setSelected((s) => ({ ...s, labels: next }));
+      const savedLabels = Array.isArray(updated.labels) ? updated.labels : next;
+      const labelName = labelConfig[label]?.text || label;
+      setSelected((s) => ({ ...s, labels: savedLabels }));
       setConversations((prev) => prev.map((item) => (
-        item.id === selectedId ? { ...item, labels: next } : item
+        item.id === selectedId ? { ...item, labels: savedLabels } : item
       )));
+      toast.success(savedLabels.includes(label) ? `Etiqueta “${labelName}” agregada` : `Etiqueta “${labelName}” quitada`);
     } catch (err) {
       toast.error(err.message);
     }
@@ -965,7 +970,7 @@ export default function CRMPage() {
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
-          max-w-[78%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm
+          min-w-0 max-w-[78%] break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm
           ${isOutbound
             ? "rounded-tr-md border border-emerald-200 bg-[#dcf8c6] text-slate-800"
             : "rounded-tl-md border border-slate-200 bg-white text-slate-800"
@@ -992,7 +997,7 @@ export default function CRMPage() {
             </div>
           )}
           {interactivePreview ? renderInteractivePreview(interactivePreview, m.id) : (!m.mediaId || (m.body && !isPlaceholderBody(m.body))) && (
-            <p className="whitespace-pre-wrap leading-relaxed">
+            <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">
               {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
             </p>
           )}
@@ -1567,30 +1572,36 @@ export default function CRMPage() {
                 {labelDropdownOpen && (
                   <div className="border-t border-border p-3">
                     {!labelConfigMode ? (
-                      <div className="flex flex-wrap gap-2">
-                        {labelDefs.map((label) => {
-                          const key = label.key;
-                          const cfg = labelConfig[key] || LABEL_TONES.neutral;
-                          const active = labels.includes(key);
-                          return (
-                            <button
-                              key={key}
-                              onClick={() => toggleLabel(key)}
-                              className={`
-                                inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold
-                                transition-all duration-150
-                                ${active
-                                  ? `${cfg.bg} ${cfg.fg} border-current`
-                                  : "bg-white text-warm-gray border-border hover:bg-cream"
-                                }
-                              `}
-                            >
-                              <span className={`w-2.5 h-2.5 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
-                              {label.text}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <>
+                        <p className="mb-2 text-xs leading-relaxed text-warm-gray">Selecciona una o varias etiquetas. Se guardan al instante en esta conversación.</p>
+                        <div className="flex flex-wrap gap-2">
+                          {labelDefs.map((label) => {
+                            const key = label.key;
+                            const cfg = labelConfig[key] || LABEL_TONES.neutral;
+                            const active = labels.includes(key);
+                            return (
+                              <button
+                                key={key}
+                                onClick={() => toggleLabel(key)}
+                                className={`
+                                  inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold
+                                  transition-all duration-150
+                                  ${active
+                                    ? `${cfg.bg} ${cfg.fg} border-current`
+                                    : "bg-white text-warm-gray border-border hover:bg-cream"
+                                  }
+                                `}
+                              >
+                                <span className={`w-2.5 h-2.5 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
+                                {label.text}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {labelDefs.length === 0 && (
+                          <p className="rounded-xl bg-white px-3 py-2 text-xs leading-relaxed text-warm-gray">Aún no hay etiquetas. Usa el engranaje para crear la primera.</p>
+                        )}
+                      </>
                     ) : (
                       <div className="grid gap-3">
                         <div className="grid gap-1.5">

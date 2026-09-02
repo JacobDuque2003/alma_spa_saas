@@ -1340,7 +1340,7 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       return handleServiceRecommendation({ tenant, connection, conv, waId, tone });
 
     case 'promotions':
-      return handlePromotions({ tenant, connection, conv, waId });
+      return handlePromotions({ tenant, connection, conv, waId, tone });
 
     case 'book_service': {
       if (params?.service_query) {
@@ -1543,10 +1543,13 @@ async function handleServiceRecommendation({ tenant, connection, conv, waId, ton
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }
 
-async function handlePromotions({ tenant, connection, conv, waId }) {
-  const msg = '🌸 *Promociones y catálogo Alma Spa*\n\nDescubra nuestras promociones, novedades y bienestar en Instagram:\nhttps://www.instagram.com/alma_spaholistica/\n\n📖 *Catálogo de servicios*\nhttps://drive.google.com/file/d/12_6QAi4ZwMlLElp0QgbrGh5WmZF4WWRE/view\n\n🔗 También puede ver todos nuestros enlaces aquí:\nhttps://linktr.ee/almaspa_02';
+async function handlePromotions({ tenant, connection, conv, waId, tone }) {
+  const msg = tone === 'tu'
+    ? '🌸 *Promociones y catálogo Alma Spa*\n\nDescubre nuestras promociones, novedades y bienestar en Instagram:\nhttps://www.instagram.com/alma_spaholistica/\n\n📖 *Catálogo de servicios*\nhttps://drive.google.com/file/d/12_6QAi4ZwMlLElp0QgbrGh5WmZF4WWRE/view\n\n🔗 También puedes ver todos nuestros enlaces aquí:\nhttps://linktr.ee/almaspa_02'
+    : '🌸 *Promociones y catálogo Alma Spa*\n\nDescubra nuestras promociones, novedades y bienestar en Instagram:\nhttps://www.instagram.com/alma_spaholistica/\n\n📖 *Catálogo de servicios*\nhttps://drive.google.com/file/d/12_6QAi4ZwMlLElp0QgbrGh5WmZF4WWRE/view\n\n🔗 También puede ver todos nuestros enlaces aquí:\nhttps://linktr.ee/almaspa_02';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
+  return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
 }
 
 async function sendMainMenu({ tenant, connection, conv, waId, tone, compact = false }) {
@@ -1749,7 +1752,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
     return handleServiceRecommendation({ tenant, connection, conv, waId, tone });
   }
   if (selectionId === menus.MAIN_MENU_IDS.PROMOTIONS) {
-    return handlePromotions({ tenant, connection, conv, waId });
+    return handlePromotions({ tenant, connection, conv, waId, tone });
   }
   if (selectionId === menus.MAIN_MENU_IDS.MY_APPOINTMENT) {
     return handleMyAppointment({ tenant, connection, conv, waId, tone });

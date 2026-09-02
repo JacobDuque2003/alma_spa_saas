@@ -322,6 +322,23 @@ test('reservar para otra persona conserva el flujo si nombre y teléfono llegan 
   assert.match(sent.at(-1).body, /dirección/i);
 });
 
+test('promociones deja visible el menú para elegir otra opción', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'interactive', interactive: { list_reply: { id: menus.MAIN_MENU_IDS.PROMOTIONS } } },
+  });
+
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].body, /instagram\.com\/alma_spaholistica/i);
+  assert.equal(sent[1].kind, 'interactive');
+  assert.equal(sent[1].payload.action.button, 'Ver opciones');
+  assert.match(sent[1].payload.body.text, /Qué te gustaría hacer hoy/i);
+});
+
 test('consulta de citas disponibles pide servicio antes de mostrar horarios', async () => {
   resetState();
   const sent = installTransportMocks();
