@@ -864,7 +864,7 @@ export default function CRMPage() {
         <button
           type="button"
           onClick={() => openMediaViewer(mediaUrl, label)}
-          className={`mb-2 block overflow-hidden ${compactSticker ? "w-fit rounded-xl bg-transparent" : "rounded-xl border border-border/70 bg-white/40"}`}
+          className={`mb-2 block w-fit max-w-[320px] overflow-hidden ${compactSticker ? "rounded-xl bg-transparent" : "rounded-xl border border-border/70 bg-white/40"}`}
           title="Abrir imagen"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -873,7 +873,7 @@ export default function CRMPage() {
             alt={label}
             className={compactSticker
               ? "max-h-40 max-w-[160px] object-contain"
-              : "max-h-72 w-full object-cover"}
+              : "block h-auto max-h-72 max-w-full object-contain"}
           />
         </button>
       );
