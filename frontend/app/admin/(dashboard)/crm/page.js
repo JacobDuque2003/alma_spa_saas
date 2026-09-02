@@ -978,32 +978,31 @@ export default function CRMPage() {
           <p className="text-xs text-bronze truncate mt-0.5">
             {c.lastMessagePreview || "Sin mensajes"}
           </p>
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <div className="mt-1.5" />
+        </div>
+        </div>
+        {(c.status === "open" || c.assignedTo?.name || c.botActive === false || c.botStatus === "escalated" || labels.length > 0) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-left">
             {c.status === "open" && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
                 <CircleDot size={11} /> ABIERTO
               </span>
             )}
             {c.assignedTo?.name && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-cream text-[11px] font-medium uppercase tracking-wide text-bronze">
+              <span className="inline-flex items-center gap-1 rounded-full bg-cream px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-bronze">
                 <UserCheck size={11} /> {c.assignedTo.name.split(" ")[0]}
               </span>
             )}
             {c.botActive === false && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-bronze-deep/10 text-[11px] font-medium uppercase tracking-wide text-bronze-deep">
+              <span className="inline-flex items-center gap-1 rounded-full bg-bronze-deep/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-bronze-deep">
                 <UserRound size={11} /> HUMANO
               </span>
             )}
             {c.botStatus === "escalated" && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gold/20 text-[11px] font-semibold uppercase tracking-wide text-bronze-deep">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gold/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-bronze-deep">
                 ESCALADO
               </span>
             )}
-          </div>
-        </div>
-        </div>
-        {labels.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-left">
             {labels.map((l) => {
               const cfg = labelConfig[l];
               if (!cfg) return null;
