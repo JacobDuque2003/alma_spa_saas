@@ -255,6 +255,33 @@ function Shell({ children }) {
         })}
       </nav>
 
+      {!isMobile && !sidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(true)}
+          title="Ocultar menú"
+          aria-label="Ocultar menú"
+          style={{
+            width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            marginBottom: 8,
+            padding: "9px 12px",
+            borderRadius: 14,
+            border: "1px solid rgba(168,154,135,0.35)",
+            background: "#F7F5F0",
+            color: "#8C6E50",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          <PanelLeftClose size={16} /> Ocultar menú
+        </button>
+      )}
+
       <div
         style={{
           marginTop: "auto",
@@ -499,28 +526,6 @@ function Shell({ children }) {
             >
               A
             </div>
-          )}
-          {!sidebarCollapsed && (
-            <button
-              type="button"
-              onClick={() => setSidebarCollapsed((v) => !v)}
-              title="Ocultar menú"
-              aria-label="Ocultar menú"
-              style={{
-                width: 38,
-                height: 38,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 14,
-                border: "1px solid rgba(168,154,135,0.35)",
-                background: "#F7F5F0",
-                color: "#8C6E50",
-                cursor: "pointer",
-              }}
-            >
-              <PanelLeftClose size={18} />
-            </button>
           )}
         </div>
         {sidebarCollapsed && (

@@ -540,9 +540,13 @@ export default function CRMPage() {
       setConversations((prev) => prev.map((item) => (
         item.id === selectedId ? { ...item, ...updated } : item
       )));
-      // Marcar como no leído no cambia de pestaña ni cierra la conversación:
-      // solo actualiza su badge, como una marca manual en WhatsApp.
-      setSelected((current) => current?.id === selectedId ? { ...current, ...updated } : current);
+      // Vuelve al estado inicial de la bandeja para elegir otro chat, sin
+      // alterar el filtro activo (Todos, Pendientes o Resueltos).
+      setSelectedId(null);
+      setSelected(null);
+      setMessages([]);
+      setNotes([]);
+      setMobileView("list");
     } catch (err) {
       toast.error(err.message);
     }
@@ -936,8 +940,8 @@ export default function CRMPage() {
           </div>
         </div>
         {pendingMessageCount > 0 && (
-          <span className="absolute right-3 top-1/2 flex min-w-5 h-5 -translate-y-1/2 items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
-            {pendingMessageCount > 99 ? "99+" : pendingMessageCount}
+          <span className="absolute right-3 top-1/2 flex h-6 min-w-6 -translate-y-1/2 items-center justify-center rounded-full bg-gold px-2 text-[11px] font-bold leading-none tabular-nums text-white shadow-sm">
+            {pendingMessageCount}
           </span>
         )}
       </button>
