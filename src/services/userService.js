@@ -47,6 +47,9 @@ const PERMISSION_KEYS = [
   'clientesEliminar',
   'clientesPagos',
   'clientesExportar',
+  'crmEtiquetasGestionar',
+  'crmRespuestasRapidasGestionar',
+  'crmNotasGestionar',
 ];
 
 function normalizePermissions(input = {}) {

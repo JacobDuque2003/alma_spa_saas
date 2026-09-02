@@ -387,3 +387,16 @@ test('[SECURITY] ALLOWED_ROLES_FOR_CREATION solo contiene personal y dueno', () 
     ['dueno', 'personal']
   );
 });
+
+test('permisos finos de bandeja se normalizan y no se activan por accidente', () => {
+  const permissions = userService.normalizePermissions({
+    crm: true,
+    crmEtiquetasGestionar: true,
+    crmNotasGestionar: true,
+  });
+
+  assert.equal(permissions.crm, true);
+  assert.equal(permissions.crmEtiquetasGestionar, true);
+  assert.equal(permissions.crmNotasGestionar, true);
+  assert.equal(permissions.crmRespuestasRapidasGestionar, false);
+});

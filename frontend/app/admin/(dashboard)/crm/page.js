@@ -8,10 +8,12 @@ import {
   Plus, Trash2, RefreshCw, CheckCircle2, CircleDot, UserCheck,
   ChevronDown, ArrowDown, Edit3, Settings, Paperclip, Download, FileText,
   ImageIcon, Volume2, Video, LockKeyhole, Reply,
+  X,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
+import { useAuth } from "@/lib/auth-context";
 
 const DEFAULT_LABELS = [
   { key: "consulta", text: "Consulta", tone: "blue" },
@@ -91,6 +93,7 @@ const QUICK_REPLIES_DEFAULT = [
 ];
 
 export default function CRMPage() {
+  const { user } = useAuth();
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
   const [conversations, setConversations] = useState([]);
@@ -101,6 +104,7 @@ export default function CRMPage() {
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState("");
+  const [draftAttachment, setDraftAttachment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -133,7 +137,18 @@ export default function CRMPage() {
   const [quickReplyConfigMode, setQuickReplyConfigMode] = useState(false);
   const [quickReplyDraft, setQuickReplyDraft] = useState({ key: "", icon: "💬", title: "", text: "" });
   const [editingQuickReplyKey, setEditingQuickReplyKey] = useState(null);
+  const attachmentPreviewUrl = useMemo(() => (
+    draftAttachment?.type?.startsWith("image/") && typeof URL !== "undefined"
+      ? URL.createObjectURL(draftAttachment)
+      : ""
+  ), [draftAttachment]);
   const labelConfig = useMemo(() => labelMapFrom(labelDefs), [labelDefs]);
+  const hasPermission = useCallback((key) => (
+    ["superadmin", "dueno"].includes(user?.role) || Boolean(user?.permissions?.[key])
+  ), [user]);
+  const canManageLabels = hasPermission("crmEtiquetasGestionar");
+  const canManageQuickReplies = hasPermission("crmRespuestasRapidasGestionar");
+  const canManageNotes = hasPermission("crmNotasGestionar");
   const selectedName = selected?.client?.fullName || selected?.customerName || selected?.customerWaId || "";
   const canReplyInWindow = Boolean(selected?.withinWindow && !sending);
   const chatMatches = useMemo(() => {
@@ -153,6 +168,10 @@ export default function CRMPage() {
       ...(selected.labels || []).map((key) => labelConfig[key]?.text || key),
     ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
   }, [chatSearch, chatMatches.length, selected, selectedName, labelConfig]);
+
+  useEffect(() => () => {
+    if (attachmentPreviewUrl) URL.revokeObjectURL(attachmentPreviewUrl);
+  }, [attachmentPreviewUrl]);
 
   // ─── Data fetching ──────────────────────────────────────────
   const fetchConversations = useCallback(async (silent = false) => {
@@ -402,6 +421,7 @@ export default function CRMPage() {
 
   // ─── Actions ─────────────────────────────────────────────────
   async function sendText() {
+    if (draftAttachment) return sendAttachment(draftAttachment);
     if (!body.trim() || !selectedId) return;
     if (!selected?.withinWindow) {
       toast.error("La ventana de 24 horas terminó. Solo puedes enviar una plantilla o recordatorio.");
@@ -429,6 +449,30 @@ export default function CRMPage() {
     });
   }
 
+  function stageAttachment(file) {
+    if (!file) return;
+    if (!selected?.withinWindow) {
+      toast.error("Han pasado más de 24h. Para escribir usa una plantilla/recordatorio.");
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error("El archivo supera el límite de 8MB");
+      return;
+    }
+    setDraftAttachment(file);
+  }
+
+  function handleComposerPaste(event) {
+    if (!canReplyInWindow) return;
+    const pastedImage = Array.from(event.clipboardData?.items || [])
+      .find((item) => item.kind === "file" && item.type.startsWith("image/"));
+    if (!pastedImage) return;
+    const file = pastedImage.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    stageAttachment(file);
+  }
+
   async function sendAttachment(file) {
     if (!file || !selectedId) return;
     if (!selected?.withinWindow) {
@@ -451,6 +495,7 @@ export default function CRMPage() {
         },
       });
       setBody("");
+      setDraftAttachment(null);
       toast.success("Adjunto enviado");
       await Promise.all([fetchConversation(), fetchConversations()]);
     } catch (err) {
@@ -490,6 +535,10 @@ export default function CRMPage() {
 
   async function toggleLabel(label) {
     if (!selected) return;
+    if (!canManageLabels) {
+      toast.error("No tienes permiso para gestionar etiquetas");
+      return;
+    }
     const current = selected.labels || [];
     const next = current.includes(label)
       ? current.filter((l) => l !== label)
@@ -513,6 +562,10 @@ export default function CRMPage() {
 
   async function addNote() {
     if (!noteText.trim() || !selectedId) return;
+    if (!canManageNotes) {
+      toast.error("No tienes permiso para gestionar notas internas");
+      return;
+    }
     try {
       const note = await authFetch(`/crm/conversations/${selectedId}/notes`, {
         method: "POST",
@@ -526,6 +579,10 @@ export default function CRMPage() {
   }
 
   async function deleteNote(noteId) {
+    if (!canManageNotes) {
+      toast.error("No tienes permiso para gestionar notas internas");
+      return;
+    }
     try {
       await authFetch(`/crm/notes/${noteId}`, { method: "DELETE" });
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
@@ -611,6 +668,7 @@ export default function CRMPage() {
   }
 
   async function saveLabelsConfig(nextLabels) {
+    if (!canManageLabels) throw new Error("No tienes permiso para gestionar etiquetas");
     const clean = nextLabels.filter((label) => label.text?.trim()).slice(0, 24);
     const saved = await authFetch("/crm/labels", {
       method: "PUT",
@@ -655,6 +713,7 @@ export default function CRMPage() {
   }
 
   async function saveQuickRepliesConfig(nextQuickReplies) {
+    if (!canManageQuickReplies) throw new Error("No tienes permiso para gestionar respuestas rápidas");
     const clean = nextQuickReplies
       .filter((reply) => reply.title?.trim() && reply.text?.trim())
       .slice(0, 20);
@@ -740,11 +799,23 @@ export default function CRMPage() {
     const mediaUrl = `/api/proxy/crm/messages/${m.id}/media`;
     const label = m.body && !isPlaceholderBody(m.body) ? m.body : "Abrir archivo";
 
-    if (m.type === "image" || m.type === "sticker") {
+    if (m.type === "image" || m.type === "sticker" || m.type === "gift") {
+      const compactSticker = m.type === "sticker" || m.type === "gift";
       return (
-        <a href={mediaUrl} target="_blank" rel="noreferrer" className="mb-2 block overflow-hidden rounded-xl border border-border/70 bg-white/40">
+        <a
+          href={mediaUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={`mb-2 block overflow-hidden ${compactSticker ? "w-fit rounded-xl bg-transparent" : "rounded-xl border border-border/70 bg-white/40"}`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl} alt={label} className="max-h-72 w-full object-cover" />
+          <img
+            src={mediaUrl}
+            alt={label}
+            className={compactSticker
+              ? "max-h-40 max-w-[160px] object-contain"
+              : "max-h-72 w-full object-cover"}
+          />
         </a>
       );
     }
@@ -883,7 +954,7 @@ export default function CRMPage() {
         key={c.id}
         onClick={() => selectConversation(c.id)}
         className={`
-          relative w-full flex items-start gap-3 p-3 pr-10 rounded-xl text-left
+          relative w-full p-3 pr-10 rounded-xl text-left
           transition-colors duration-150
           ${isSelected
             ? "bg-glow/40"
@@ -891,6 +962,7 @@ export default function CRMPage() {
           }
         `}
       >
+        <div className="flex items-start gap-3">
         <span className={`
           w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center
           text-xs font-semibold
@@ -927,18 +999,23 @@ export default function CRMPage() {
                 ESCALADO
               </span>
             )}
-            {labels.slice(0, 2).map((l) => {
+          </div>
+        </div>
+        </div>
+        {labels.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-left">
+            {labels.map((l) => {
               const cfg = labelConfig[l];
               if (!cfg) return null;
               return (
-                <span key={l} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold uppercase tracking-wide ${cfg.bg} ${cfg.fg}`}>
-                  <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
-                  {cfg.text}
+                <span key={l} className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${cfg.bg} ${cfg.fg}`}>
+                  <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${cfg.dot}`} />
+                  <span className="truncate">{cfg.text}</span>
                 </span>
               );
             })}
           </div>
-        </div>
+        )}
         {pendingMessageCount > 0 && (
           <span className="absolute right-3 top-1/2 flex h-6 min-w-6 -translate-y-1/2 items-center justify-center rounded-full bg-gold px-2 text-[11px] font-bold leading-none tabular-nums text-white shadow-sm">
             {pendingMessageCount}
@@ -958,6 +1035,7 @@ export default function CRMPage() {
       document: "Documento adjunto",
       video: "Video recibido",
       sticker: "Sticker",
+      gift: "Regalo",
       location: "Ubicación compartida",
       interactive: "Mensaje interactivo",
       template: "Plantilla enviada",
@@ -970,7 +1048,7 @@ export default function CRMPage() {
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
-          min-w-0 max-w-[78%] break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm
+          min-w-0 max-w-[78%] select-text break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm
           ${isOutbound
             ? "rounded-tr-md border border-emerald-200 bg-[#dcf8c6] text-slate-800"
             : "rounded-tl-md border border-slate-200 bg-white text-slate-800"
@@ -1247,7 +1325,7 @@ export default function CRMPage() {
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold text-bronze-deep">Respuestas rápidas</p>
-              <button
+              {canManageQuickReplies && <button
                 onClick={() => {
                   setQuickReplyConfigMode((v) => !v);
                   setEditingQuickReplyKey(null);
@@ -1261,7 +1339,7 @@ export default function CRMPage() {
                 title="Configurar respuestas rápidas"
               >
                 <Settings size={13} />
-              </button>
+              </button>}
             </div>
 
             {!quickReplyConfigMode ? (
@@ -1369,7 +1447,7 @@ export default function CRMPage() {
         )}
 
         {/* Input */}
-        <div className={`flex items-center gap-2 border-t border-border px-4 py-3 backdrop-blur-sm ${selected.withinWindow ? "bg-white/80" : "bg-slate-50"}`}>
+        <div className={`relative flex items-center gap-2 border-t border-border px-4 py-3 backdrop-blur-sm ${selected.withinWindow ? "bg-white/80" : "bg-slate-50"}`}>
           <input
             ref={fileInputRef}
             type="file"
@@ -1380,9 +1458,28 @@ export default function CRMPage() {
               if (!canReplyInWindow) return;
               const file = event.target.files?.[0];
               event.target.value = "";
-              if (file) sendAttachment(file);
+              if (file) stageAttachment(file);
             }}
           />
+          {draftAttachment && (
+            <div className="absolute bottom-[76px] left-4 z-20 flex max-w-[min(360px,calc(100%-2rem))] items-center gap-2 rounded-2xl border border-border bg-white p-2 shadow-lg">
+              {attachmentPreviewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={attachmentPreviewUrl} alt="Vista previa" className="h-16 w-16 rounded-xl object-cover" />
+              ) : (
+                <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-cream text-bronze"><FileText size={22} /></span>
+              )}
+              <span className="min-w-0 flex-1 truncate pr-1 text-xs font-medium text-bronze-deep">{draftAttachment.name || "Imagen pegada"}</span>
+              <button
+                type="button"
+                onClick={() => setDraftAttachment(null)}
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze transition-colors hover:bg-red-50 hover:text-red-600"
+                title="Quitar adjunto"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
           <button
             data-quick-replies-trigger
             onClick={() => {
@@ -1417,12 +1514,13 @@ export default function CRMPage() {
             placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Mensajes bloqueados: la ventana de 24 horas terminó"}
             value={body}
             onChange={(e) => setBody(e.target.value)}
+            onPaste={handleComposerPaste}
             disabled={!canReplyInWindow}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
           />
           <button
             onClick={sendText}
-            disabled={!canReplyInWindow || !body.trim()}
+            disabled={!canReplyInWindow || (!body.trim() && !draftAttachment)}
             className="w-9 h-9 rounded-full bg-bronze text-white flex items-center justify-center flex-shrink-0
                        hover:bg-bronze-deep transition-colors duration-150 disabled:opacity-40"
           >
@@ -1531,7 +1629,7 @@ export default function CRMPage() {
                 <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
                   <Tag size={12} /> Etiquetas
                 </p>
-                <button
+                {canManageLabels && <button
                   onClick={() => {
                     setLabelConfigMode((v) => !v);
                     setLabelDropdownOpen(true);
@@ -1546,7 +1644,7 @@ export default function CRMPage() {
                   title="Configurar etiquetas"
                 >
                   <Settings size={13} />
-                </button>
+                </button>}
               </div>
 
               <div className="rounded-2xl border border-border bg-cream/35">
@@ -1583,13 +1681,15 @@ export default function CRMPage() {
                               <button
                                 key={key}
                                 onClick={() => toggleLabel(key)}
+                                disabled={!canManageLabels}
                                 className={`
                                   inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold
                                   transition-all duration-150
                                   ${active
                                     ? `${cfg.bg} ${cfg.fg} border-current`
-                                    : "bg-white text-warm-gray border-border hover:bg-cream"
+                                  : "bg-white text-warm-gray border-border hover:bg-cream"
                                   }
+                                  ${!canManageLabels ? "cursor-not-allowed opacity-60" : ""}
                                 `}
                               >
                                 <span className={`w-2.5 h-2.5 rounded-full ${active ? cfg.dot : "bg-warm-gray/40"}`} />
@@ -1690,12 +1790,13 @@ export default function CRMPage() {
                   onChange={(e) => setNoteText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") addNote(); }}
                   placeholder="Agregar nota…"
+                  disabled={!canManageNotes}
                   className="flex-1 px-3 py-2 rounded-lg border border-border bg-cream/40 text-sm text-bronze-deep
                              placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
                 />
                 <button
                   onClick={addNote}
-                  disabled={!noteText.trim()}
+                  disabled={!noteText.trim() || !canManageNotes}
                   className="px-3 py-2 rounded-lg bg-bronze text-white text-sm font-medium
                              hover:bg-bronze-deep transition-colors disabled:opacity-40"
                 >
@@ -1710,12 +1811,12 @@ export default function CRMPage() {
                     <div key={n.id} className="p-3 rounded-xl bg-cream/60 border border-border">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-sm text-bronze-deep leading-relaxed flex-1">{n.content}</p>
-                        <button
+                        {canManageNotes && <button
                           onClick={() => deleteNote(n.id)}
                           className="p-1 text-warm-gray hover:text-red-500 transition-colors flex-shrink-0"
                         >
                           <Trash2 size={13} />
-                        </button>
+                        </button>}
                       </div>
                       <p className="text-[10px] text-warm-gray mt-1.5">
                         {n.author?.name || "?"} · {dateStr(n.createdAt)} {timeStr(n.createdAt)}

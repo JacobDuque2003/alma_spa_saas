@@ -86,6 +86,9 @@ model RolePermission {
   clientesEliminar   Boolean @default(false)
   clientesPagos      Boolean @default(false)
   clientesExportar   Boolean @default(false)
+  crmEtiquetasGestionar         Boolean @default(false)
+  crmRespuestasRapidasGestionar Boolean @default(false)
+  crmNotasGestionar             Boolean @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

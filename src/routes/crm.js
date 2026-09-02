@@ -25,7 +25,7 @@ router.get('/labels', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/labels', async (req, res, next) => {
+router.put('/labels', requirePermission('crmEtiquetasGestionar'), async (req, res, next) => {
   try {
     const labels = await inboxService.saveLabelDefinitions(req.user, req.body?.labels);
     res.json({ items: labels });
@@ -39,7 +39,7 @@ router.get('/quick-replies', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/quick-replies', async (req, res, next) => {
+router.put('/quick-replies', requirePermission('crmRespuestasRapidasGestionar'), async (req, res, next) => {
   try {
     const quickReplies = await inboxService.saveQuickReplies(req.user, req.body?.quickReplies);
     res.json({ items: quickReplies });
@@ -181,7 +181,7 @@ router.patch('/conversations/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/conversations/:id/labels', async (req, res, next) => {
+router.put('/conversations/:id/labels', requirePermission('crmEtiquetasGestionar'), async (req, res, next) => {
   try {
     const labels = Array.isArray(req.body?.labels) ? req.body.labels : [];
     const conv = await inboxService.setLabels(req.user, req.params.id, labels);
@@ -198,7 +198,7 @@ router.get('/conversations/:id/notes', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/conversations/:id/notes', async (req, res, next) => {
+router.post('/conversations/:id/notes', requirePermission('crmNotasGestionar'), async (req, res, next) => {
   try {
     const note = await inboxService.createNote(req.user, req.params.id, req.body?.content);
     if (!note) return res.status(404).json({ error: 'Conversación no encontrada' });
@@ -206,7 +206,7 @@ router.post('/conversations/:id/notes', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.delete('/notes/:noteId', async (req, res, next) => {
+router.delete('/notes/:noteId', requirePermission('crmNotasGestionar'), async (req, res, next) => {
   try {
     const result = await inboxService.deleteNote(req.user, req.params.noteId);
     if (!result) return res.status(404).json({ error: 'Nota no encontrada' });

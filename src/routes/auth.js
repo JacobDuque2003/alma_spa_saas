@@ -18,6 +18,9 @@ const MODULE_PERMISSIONS = [
   'clientesEliminar',
   'clientesPagos',
   'clientesExportar',
+  'crmEtiquetasGestionar',
+  'crmRespuestasRapidasGestionar',
+  'crmNotasGestionar',
 ];
 
 const rateBuckets = new Map();

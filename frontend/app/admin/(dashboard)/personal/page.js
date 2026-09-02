@@ -48,6 +48,9 @@ const PERMISSION_GROUPS = [
     description: "Mensajes y recordatorios",
     items: [
       ["crm", "Conversaciones", "Bandeja de WhatsApp con clientas"],
+      ["crmEtiquetasGestionar", "Gestionar etiquetas", "Crear, editar, eliminar y aplicar etiquetas"],
+      ["crmRespuestasRapidasGestionar", "Gestionar respuestas rápidas", "Crear, editar y eliminar respuestas rápidas"],
+      ["crmNotasGestionar", "Gestionar notas internas", "Crear y eliminar notas de conversaciones"],
     ],
   },
   {
