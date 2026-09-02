@@ -435,7 +435,6 @@ export default function CRMPage() {
     try {
       await authFetch(`/crm/conversations/${selectedId}/messages`, { method: "POST", body: { body } });
       setBody("");
-      toast.success("Mensaje enviado");
       await Promise.all([fetchConversation(), fetchConversations()]);
     } catch (err) {
       toast.error(err.message || "No se pudo enviar");
@@ -527,7 +526,6 @@ export default function CRMPage() {
     if (!selectedId) return;
     try {
       const updated = await authFetch(`/crm/conversations/${selectedId}/bot/resume`, { method: "POST" });
-      toast.success("Bot reactivado");
       setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated, botStatus: "active" } : cur);
       setConversations((prev) => prev.map((item) => (
         item.id === selectedId ? { ...item, ...updated, botStatus: "active" } : item
