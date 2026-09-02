@@ -903,35 +903,30 @@ export default function CRMPage() {
           </p>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {c.status === "open" && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-semibold">
-                <CircleDot size={10} /> Abierto
-              </span>
-            )}
-            {c.status === "resolved" && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold">
-                <CheckCircle2 size={10} /> Resuelto
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+                <CircleDot size={11} /> ABIERTO
               </span>
             )}
             {c.assignedTo?.name && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cream text-bronze text-[10px] font-medium">
-                <UserCheck size={10} /> {c.assignedTo.name.split(" ")[0]}
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-cream text-[11px] font-medium uppercase tracking-wide text-bronze">
+                <UserCheck size={11} /> {c.assignedTo.name.split(" ")[0]}
               </span>
             )}
             {c.botActive === false && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bronze-deep/10 text-bronze-deep text-[10px] font-medium">
-                <UserRound size={10} /> Humano
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-bronze-deep/10 text-[11px] font-medium uppercase tracking-wide text-bronze-deep">
+                <UserRound size={11} /> HUMANO
               </span>
             )}
             {c.botStatus === "escalated" && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gold/20 text-bronze-deep text-[10px] font-semibold">
-                Escalado
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gold/20 text-[11px] font-semibold uppercase tracking-wide text-bronze-deep">
+                ESCALADO
               </span>
             )}
             {labels.slice(0, 2).map((l) => {
               const cfg = labelConfig[l];
               if (!cfg) return null;
               return (
-                <span key={l} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${cfg.bg} ${cfg.fg}`}>
+                <span key={l} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold uppercase tracking-wide ${cfg.bg} ${cfg.fg}`}>
                   <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
                   {cfg.text}
                 </span>
