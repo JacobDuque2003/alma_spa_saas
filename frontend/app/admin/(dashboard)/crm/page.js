@@ -540,16 +540,9 @@ export default function CRMPage() {
       setConversations((prev) => prev.map((item) => (
         item.id === selectedId ? { ...item, ...updated } : item
       )));
-      // Al devolver una conversación a "No leído" la soltamos de la vista
-      // activa: así la bandeja queda lista para que recepción escoja el
-      // siguiente chat pendiente, en vez de aparentar que sigue abierto.
-      setSelectedId(null);
-      setSelected(null);
-      setMessages([]);
-      setNotes([]);
-      setMobileView("list");
-      setFilter("pending");
-      fetchConversations(true);
+      // Marcar como no leído no cambia de pestaña ni cierra la conversación:
+      // solo actualiza su badge, como una marca manual en WhatsApp.
+      setSelected((current) => current?.id === selectedId ? { ...current, ...updated } : current);
     } catch (err) {
       toast.error(err.message);
     }
@@ -928,11 +921,6 @@ export default function CRMPage() {
             {c.botStatus === "escalated" && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gold/20 text-bronze-deep text-[10px] font-semibold">
                 Escalado
-              </span>
-            )}
-            {!c.withinWindow && (
-              <span className="inline-flex px-2 py-0.5 rounded-full bg-bronze-deep text-cream text-[10px] font-medium">
-                Usar plantilla
               </span>
             )}
             {labels.slice(0, 2).map((l) => {
