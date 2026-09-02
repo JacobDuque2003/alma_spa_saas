@@ -255,21 +255,22 @@ function Shell({ children }) {
         })}
       </nav>
 
-      {!isMobile && !sidebarCollapsed && (
+      {!isMobile && (
         <button
           type="button"
-          onClick={() => setSidebarCollapsed(true)}
-          title="Ocultar menú"
-          aria-label="Ocultar menú"
+          onClick={() => setSidebarCollapsed((current) => !current)}
+          title={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
+          aria-label={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
           style={{
-            width: "100%",
+            width: sidebarCollapsed ? 46 : "100%",
+            height: sidebarCollapsed ? 42 : undefined,
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 8,
-            marginBottom: 8,
+            gap: sidebarCollapsed ? 0 : 8,
+            margin: sidebarCollapsed ? "0 auto 8px" : "0 0 8px",
             padding: "9px 12px",
-            borderRadius: 14,
+            borderRadius: sidebarCollapsed ? 16 : 14,
             border: "1px solid rgba(168,154,135,0.35)",
             background: "#F7F5F0",
             color: "#8C6E50",
@@ -278,7 +279,7 @@ function Shell({ children }) {
             fontWeight: 600,
           }}
         >
-          <PanelLeftClose size={16} /> Ocultar menú
+          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <><PanelLeftClose size={16} /> Ocultar menú</>}
         </button>
       )}
 
@@ -528,29 +529,6 @@ function Shell({ children }) {
             </div>
           )}
         </div>
-        {sidebarCollapsed && (
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed(false)}
-            title="Mostrar menú"
-            aria-label="Mostrar menú"
-            style={{
-              width: 46,
-              height: 42,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 16,
-              border: "1px solid rgba(168,154,135,0.35)",
-              background: "#F7F5F0",
-              color: "#8C6E50",
-              cursor: "pointer",
-              margin: "0 auto 14px",
-            }}
-          >
-            <PanelLeftOpen size={18} />
-          </button>
-        )}
         {navContent}
       </aside>
 
