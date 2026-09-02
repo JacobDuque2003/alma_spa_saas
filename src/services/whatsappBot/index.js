@@ -350,6 +350,33 @@ function describesWellnessNeed(text) {
   return /\b(me duele[n]?|dolor|molestia|tension|tenso|contractura|cansancio|estres|ansiedad)\b/.test(t);
 }
 
+// Las consultas clínicas no deben llegar a una respuesta generativa. Almita
+// puede orientar sobre bienestar y reservas, pero nunca indicar medicación ni
+// sustituir a un profesional de salud.
+function asksForMedicationOrDiagnosis(text) {
+  const t = normalizeSearchText(text);
+  return /\b(medicamento|medicina|pastilla|dosis|receta|antibiotico|antibioticos|analgesico|analgesicos|inyeccion|inyectable|diagnostico|diagnosticar|prescribir|prescripcion|curar|cura|sanar)\b/.test(t)
+    || /\bque (puedo|debo) tomar\b/.test(t);
+}
+
+function describesMedicalUrgency(text) {
+  const t = normalizeSearchText(text);
+  return /\b(dolor (en |del )?pecho|dificultad para respirar|no puedo respirar|me falta el aire|desmayo|desmay[eé]|sangrado|hemorragia|reaccion alergica|anafilaxia|debilidad repentina|paralisis)\b/.test(t);
+}
+
+async function handleMedicalSafety({ tenant, connection, conv, waId, tone, bodyText }) {
+  const urgent = describesMedicalUrgency(bodyText);
+  const msg = urgent
+    ? (tone === 'tu'
+      ? '🚨 Lo que cuentas necesita atención médica inmediata. No puedo evaluarlo por aquí; acude a urgencias o contacta al servicio de emergencias de tu zona ahora, por favor.'
+      : '🚨 Lo que describe necesita atención médica inmediata. No puedo evaluarlo por aquí; acuda a urgencias o contacte al servicio de emergencias de su zona ahora, por favor.')
+    : (tone === 'tu'
+      ? '💛 No puedo recomendar medicamentos, dosis ni tratamientos clínicos por chat. Para eso consulta a un profesional de salud. Sí puedo contarte sobre nuestros servicios de bienestar o ayudarte a reservar una valoración.'
+      : '💛 No puedo recomendar medicamentos, dosis ni tratamientos clínicos por chat. Para eso consulte a un profesional de salud. Sí puedo contarle sobre nuestros servicios de bienestar o ayudarle a reservar una valoración.');
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
 function wellnessRecommendationQuery(text) {
   const t = normalizeSearchText(text);
   if (/\b(piernas?|espalda|cuello|hombros?|cuerpo|tension|contractura|estres|cansancio)\b/.test(t)) return 'masaje relajante';
@@ -1077,7 +1104,20 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     const intro = tone === 'tu'
       ? '📅 Para mostrarte horarios realmente disponibles, primero elige el servicio.'
       : '📅 Para mostrarle horarios realmente disponibles, primero elija el servicio.';
-    return handleBook({ tenant, connection, conv, waId, tone, aiReply: intro });
+    return handleBook({
+      tenant,
+      connection,
+      conv,
+      waId,
+      tone,
+      aiReply: intro,
+      requestedDate: resolveBookingDate({}, bodyText),
+      requestedTime: parseRequestedTime(bodyText),
+    });
+  }
+
+  if (asksForMedicationOrDiagnosis(bodyText) || describesMedicalUrgency(bodyText)) {
+    return handleMedicalSafety({ tenant, connection, conv, waId, tone, bodyText });
   }
 
   if (describesWellnessNeed(bodyText) && !hasExplicitBookingLanguage(bodyText)) {
@@ -1335,8 +1375,14 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       });
 
     case 'book':
-    case 'book_start':
-      return handleBook({ tenant, connection, conv, waId, tone, aiReply });
+    case 'book_start': {
+      // Si la clienta ya escribió "lunes" o una hora, no le pedimos lo mismo
+      // después de elegir el servicio. El selector solo completa el dato que
+      // todavía falta.
+      const requestedDate = resolveBookingDate(params || {}, userMessage);
+      const requestedTime = params?.time || parseRequestedTime(userMessage);
+      return handleBook({ tenant, connection, conv, waId, tone, aiReply, requestedDate, requestedTime });
+    }
 
     case 'book_for_other':
       return handleBookForOther({ tenant, connection, conv, waId, tone });
@@ -1365,7 +1411,16 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
           return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: svc.id });
         }
       }
-      return handleBook({ tenant, connection, conv, waId, tone, aiReply });
+      return handleBook({
+        tenant,
+        connection,
+        conv,
+        waId,
+        tone,
+        aiReply,
+        requestedDate: resolveBookingDate(params || {}, userMessage),
+        requestedTime: params?.time || parseRequestedTime(userMessage),
+      });
     }
 
     case 'my_appointment':
@@ -1886,7 +1941,7 @@ function buildVisibleCategories(services) {
 
 // ─── Booking flow ──────────────────────────────────────────────
 
-async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page = 0 }) {
+async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page = 0, requestedDate = null, requestedTime = null }) {
   const visible = await loadVisibleServicesForBot(tenant.id);
   if (visible.length === 0) {
     const msg = tone === 'tu'
@@ -1913,9 +1968,16 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
       forOther: true,
     }
     : {};
+  const preservedDate = requestedDate || prev.booking?.requestedDate || null;
+  const preservedTime = requestedTime || prev.booking?.requestedTime || null;
   state.setFlowState(waId, {
     flow: 'booking',
-    booking: { step: 'select_service', ...bookingClient },
+    booking: {
+      step: 'select_service',
+      ...bookingClient,
+      requestedDate: preservedDate,
+      requestedTime: preservedTime,
+    },
     clientName: prev.clientName,
     tone,
     unclearCount: 0,
@@ -2019,6 +2081,8 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
   }
 
   const prev = state.getFlowState(waId) || {};
+  const requestedDate = prev.booking?.requestedDate || null;
+  const requestedTime = prev.booking?.requestedTime || null;
   state.setFlowState(waId, {
     flow: 'booking',
     booking: {
@@ -2029,6 +2093,8 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
       clientName: prev.booking?.clientName,
       clientPhone: prev.booking?.clientPhone,
       forOther: Boolean(prev.booking?.forOther),
+      requestedDate,
+      requestedTime,
     },
     clientName: prev.clientName,
     tone,
@@ -2039,12 +2105,29 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
   const body = tone === 'tu'
     ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n¿Qué día te queda bien?'
     : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n¿Qué día le queda bien?';
+
+  if (requestedDate) {
+    const availabilityBody = tone === 'tu'
+      ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n📅 Ya anoté el día que elegiste. Revisemos los horarios disponibles:'
+      : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n📅 Ya anoté el día que eligió. Revisemos los horarios disponibles:';
+    return handleBookingDateSelected({
+      tenant,
+      connection,
+      conv,
+      waId,
+      tone,
+      date: requestedDate,
+      requestedTime,
+      introBody: availabilityBody,
+    });
+  }
+
   const payload = menus.datePicker({ tone, body });
   const r = await transport.sendInteractive(connection, waId, payload);
   await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[fecha para ${svc.name}]` });
 }
 
-async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime = null }) {
+async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime = null, introBody = null }) {
   const fs = state.getFlowState(waId);
   if (!fs?.booking?.serviceId) {
     return handleBook({ tenant, connection, conv, waId, tone });
@@ -2128,9 +2211,12 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
     const slotIndex = findSlotIndexByTime(slots, requestedTime);
     if (slotIndex >= 0) return handleBookingTimeSelected({ tenant, connection, conv, waId, tone, slotIndex });
   }
+  const unavailableTimeBody = requestedTime
+    ? `😅 *No hay horario a las ${requestedTime}*\n\nVeamos otro momento del día:`
+    : null;
   return showBookingPeriodPicker({
     tenant, connection, conv, waId, tone,
-    body: requestedTime ? `😅 *No hay horario a las ${requestedTime}*\n\nVeamos otro momento del día:` : undefined,
+    body: [introBody, unavailableTimeBody].filter(Boolean).join('\n\n') || undefined,
   });
 }
 

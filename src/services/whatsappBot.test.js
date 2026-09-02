@@ -781,6 +781,62 @@ test('seleccionar servicio en booking → muestra date picker', async () => {
   assert.equal(st.booking?.serviceId, 's1');
 });
 
+test('si la reserva ya trae un día, al elegir servicio no vuelve a preguntar la fecha', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({
+    serviceById: {
+      s1: {
+        id: 's1', tenantId: 't1', name: 'Masaje Relajante', category: 'Masajes',
+        priceUsd: 30, durationMins: 60, active: true, description: 'Un momento para descansar.',
+      },
+    },
+  });
+  const originalAvailability = appointmentService.getAvailability;
+  appointmentService.getAvailability = async () => [
+    '2026-09-07T14:00:00.000Z',
+    '2026-09-07T20:00:00.000Z',
+  ];
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_service', requestedDate: '2026-09-07' },
+    tone: 'tu',
+  });
+
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT, connection: CONN, conv: CONV,
+      incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_s1' } } },
+    });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].kind, 'interactive');
+    assert.equal(sent[0].payload.type, 'button');
+    assert.match(sent[0].payload.body.text, /Ya anoté el día que elegiste/i);
+    assert.doesNotMatch(sent[0].payload.body.text, /¿Qué día te queda bien/i);
+    assert.equal(state.getFlowState(CONV.customerWaId).booking?.date, '2026-09-07');
+  } finally {
+    appointmentService.getAvailability = originalAvailability;
+  }
+});
+
+test('consultas por medicamentos reciben una derivación segura sin pasar a la IA', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  await bot._internals.handleTextMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    waId: CONV.customerWaId,
+    tone: 'tu',
+    bodyText: '¿Qué medicamento o dosis puedo tomar para el dolor?',
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /No puedo recomendar medicamentos, dosis/i);
+  assert.doesNotMatch(sent[0].body, /diagnóstico/i);
+});
+
 test('seleccionar servicio fuera de booking → muestra detalle normal', async () => {
   resetState();
   const sent = installTransportMocks();
