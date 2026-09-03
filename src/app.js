@@ -1,4 +1,9 @@
 require('dotenv').config();
+// Railway ejecuta `npm start`. Si no se definió NODE_ENV explícitamente,
+// dejamos el proceso en modo producción sin alterar `npm run dev` ni tests.
+if (!process.env.NODE_ENV && process.env.npm_lifecycle_event === 'start') {
+  process.env.NODE_ENV = 'production';
+}
 const express = require('express');
 const helmet = require('helmet');
 const authRoutes = require('./routes/auth');
