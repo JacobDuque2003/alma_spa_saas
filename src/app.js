@@ -1,7 +1,8 @@
 require('dotenv').config();
-// Railway ejecuta `npm start`. Si no se definió NODE_ENV explícitamente,
-// dejamos el proceso en modo producción sin alterar `npm run dev` ni tests.
-if (!process.env.NODE_ENV && process.env.npm_lifecycle_event === 'start') {
+// Railway ejecuta `npm start`: ese ciclo siempre es producción, incluso si
+// una variable antigua del servicio quedó configurada por error como dev.
+// `npm run dev` y `npm test` conservan su entorno normal.
+if (process.env.npm_lifecycle_event === 'start') {
   process.env.NODE_ENV = 'production';
 }
 const express = require('express');
