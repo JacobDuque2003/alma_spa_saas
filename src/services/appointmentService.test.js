@@ -252,6 +252,31 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
   assert.equal(result.status, 'confirmado');
 });
 
+test('createManualAppointment distingue fichas diferentes aunque los clientes tengan el mismo nombre', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findMany: async () => [{
+        clientId: 'ficha-distinta',
+        staffId: 'staff2',
+        roomId: 'room2',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }],
+      create: async (args) => ({ id: 'appt1', ...args.data }),
+    },
+  });
+
+  const result = await appointmentService.createManualAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    { clientId: 'ficha-seleccionada', serviceId: 'srv1', staffId: 'staff1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
+  );
+
+  assert.equal(result.clientId, 'ficha-seleccionada');
+});
+
 test('getAvailability devuelve lista vacía si no hay ningún staff habilitado', async () => {
   mockPrisma({
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', offersHomeService: false }) },

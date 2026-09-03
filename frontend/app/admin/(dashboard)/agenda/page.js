@@ -144,6 +144,7 @@ function getResourceId(item, key) {
   if (item[key]) return item[key];
   if (key === "roomId") return item.room?.id || null;
   if (key === "staffId") return item.staff?.id || null;
+  if (key === "clientId") return item.client?.id || null;
   return null;
 }
 
@@ -1948,10 +1949,53 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     })),
     [services]
   );
+  const selectedClientId = selectedClient?.id || "";
+  const selectedClientRecordLabel = useMemo(() => {
+    if (!selectedClient) return "";
+    return selectedClient.recordNumber
+      ? `Ficha ${selectedClient.recordNumber}`
+      : `Ficha ${String(selectedClient.id || "").slice(-6).toUpperCase()}`;
+  }, [selectedClient]);
+  const clientDayAppointments = useMemo(() => {
+    if (!selectedClientId) return [];
+    return dayAppointments
+      .filter((appointment) => (
+        OPEN_APPOINTMENT_STATUSES.has(appointment.status)
+        && getResourceId(appointment, "clientId") === selectedClientId
+      ))
+      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  }, [dayAppointments, selectedClientId]);
+  const findClientConflict = useCallback((start, end) => {
+    if (!start || !end || !selectedClientId) return null;
+    return clientDayAppointments.find((appointment) => (
+      overlapsRange(new Date(appointment.startsAt), new Date(appointment.endsAt), start, end)
+    )) || null;
+  }, [clientDayAppointments, selectedClientId]);
   const timeOptions = useMemo(
-    () => availableSlots.map((slot) => ({ value: slot, label: formatTime(slot), caption: selectedService ? `${selectedService.name} · bloque ${totalServiceBlockMins(selectedService)} min` : "" })),
-    [availableSlots, selectedService]
+    () => availableSlots.map((slot) => {
+      const start = new Date(slot);
+      const end = selectedService ? addMinutesToDate(start, totalServiceBlockMins(selectedService)) : null;
+      const conflict = findClientConflict(start, end);
+      return {
+        value: slot,
+        label: formatTime(slot),
+        caption: conflict
+          ? `${selectedClientRecordLabel}: ya tiene cita de ${formatTime(conflict.startsAt)} a ${formatTime(conflict.endsAt)}`
+          : selectedService ? `${selectedService.name} · bloque ${totalServiceBlockMins(selectedService)} min` : "",
+        disabled: Boolean(conflict),
+      };
+    }),
+    [availableSlots, findClientConflict, selectedClientRecordLabel, selectedService]
   );
+  const selectedClientConflict = useMemo(
+    () => findClientConflict(selectedStart, selectedEnd),
+    [findClientConflict, selectedEnd, selectedStart]
+  );
+  const nextAvailableAfterClientAppointments = useMemo(() => {
+    if (clientDayAppointments.length === 0) return null;
+    const lastEnd = Math.max(...clientDayAppointments.map((appointment) => new Date(appointment.endsAt).getTime()));
+    return timeOptions.find((option) => !option.disabled && new Date(option.value).getTime() >= lastEnd) || null;
+  }, [clientDayAppointments, timeOptions]);
   const roomOptions = useMemo(() => {
     if (!selectedService) return [];
     const autoDisabled = compatibleRooms.length === 0 || freeCompatibleRooms.length === 0;
@@ -2038,6 +2082,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       return undefined;
     }
     let cancelled = false;
+    setDayAppointments([]);
     authFetch("/appointments", { query: { from: `${date}T00:00:00`, to: `${date}T23:59:59` } })
       .then((rows) => {
         if (!cancelled) setDayAppointments(Array.isArray(rows) ? rows : []);
@@ -2054,6 +2099,13 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     if (roomId && busyRoomIds.has(roomId)) setRoomId("");
     if (staffId && busyStaffIds.has(staffId)) setStaffId("");
   }, [busyRoomIds, busyStaffIds, roomId, staffId]);
+
+  useEffect(() => {
+    // La identidad se compara por el id de la ficha, nunca por el nombre. Si
+    // el primer horario automático se cruza con esta ficha, obligamos a elegir
+    // otro en vez de dejar que el error aparezca al final del formulario.
+    if (selectedClientConflict) setTime("");
+  }, [selectedClientConflict]);
 
   function searchClients(q) {
     setClientSearch(q);
@@ -2108,6 +2160,12 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       }
       if (!roomId && freeCompatibleRooms.length === 0) {
         toast.error("No hay cabinas libres para ese servicio en ese horario");
+        setSubmitting(false);
+        return;
+      }
+      const clientConflict = findClientConflict(selectedStart, selectedEnd);
+      if (clientConflict) {
+        toast.error(`${selectedClientRecordLabel} ya tiene una cita de ${formatTime(clientConflict.startsAt)} a ${formatTime(clientConflict.endsAt)}`);
         setSubmitting(false);
         return;
       }
@@ -2194,9 +2252,14 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               {clientResults.length > 0 && !selectedClient && (
                 <div style={{ position: "absolute", zIndex: 20, width: "100%", marginTop: 4, border: "1px solid rgba(168,154,135,0.4)", borderRadius: 10, background: "#F7F5F0", boxShadow: "0 8px 24px rgba(107,85,64,0.12)", maxHeight: 180, overflowY: "auto" }}>
                   {clientResults.map((c) => (
-                    <button key={c.id} type="button" onClick={() => selectClient(c)} style={{ width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(168,154,135,0.2)", cursor: "pointer", display: "flex", justifyContent: "space-between", fontSize: 14, color: "#6B5540" }}>
-                      <span>{c.fullName}</span>
-                      <span style={{ fontSize: 12, color: "#A89A87" }}>{formatEcuadorPhone(c.whatsapp)}</span>
+                    <button key={c.id} type="button" onClick={() => selectClient(c)} style={{ width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(168,154,135,0.2)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 14, color: "#6B5540" }}>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{c.fullName}</span>
+                        <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "#8C6E50", fontWeight: 700 }}>
+                          {c.recordNumber ? `Ficha ${c.recordNumber}` : `Ficha ${String(c.id).slice(-6).toUpperCase()}`}
+                        </span>
+                      </span>
+                      <span style={{ flexShrink: 0, fontSize: 12, color: "#A89A87" }}>{formatEcuadorPhone(c.whatsapp)}</span>
                     </button>
                   ))}
                 </div>
@@ -2206,7 +2269,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                   <Loader2 size={16} className="animate-spin" style={{ color: "#A89A87", margin: "0 auto" }} />
                 </div>
               )}
-              {selectedClient && <p style={{ fontSize: 12, color: "#8C6E50", marginTop: 6 }}>{formatEcuadorPhone(selectedClient.whatsapp)}</p>}
+              {selectedClient && (
+                <p style={{ fontSize: 12, color: "#8C6E50", marginTop: 6 }}>
+                  <strong>{selectedClientRecordLabel}</strong> · {formatEcuadorPhone(selectedClient.whatsapp)}
+                </p>
+              )}
               {!selectedClient && clientSearch.length >= 2 && clientResults.length === 0 && !searching && (
                 <button type="button" onClick={() => setShowNewClient(true)} style={{ fontSize: 12, color: "#8C6E50", background: "none", border: "none", cursor: "pointer", marginTop: 6, textDecoration: "underline" }}>+ Crear nueva clienta</button>
               )}
@@ -2244,6 +2311,23 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               />
             </div>
           </div>
+          {selectedClient && clientDayAppointments.length > 0 && (
+            <div style={{ border: "1px solid rgba(201,168,118,0.45)", borderRadius: 12, background: "rgba(255,248,232,0.82)", padding: "10px 12px", color: "#6B5540" }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>
+                {selectedClientRecordLabel} ya tiene {clientDayAppointments.length === 1 ? "una cita" : `${clientDayAppointments.length} citas`} este día
+              </p>
+              {clientDayAppointments.map((appointment) => (
+                <p key={appointment.id} style={{ margin: "4px 0 0", fontSize: 11, lineHeight: 1.4, color: "#8C6E50" }}>
+                  {formatTime(appointment.startsAt)}–{formatTime(appointment.endsAt)} · {appointment.service?.name || "Servicio"}
+                </p>
+              ))}
+              <p style={{ margin: "5px 0 0", fontSize: 11, color: "#A06F32" }}>
+                {nextAvailableAfterClientAppointments
+                  ? `Los cruces están deshabilitados. Siguiente horario disponible: ${nextAvailableAfterClientAppointments.label}.`
+                  : "Los horarios que se crucen aparecen deshabilitados."}
+              </p>
+            </div>
+          )}
 
           {/* Room + Staff */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
