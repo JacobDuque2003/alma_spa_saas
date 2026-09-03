@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import {
   Loader2, Send, ArrowLeft, Bot, UserRound, Search,
@@ -385,7 +385,7 @@ export default function CRMPage() {
     }
   }, [selectedId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const lastId = messages[messages.length - 1]?.id;
     if (!lastId || lastId === lastMsgIdRef.current) return;
     const container = messagesContainerRef.current;
@@ -401,15 +401,11 @@ export default function CRMPage() {
       followOpeningMediaRef.current = pendingOpeningMediaRef.current.size > 0;
       isNearBottomRef.current = true;
       if (container) {
-        // Al abrir una conversación se debe ver el mensaje más reciente, igual
-        // que en WhatsApp. Dos frames permiten que React termine de pintar las
-        // burbujas; las imágenes que cargan después se atienden por separado.
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            container.scrollTop = container.scrollHeight;
-            setShowScrollBottom(false);
-          });
-        });
+        // Se posiciona antes de que el navegador pinte el chat nuevo. Así no se
+        // alcanza a mostrar la parte superior para luego saltar al final, efecto
+        // que hacía ver la conversación borrosa o deformada durante el cambio.
+        container.scrollTop = container.scrollHeight;
+        setShowScrollBottom(false);
       }
       return;
     }
@@ -1104,7 +1100,7 @@ export default function CRMPage() {
         key={c.id}
         onClick={() => selectConversation(c.id)}
         className={`
-          relative w-full p-3 pr-10 rounded-xl text-left
+          alma-no-press-scale relative w-full p-3 pr-10 rounded-xl text-left
           transition-colors duration-150
           ${isSelected
             ? "bg-glow/40"

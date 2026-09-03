@@ -172,6 +172,13 @@
     transform: scale(0.97);
   }
 
+  /* Los botones que contienen una tarjeta completa no deben escalar: al
+     rasterizar tanto texto e imágenes durante el clic se percibían borrosos. */
+  button.alma-no-press-scale,
+  button.alma-no-press-scale:active {
+    transform: none;
+  }
+
   /* Modal backdrop */
   .alma-backdrop {
     opacity: 0;
