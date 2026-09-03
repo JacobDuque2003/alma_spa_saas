@@ -132,6 +132,13 @@ export default function CRMPage() {
   const lastMsgIdRef = useRef(null);
   const initialMessageLoadRef = useRef(true);
   const messagesContainerRef = useRef(null);
+  const selectedIdRef = useRef(null);
+  const conversationFetchSeqRef = useRef(0);
+  const autoReadInFlightRef = useRef(null);
+  const suppressAutoReadRef = useRef(new Set());
+  const isNearBottomRef = useRef(true);
+  const pendingOpeningMediaRef = useRef(new Set());
+  const followOpeningMediaRef = useRef(false);
   const fileInputRef = useRef(null);
   const headerMenuRef = useRef(null);
   const quickRepliesRef = useRef(null);
@@ -194,9 +201,13 @@ export default function CRMPage() {
       const items = data.items || [];
       setConversations(items);
       setCounts(data.counts || { all: items.length, pending: 0, resolved: 0 });
-      setSelectedId((cur) => (
-        cur && items.some((item) => item.id === cur) ? cur : null
-      ));
+      setSelectedId((cur) => {
+        const next = cur && items.some((item) => item.id === cur) ? cur : null;
+        // Una conversación que se está marcando manualmente como no leída ya
+        // no se considera abierta, aunque llegue un refresco en paralelo.
+        selectedIdRef.current = next && !suppressAutoReadRef.current.has(next) ? next : null;
+        return next;
+      });
     } catch (err) {
       if (!silent) {
         setLoadError(err.message);
@@ -235,26 +246,50 @@ export default function CRMPage() {
 
   const fetchConversation = useCallback(async (silent = false) => {
     if (!selectedId) return;
+    const conversationId = selectedId;
+    const requestSeq = ++conversationFetchSeqRef.current;
     try {
       const [conv, msgs] = await Promise.all([
-        authFetch(`/crm/conversations/${selectedId}`),
-        authFetch(`/crm/conversations/${selectedId}/messages`),
+        authFetch(`/crm/conversations/${conversationId}`),
+        authFetch(`/crm/conversations/${conversationId}/messages`),
       ]);
+      // Si la persona abrió otro chat mientras esta petición estaba en curso,
+      // ignoramos la respuesta anterior para que no reemplace el chat actual.
+      if (
+        selectedIdRef.current !== conversationId
+        || requestSeq !== conversationFetchSeqRef.current
+      ) return;
       setSelected(conv);
       setMessages(msgs.items || []);
       const chatIsVisible = typeof document === "undefined"
         || document.visibilityState === "visible";
       const mobileChatIsOpen = !isMobile || mobileView === "chat";
       // Abrir la conversación la devuelve a su estado natural: leída y abierta.
-      if (conv.unreadCount > 0 && chatIsVisible && mobileChatIsOpen) {
-        authFetch(`/crm/conversations/${selectedId}/mark-read`, { method: "POST" })
+      if (
+        conv.unreadCount > 0
+        && chatIsVisible
+        && mobileChatIsOpen
+        && !suppressAutoReadRef.current.has(conversationId)
+        && autoReadInFlightRef.current?.conversationId !== conversationId
+      ) {
+        const promise = authFetch(`/crm/conversations/${conversationId}/mark-read`, { method: "POST" })
           .then((updated) => {
-            setSelected((cur) => cur?.id === selectedId ? { ...cur, ...updated, unreadCount: 0 } : cur);
+            if (
+              selectedIdRef.current !== conversationId
+              || suppressAutoReadRef.current.has(conversationId)
+            ) return;
+            setSelected((cur) => cur?.id === conversationId ? { ...cur, ...updated, unreadCount: 0 } : cur);
             setConversations((prev) => prev.map((item) => (
-              item.id === selectedId ? { ...item, ...updated, unreadCount: 0 } : item
+              item.id === conversationId ? { ...item, ...updated, unreadCount: 0 } : item
             )));
           })
-          .catch(() => null);
+          .catch(() => null)
+          .finally(() => {
+            if (autoReadInFlightRef.current?.conversationId === conversationId) {
+              autoReadInFlightRef.current = null;
+            }
+          });
+        autoReadInFlightRef.current = { conversationId, promise };
       }
     } catch (err) {
       if (!silent) toast.error(err.message);
@@ -339,6 +374,9 @@ export default function CRMPage() {
   useEffect(() => {
     lastMsgIdRef.current = null;
     initialMessageLoadRef.current = true;
+    isNearBottomRef.current = true;
+    pendingOpeningMediaRef.current = new Set();
+    followOpeningMediaRef.current = false;
     setShowScrollBottom(false);
     if (!selectedId) {
       setSelected(null);
@@ -354,21 +392,31 @@ export default function CRMPage() {
     if (initialMessageLoadRef.current) {
       initialMessageLoadRef.current = false;
       lastMsgIdRef.current = lastId;
+      pendingOpeningMediaRef.current = new Set(messages
+        .filter((message) => (
+          message.mediaId
+          && ["image", "sticker", "gift", "video"].includes(message.type)
+        ))
+        .map((message) => message.id));
+      followOpeningMediaRef.current = pendingOpeningMediaRef.current.size > 0;
+      isNearBottomRef.current = true;
       if (container) {
         // Al abrir una conversación se debe ver el mensaje más reciente, igual
-        // que en WhatsApp. Después de ese primer posicionamiento ya no forzamos
-        // el scroll: solo seguimos mensajes nuevos si la persona está al final.
+        // que en WhatsApp. Dos frames permiten que React termine de pintar las
+        // burbujas; las imágenes que cargan después se atienden por separado.
         requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight;
-          setShowScrollBottom(false);
+          requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+            setShowScrollBottom(false);
+          });
         });
       }
       return;
     }
-    const isNearBottom = !container
-      || container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Conservamos la posición que tenía la persona antes del render. Medirla
+    // después fallaba cuando el mensaje nuevo era una imagen alta.
+    if (isNearBottomRef.current) {
+      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     }
     lastMsgIdRef.current = lastId;
   }, [messages]);
@@ -414,13 +462,30 @@ export default function CRMPage() {
 
   function scrollToBottom(behavior = "smooth") {
     messagesEndRef.current?.scrollIntoView({ behavior });
+    isNearBottomRef.current = true;
     setShowScrollBottom(false);
   }
 
   function handleMessagesScroll() {
     const container = messagesContainerRef.current;
     if (!container) return;
-    setShowScrollBottom(container.scrollHeight - container.scrollTop - container.clientHeight > 180);
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    isNearBottomRef.current = distance < 150;
+    setShowScrollBottom(distance > 180);
+  }
+
+  function stopFollowingOpeningMedia() {
+    followOpeningMediaRef.current = false;
+  }
+
+  function handleMessageMediaSettled(messageId) {
+    const pending = pendingOpeningMediaRef.current;
+    if (!pending.has(messageId)) return;
+    pending.delete(messageId);
+    if (followOpeningMediaRef.current) {
+      requestAnimationFrame(() => scrollToBottom("smooth"));
+    }
+    if (pending.size === 0) followOpeningMediaRef.current = false;
   }
 
   // ─── Actions ─────────────────────────────────────────────────
@@ -595,23 +660,40 @@ export default function CRMPage() {
 
   async function markUnread() {
     if (!selectedId) return;
+    const conversationId = selectedId;
+    // Cerramos el chat de inmediato e invalidamos cualquier carga en curso.
+    // La marca también bloquea el auto-leído que normalmente ocurre al abrir.
+    suppressAutoReadRef.current.add(conversationId);
+    selectedIdRef.current = null;
+    conversationFetchSeqRef.current += 1;
+    setSelectedId(null);
+    setSelected(null);
+    setMessages([]);
+    setNotes([]);
+    setMobileView("list");
     try {
-      const updated = await authFetch(`/crm/conversations/${selectedId}/read-state`, {
+      // Si todavía quedaba un mark-read iniciado al abrir el chat, esperamos a
+      // que termine y escribimos el estado No leído después de él.
+      const pendingAutoRead = autoReadInFlightRef.current;
+      if (pendingAutoRead?.conversationId === conversationId) {
+        await pendingAutoRead.promise;
+      }
+      const updated = await authFetch(`/crm/conversations/${conversationId}/read-state`, {
         method: "POST",
         body: { unread: true },
       });
       toast.success("Marcada como no leída");
       setConversations((prev) => prev.map((item) => (
-        item.id === selectedId ? { ...item, ...updated } : item
+        item.id === conversationId ? { ...item, ...updated } : item
       )));
-      // Vuelve al estado inicial de la bandeja para elegir otro chat, sin
-      // alterar el filtro activo (Todos, Pendientes o Resueltos).
-      setSelectedId(null);
-      setSelected(null);
-      setMessages([]);
-      setNotes([]);
-      setMobileView("list");
+      // Sin cambiar la pestaña activa, sincronizamos conteos y posición.
+      await fetchConversations(true);
+      suppressAutoReadRef.current.delete(conversationId);
     } catch (err) {
+      suppressAutoReadRef.current.delete(conversationId);
+      selectedIdRef.current = conversationId;
+      setSelectedId(conversationId);
+      if (isMobile) setMobileView("chat");
       toast.error(err.message);
     }
   }
@@ -776,6 +858,9 @@ export default function CRMPage() {
   }
 
   function selectConversation(id) {
+    suppressAutoReadRef.current.delete(id);
+    selectedIdRef.current = id;
+    conversationFetchSeqRef.current += 1;
     setSelectedId(id);
     if (isMobile) setMobileView("chat");
   }
@@ -869,6 +954,8 @@ export default function CRMPage() {
           <img
             src={mediaUrl}
             alt={label}
+            onLoad={() => handleMessageMediaSettled(m.id)}
+            onError={() => handleMessageMediaSettled(m.id)}
             className={compactSticker
               ? "max-h-40 max-w-[160px] object-contain"
               : "block h-auto max-h-72 max-w-full object-contain"}
@@ -894,7 +981,13 @@ export default function CRMPage() {
           <div className="flex items-center gap-1.5 px-2 pt-2 text-xs font-semibold text-bronze">
             <Video size={13} /> Video
           </div>
-          <video controls src={mediaUrl} className="mt-2 max-h-72 w-full bg-black" />
+          <video
+            controls
+            src={mediaUrl}
+            onLoadedMetadata={() => handleMessageMediaSettled(m.id)}
+            onError={() => handleMessageMediaSettled(m.id)}
+            className="mt-2 max-h-72 w-full bg-black"
+          />
         </div>
       );
     }
@@ -1038,11 +1131,16 @@ export default function CRMPage() {
           <div className="mt-1.5" />
         </div>
         </div>
-        {(c.status === "open" || c.assignedTo?.name || c.botActive === false || c.botStatus === "escalated" || labels.length > 0) && (
+        {(c.status === "open" || c.manuallyMarkedUnread || c.assignedTo?.name || c.botActive === false || c.botStatus === "escalated" || labels.length > 0) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-left">
             {c.status === "open" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
                 <CircleDot size={11} /> ABIERTO
+              </span>
+            )}
+            {c.manuallyMarkedUnread && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                <CircleDot size={11} /> NO LEÍDO
               </span>
             )}
             {c.assignedTo?.name && (
@@ -1357,7 +1455,9 @@ export default function CRMPage() {
           <div
             ref={messagesContainerRef}
             onScroll={handleMessagesScroll}
-            className="h-full overflow-y-auto p-4 flex flex-col gap-3"
+            onWheel={stopFollowingOpeningMedia}
+            onTouchStart={stopFollowingOpeningMedia}
+            className="h-full overflow-y-auto overscroll-contain p-4 flex flex-col gap-3"
           >
             {messages.map((m, index) => renderMessageBubble(m, index))}
             <div ref={messagesEndRef} />

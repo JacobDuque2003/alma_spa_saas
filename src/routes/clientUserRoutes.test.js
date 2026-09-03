@@ -20,8 +20,11 @@ function token(payload = {}) {
 // request autenticada, sea cual sea el rol. Sin este mock, cae en la
 // instancia real de Prisma y el usuario de prueba no existe en la base →
 // 401 "Sesión inválida o cuenta inactiva" antes de llegar a la ruta.
-function mockAccessScheduleUser() {
-  prisma.user = { findUnique: async () => ({ active: true, accessSchedule: null }) };
+function mockAccessScheduleUser(role = 'personal') {
+  prisma.user = { findUnique: async () => ({
+    id: 'u1', tenantId: 't1', role, email: 'u1@test.com',
+    active: true, sessionVersion: 0, accessSchedule: null,
+  }) };
 }
 
 test('GET /clients exige permiso clientes', async () => {
@@ -155,9 +158,9 @@ test('POST /clients/:id/treatments exige permiso fino clientesHistorial', async 
   assert.equal(res.status, 403);
 });
 
-test('POST /clients/:id/payments exige permiso fino clientesPagos', async () => {
+test('POST /clients/:id/payments queda reservado a dueña/técnico', async () => {
   mockAccessScheduleUser();
-  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesPagos: false }) };
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true }) };
   const res = await supertest(app)
     .post('/clients/c1/payments')
     .set('Authorization', `Bearer ${token()}`)
@@ -178,7 +181,7 @@ test('GET /clients/:id bloquea cross-tenant', async () => {
 
 test('GET /search exige permiso clientes y devuelve resultados mínimos tenant-scoped', async () => {
   let argsSeen = null;
-  mockAccessScheduleUser();
+  mockAccessScheduleUser('dueno');
   prisma.client = {
     findMany: async (args) => {
       argsSeen = args;
@@ -210,6 +213,10 @@ test('GET /search niega a personal sin permiso clientes', async () => {
 test('GET /users requiere dueno/superadmin y no devuelve passwordHash', async () => {
   let argsSeen = null;
   prisma.user = {
+    findUnique: async () => ({
+      id: 'u1', tenantId: 't1', email: 'u1@test.com', role: 'dueno',
+      active: true, sessionVersion: 0, accessSchedule: null,
+    }),
     findMany: async (args) => {
       argsSeen = args;
       return [{

@@ -26,8 +26,10 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'alma_app') THEN
-    CREATE ROLE alma_app WITH LOGIN PASSWORD 'HF4d3jnGfelBTmDjrpYSwVlE0uagaWLGdKQZPhDPqH0';
-    RAISE NOTICE '*** CAMBIAR LA PASSWORD INMEDIATAMENTE: ALTER ROLE alma_app WITH PASSWORD ''<password-real>''; ***';
+    -- Se crea sin capacidad de login para que ejecutar este archivo nunca
+    -- deje una contraseña débil o de ejemplo habilitada por accidente.
+    CREATE ROLE alma_app NOLOGIN;
+    RAISE NOTICE '*** Habilite LOGIN y asigne una contraseña aleatoria directamente en Railway; nunca la guarde en Git. ***';
   END IF;
 END
 $$;

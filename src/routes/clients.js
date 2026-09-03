@@ -21,9 +21,12 @@ const clientIntakeEdit = [authenticate, requirePermission('clientes'), requirePe
 const clientHistoryEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesHistorial')];
 const clientStatusEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesEstado')];
 const clientDelete = [authenticate, requirePermission('clientes'), requirePermission('clientesEliminar')];
-const clientPayments = [authenticate, requirePermission('clientes'), requirePermission('clientesPagos')];
 const clientExport = [authenticate, requirePermission('clientes'), requireAnyPermission('clientesExportar', 'reportes', 'configuracion')];
 const ownerOnly = [authenticate, requireRole('superadmin', 'dueno')];
+// El módulo visual de movimientos fue retirado y ya no existe un permiso
+// delegable para operarlo. Conservamos las rutas para el historial existente,
+// pero cualquier mutación contable queda reservada a Dueña/Técnico.
+const clientPayments = ownerOnly;
 
 function csvCell(value) {
   if (value === null || value === undefined) return '';

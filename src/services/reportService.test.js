@@ -234,7 +234,7 @@ test('endpoint router: métrica inválida → 400', async () => {
   };
 
   const jwt = require('../utils/jwt');
-  const token = jwt.signToken({ sub: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' });
+  const token = jwt.signToken({ id: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' });
 
   const res = await request(app)
     .get('/reports/metrica-falsa?from=2026-07-01&to=2026-07-31')
@@ -248,7 +248,7 @@ test('endpoint router: from > to → 400', async () => {
   const app = require('../app');
 
   const jwt = require('../utils/jwt');
-  const token = jwt.signToken({ sub: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' });
+  const token = jwt.signToken({ id: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' });
 
   const res = await request(app)
     .get('/reports/cancelaciones?from=2026-08-01&to=2026-07-01')
@@ -263,9 +263,15 @@ test('endpoint router: ingresos-servicio con role personal → 403', async () =>
   prisma.rolePermission = {
     findUnique: async () => ({ reportes: true }),
   };
+  prisma.user = {
+    findUnique: async () => ({
+      id: 'u-personal', tenantId: TENANT_ID, role: 'personal',
+      email: 'personal@test.com', active: true, sessionVersion: 0,
+    }),
+  };
 
   const jwt = require('../utils/jwt');
-  const token = jwt.signToken({ sub: 'u-personal', tenantId: TENANT_ID, role: 'personal' });
+  const token = jwt.signToken({ id: 'u-personal', tenantId: TENANT_ID, role: 'personal' });
 
   const res = await request(app)
     .get('/reports/ingresos-servicio?from=2026-07-01&to=2026-07-31')
@@ -277,8 +283,15 @@ test('endpoint router: rango > 366 días → 400', async () => {
   const request = require('supertest');
   const app = require('../app');
 
+  prisma.user = {
+    findUnique: async () => ({
+      id: 'u-dueno', tenantId: TENANT_ID, role: 'dueno',
+      email: 'dueno@test.com', active: true, sessionVersion: 0,
+    }),
+  };
+
   const jwt = require('../utils/jwt');
-  const token = jwt.signToken({ sub: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' });
+  const token = jwt.signToken({ id: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' });
 
   const res = await request(app)
     .get('/reports/cancelaciones?from=2024-01-01&to=2026-07-01')

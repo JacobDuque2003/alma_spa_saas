@@ -177,7 +177,7 @@ test('deleteUser writes audit log with action=purge', async () => {
   mockPrismaWith({
     user: {
       findUnique: async () => ({ id: 'u3', isProtected: false, tenantId: 't1', name: 'Deleted User', email: 'd@test.com', active: true }),
-      delete: async () => ({ id: 'u3' }),
+      update: async () => ({ id: 'u3', active: false, deletedAt: new Date() }),
     },
   });
 
@@ -192,6 +192,7 @@ test('updatePermissions writes audit log with action=permissionsChanged', async 
   mockPrismaWith({
     user: {
       findUnique: async () => ({ id: 'u4', isProtected: false, tenantId: 't1', role: 'personal' }),
+      update: async () => ({ id: 'u4', sessionVersion: 1 }),
     },
     rolePermission: {
       upsert: async (args) => ({ id: 'rp1', userId: 'u4', ...args.update }),

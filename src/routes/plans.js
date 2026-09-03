@@ -5,9 +5,9 @@ const planService = require('../services/planService');
 
 const router = express.Router();
 
-router.use(authenticate, requirePermission('configuracion'));
+router.use(authenticate);
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('configuracion'), async (req, res, next) => {
   try {
     const plans = await planService.listPlans(req.user, req.query);
     res.json(plans);
@@ -16,7 +16,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('configuracion'), async (req, res, next) => {
   try {
     const plan = await planService.getPlan(req.user, req.params.id);
     if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
@@ -26,7 +26,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const plan = await planService.createPlan(req.user, req.body);
     res.status(201).json(plan);
@@ -35,7 +35,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:id', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const plan = await planService.updatePlan(req.user, req.params.id, req.body);
     if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
@@ -45,7 +45,7 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const plan = await planService.deletePlan(req.user, req.params.id);
     if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });

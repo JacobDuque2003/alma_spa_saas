@@ -14,6 +14,12 @@ const app = require('../app');
 test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHash', async () => {
   prisma.user = {
     findUnique: async (args) => {
+      if (args.select.sessionVersion) {
+        return {
+          id: 'u-personal', name: 'Daniela Mora', email: 'daniela@alma.test',
+          role: 'personal', tenantId: 't1', active: true, sessionVersion: 0,
+        };
+      }
       assert.equal(args.select.passwordHash, undefined);
       assert.equal(args.select.rolePermission, true);
       return {
@@ -32,7 +38,6 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
           clientesHistorial: false,
           clientesEstado: false,
           clientesEliminar: false,
-          clientesPagos: true,
           clientesExportar: false,
           crmEtiquetasGestionar: false,
           crmRespuestasRapidasGestionar: false,
@@ -40,6 +45,8 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
           crm: false,
           reportes: false,
           configuracion: false,
+          configuracionServicios: false,
+          configuracionHorario: false,
         },
       };
     },
@@ -59,7 +66,6 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
     clientesHistorial: false,
     clientesEstado: false,
     clientesEliminar: false,
-    clientesPagos: true,
     clientesExportar: false,
     crmEtiquetasGestionar: false,
     crmRespuestasRapidasGestionar: false,
@@ -67,6 +73,8 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
     crm: false,
     reportes: false,
     configuracion: false,
+    configuracionServicios: false,
+    configuracionHorario: false,
   });
   assert.equal('passwordHash' in res.body, false);
   assert.equal('rolePermission' in res.body, false);
@@ -74,14 +82,15 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
 
 test('GET /auth/me devuelve todos los permisos efectivos para dueno', async () => {
   prisma.user = {
-    findUnique: async () => ({
-      id: 'u-dueno',
-      name: 'Mariana Rios',
-      email: 'mariana@alma.test',
-      role: 'dueno',
-      tenantId: 't1',
-      rolePermission: null,
-    }),
+    findUnique: async (args) => args.select.sessionVersion
+      ? {
+          id: 'u-dueno', name: 'Mariana Rios', email: 'mariana@alma.test',
+          role: 'dueno', tenantId: 't1', active: true, sessionVersion: 0,
+        }
+      : {
+          id: 'u-dueno', name: 'Mariana Rios', email: 'mariana@alma.test',
+          role: 'dueno', tenantId: 't1', rolePermission: null,
+        },
   };
 
   const token = signToken({ id: 'u-dueno', tenantId: 't1', role: 'dueno' });
@@ -97,7 +106,6 @@ test('GET /auth/me devuelve todos los permisos efectivos para dueno', async () =
     clientesHistorial: true,
     clientesEstado: true,
     clientesEliminar: true,
-    clientesPagos: true,
     clientesExportar: true,
     crmEtiquetasGestionar: true,
     crmRespuestasRapidasGestionar: true,
@@ -105,5 +113,7 @@ test('GET /auth/me devuelve todos los permisos efectivos para dueno', async () =
     crm: true,
     reportes: true,
     configuracion: true,
+    configuracionServicios: true,
+    configuracionHorario: true,
   });
 });

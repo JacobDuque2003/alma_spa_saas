@@ -103,6 +103,7 @@ test('updateUser permite ajustar rol y disponibilidad de citas, creando permisos
         updateData = args.data;
         return { id: 'u5', ...args.data, rolePermission: null };
       },
+      count: async () => 1,
     },
     rolePermission: {
       upsert: async () => ({ id: 'rp5', agenda: false }),
@@ -115,7 +116,11 @@ test('updateUser permite ajustar rol y disponibilidad de citas, creando permisos
     { role: 'personal', canAttendAppointments: true }
   );
 
-  assert.deepEqual(updateData, { role: 'personal', canAttendAppointments: true });
+  assert.deepEqual(updateData, {
+    role: 'personal',
+    canAttendAppointments: true,
+    sessionVersion: { increment: 1 },
+  });
   assert.equal(result.role, 'personal');
   assert.equal(result.canAttendAppointments, true);
   assert.equal(result.rolePermission.id, 'rp5');
@@ -150,6 +155,65 @@ test('deleteUser rechaza que el superadmin se elimine a sí mismo', async () => 
     () => userService.deleteUser({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' }, 'sa1'),
     (err) => err.status === 400 && /propia cuenta/.test(err.message)
   );
+});
+
+test('deleteUser permite a la dueña eliminar otra cuenta no protegida de su tenant', async () => {
+  let archived = null;
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'staff1', isProtected: false, tenantId: 't1', role: 'personal', active: true }),
+      update: async (args) => { archived = args; return { id: args.where.id, ...args.data }; },
+    },
+  });
+
+  const result = await userService.deleteUser(
+    { role: 'dueno', tenantId: 't1', id: 'owner1', email: 'owner@test.com' },
+    'staff1'
+  );
+
+  assert.equal(archived.where.id, 'staff1');
+  assert.equal(archived.data.active, false);
+  assert.equal(archived.data.deletedAt instanceof Date, true);
+  assert.equal(archived.data.email, 'deleted-staff1@accounts.invalid');
+  assert.deepEqual(archived.data.sessionVersion, { increment: 1 });
+  assert.equal(result.id, 'staff1');
+});
+
+test('deleteUser no permite eliminar la única cuenta Dueña activa', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'owner2', isProtected: false, tenantId: 't1', role: 'dueno', active: true }),
+      count: async () => 0,
+      update: async () => { throw new Error('no debe eliminar'); },
+    },
+  });
+
+  await assert.rejects(
+    () => userService.deleteUser(
+      { role: 'superadmin', tenantId: null, id: 'tech1', email: 'tech@test.com' },
+      'owner2'
+    ),
+    (err) => err.status === 400 && /única cuenta Dueña/.test(err.message)
+  );
+});
+
+test('updatePermissions incrementa sessionVersion para cerrar la sesión afectada', async () => {
+  let invalidation = null;
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'staff1', isProtected: false, tenantId: 't1', role: 'personal' }),
+      update: async (args) => { invalidation = args.data; return {}; },
+    },
+    rolePermission: { upsert: async (args) => args.update },
+  });
+
+  await userService.updatePermissions(
+    { role: 'dueno', tenantId: 't1', id: 'owner1', email: 'owner@test.com' },
+    'staff1',
+    { agenda: true }
+  );
+
+  assert.deepEqual(invalidation, { sessionVersion: { increment: 1 } });
 });
 
 test('createUser ignora por completo un tenantId forjado en el body y usa el del JWT del actor', async () => {
@@ -246,7 +310,7 @@ test('listUsers permite a superadmin consultar todos sin exponer passwordHash', 
   });
 
   await userService.listUsers({ role: 'superadmin', tenantId: null, id: 'sa1', email: 'sa@test.com' });
-  assert.deepEqual(argsSeen.where, {});
+  assert.deepEqual(argsSeen.where, { deletedAt: null });
   assert.equal('passwordHash' in argsSeen.select, false);
   assert.equal(argsSeen.select.isProtected, true);
 });
@@ -305,6 +369,7 @@ test('[SECURITY] createUser con isProtected: true en body lo ignora (siempre fal
   let capturedData;
   mockPrisma({
     user: {
+      count: async () => 0,
       create: async (args) => { capturedData = args.data; return { id: 'u1', ...args.data }; },
     },
   });
@@ -315,6 +380,42 @@ test('[SECURITY] createUser con isProtected: true en body lo ignora (siempre fal
   );
 
   assert.equal(capturedData.isProtected, false, 'isProtected debe ser hardcodeado a false');
+});
+
+test('createUser impide crear una segunda cuenta Dueña activa', async () => {
+  mockPrisma({
+    user: {
+      count: async () => 1,
+      create: async () => { throw new Error('no debe crear'); },
+    },
+  });
+
+  await assert.rejects(
+    () => userService.createUser(
+      { role: 'dueno', tenantId: 't1', id: 'owner1', email: 'owner@test.com' },
+      { email: 'otra@spa.test', password: 'Abcdefg123!', name: 'Otra dueña', role: 'dueno' }
+    ),
+    (err) => err.status === 400 && /ya tiene una cuenta Dueña activa/.test(err.message)
+  );
+});
+
+test('updateUser impide promover personal si ya existe una Dueña activa', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'staff1', isProtected: false, tenantId: 't1', role: 'personal', active: true }),
+      count: async () => 1,
+      update: async () => { throw new Error('no debe promover'); },
+    },
+  });
+
+  await assert.rejects(
+    () => userService.updateUser(
+      { role: 'dueno', tenantId: 't1', id: 'owner1', email: 'owner@test.com' },
+      'staff1',
+      { role: 'dueno' }
+    ),
+    (err) => err.status === 400 && /ya tiene una cuenta Dueña activa/.test(err.message)
+  );
 });
 
 test('[SECURITY] actor de tenant A no puede crear usuario en tenant B', async () => {

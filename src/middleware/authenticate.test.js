@@ -35,7 +35,7 @@ test('authenticate deriva req.user del JWT (nunca de params/body/query)', async 
   // mock también atiende el backfill de email de authenticate.js (línea 24),
   // por eso incluye email:null explícito — sin él, u.email sale undefined y
   // pisa el default null que el JWT sin email ya había fijado en req.user.
-  prisma.user = { findUnique: async () => ({ active: true, email: null }) };
+  prisma.user = { findUnique: async () => ({ id: 'u1', tenantId: 't1', role: 'dueno', active: true, email: null, sessionVersion: 0 }) };
   const token = signToken({ id: 'u1', tenantId: 't1', role: 'dueno' });
   const req = { headers: { authorization: `Bearer ${token}` }, params: { tenantId: 'tenant-forjado' }, body: { tenantId: 'otro-forjado' } };
   const { nextCalled } = await callMiddleware(req);
@@ -44,9 +44,22 @@ test('authenticate deriva req.user del JWT (nunca de params/body/query)', async 
 });
 
 test('authenticate propaga tenantId null para superadmin', async () => {
+  prisma.user = { findUnique: async () => ({ id: 'root', tenantId: null, role: 'superadmin', active: true, email: null, sessionVersion: 0 }) };
   const token = signToken({ id: 'root', tenantId: null, role: 'superadmin' });
   const req = { headers: { authorization: `Bearer ${token}` } };
   await callMiddleware(req);
   assert.equal(req.user.tenantId, null);
   assert.equal(req.user.role, 'superadmin');
+});
+
+test('authenticate invalida inmediatamente un token de una versión anterior de la cuenta', async () => {
+  prisma.user = { findUnique: async () => ({ id: 'u1', tenantId: 't1', role: 'personal', active: true, email: 'u1@test.com', sessionVersion: 3 }) };
+  const token = signToken({ id: 'u1', tenantId: 't1', role: 'personal', sessionVersion: 2 });
+  const req = { headers: { authorization: `Bearer ${token}` } };
+
+  const { res, nextCalled } = await callMiddleware(req);
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 401);
+  assert.match(res.body.error, /cuenta actualizada/i);
 });

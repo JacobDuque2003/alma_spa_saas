@@ -52,6 +52,8 @@ model User {
   isProtected           Boolean  @default(false)
   active                Boolean  @default(true)
   canAttendAppointments Boolean  @default(false)
+  sessionVersion        Int      @default(0)
+  deletedAt             DateTime?
   accessSchedule        Json?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -79,12 +81,13 @@ model RolePermission {
   crm           Boolean @default(false)
   reportes      Boolean @default(false)
   configuracion Boolean @default(false)
+  configuracionServicios Boolean @default(false)
+  configuracionHorario   Boolean @default(false)
   clientesEditar     Boolean @default(false)
   clientesAnamnesis  Boolean @default(false)
   clientesHistorial  Boolean @default(false)
   clientesEstado     Boolean @default(false)
   clientesEliminar   Boolean @default(false)
-  clientesPagos      Boolean @default(false)
   clientesExportar   Boolean @default(false)
   crmEtiquetasGestionar         Boolean @default(false)
   crmRespuestasRapidasGestionar Boolean @default(false)

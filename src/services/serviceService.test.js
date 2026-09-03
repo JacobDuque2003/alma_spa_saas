@@ -10,6 +10,27 @@ function mockPrisma({ service = {}, room = {} } = {}) {
   prisma.$transaction = async (fn) => fn(prisma);
 }
 
+test('listServices oculta por defecto los servicios retirados', async () => {
+  let whereSeen = null;
+  mockPrisma({ service: { findMany: async ({ where }) => { whereSeen = where; return []; } } });
+
+  await serviceService.listServices({ role: 'dueno', tenantId: 't1' });
+
+  assert.deepEqual(whereSeen, { active: true, tenantId: 't1' });
+});
+
+test('listServices solo incluye retirados cuando se solicita explícitamente', async () => {
+  let whereSeen = null;
+  mockPrisma({ service: { findMany: async ({ where }) => { whereSeen = where; return []; } } });
+
+  await serviceService.listServices(
+    { role: 'dueno', tenantId: 't1' },
+    { includeInactive: 'true' }
+  );
+
+  assert.deepEqual(whereSeen, { tenantId: 't1' });
+});
+
 test('createService ignora un tenantId forjado en el body y usa el del JWT del actor', async () => {
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 

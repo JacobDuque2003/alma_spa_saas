@@ -55,7 +55,7 @@ router.get('/', authenticate, requirePermission('configuracion'), async (req, re
 // ---------------------------------------------------------------------------
 // PATCH /tenant/config — merge parcial: solo sobreescribe las claves enviadas
 // ---------------------------------------------------------------------------
-router.patch('/', authenticate, requirePermission('configuracion'), async (req, res, next) => {
+router.patch('/', authenticate, requirePermission('configuracionHorario'), async (req, res, next) => {
   try {
     const { businessHours, workDays } = req.body;
 

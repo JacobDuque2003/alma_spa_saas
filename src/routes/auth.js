@@ -11,12 +11,13 @@ const MODULE_PERMISSIONS = [
   'crm',
   'reportes',
   'configuracion',
+  'configuracionServicios',
+  'configuracionHorario',
   'clientesEditar',
   'clientesAnamnesis',
   'clientesHistorial',
   'clientesEstado',
   'clientesEliminar',
-  'clientesPagos',
   'clientesExportar',
   'crmEtiquetasGestionar',
   'crmRespuestasRapidasGestionar',
@@ -66,6 +67,13 @@ const loginRateLimit = bucketRateLimit(
   (req) => `login:${req.ip}:${(req.body.email || '').toLowerCase()}`,
   5, 15 * 60_000, 'Demasiados intentos de login. Espere 15 minutos.'
 );
+// El límite por cuenta frena fuerza bruta dirigida. Este segundo límite por
+// IP evita el password spraying (probar una contraseña contra muchos correos)
+// que de otro modo crearía un bucket nuevo para cada dirección.
+const loginIpRateLimit = bucketRateLimit(
+  (req) => `login-ip:${req.ip}`,
+  30, 15 * 60_000, 'Demasiados intentos de acceso desde esta red. Espere 15 minutos.'
+);
 const passwordChangeRateLimit = bucketRateLimit(
   (req) => `pw:${req.user.id}`,
   5, 15 * 60_000, 'Demasiados intentos. Espere 15 minutos.'
@@ -82,7 +90,7 @@ function effectivePermissions(user) {
 
 const router = express.Router();
 
-router.post('/login', loginRateLimit, async (req, res, next) => {
+router.post('/login', loginIpRateLimit, loginRateLimit, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -175,7 +183,10 @@ router.patch('/me/password', authenticate, passwordChangeRateLimit, async (req, 
     }
 
     const newHash = await hashPassword(newPassword);
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: newHash, sessionVersion: { increment: 1 } },
+    });
 
     console.info('[password-changed]', { userId: user.id, ip: req.ip, at: new Date().toISOString() });
     res.json({ ok: true });

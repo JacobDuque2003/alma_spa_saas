@@ -46,7 +46,13 @@ async function login(email, plainPassword) {
   // identidad) y autorización por horario son cosas distintas. La cuenta
   // siempre puede entrar; el middleware accessSchedule (post-login) es quien
   // decide, en cada request, si esa sesión puede solo leer o también escribir.
-  const token = signToken({ id: user.id, tenantId: user.tenantId, role: user.role, email: user.email });
+  const token = signToken({
+    id: user.id,
+    tenantId: user.tenantId,
+    role: user.role,
+    email: user.email,
+    sessionVersion: user.sessionVersion ?? 0,
+  });
 
   await auditAuthEvent({ userId: user.id, email: user.email, tenantId: user.tenantId, action: 'login' });
 

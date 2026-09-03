@@ -5,9 +5,9 @@ const serviceService = require('../services/serviceService');
 
 const router = express.Router();
 
-router.use(authenticate, requirePermission('configuracion'));
+router.use(authenticate);
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('configuracion'), async (req, res, next) => {
   try {
     const services = await serviceService.listServices(req.user, req.query);
     res.json(services);
@@ -16,7 +16,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('configuracion'), async (req, res, next) => {
   try {
     const service = await serviceService.getService(req.user, req.params.id);
     if (!service) return res.status(404).json({ error: 'Servicio no encontrado' });
@@ -30,7 +30,7 @@ router.get('/:id', async (req, res, next) => {
 // ETag fuerte derivado de imageUpdatedAt: cambia exactamente cuando la imagen
 // cambia, así que el navegador (y más adelante el bot de WhatsApp) puede
 // revalidar con un 304 en vez de re-descargar la misma foto en cada request.
-router.get('/:id/image', async (req, res, next) => {
+router.get('/:id/image', requirePermission('configuracion'), async (req, res, next) => {
   try {
     const result = await serviceService.getServiceImage(req.user, req.params.id);
     if (!result) return res.status(404).json({ error: 'Servicio no encontrado' });
@@ -50,7 +50,7 @@ router.get('/:id/image', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const service = await serviceService.createService(req.user, req.body);
     res.status(201).json(service);
@@ -59,7 +59,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:id', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const service = await serviceService.updateService(req.user, req.params.id, req.body);
     if (!service) return res.status(404).json({ error: 'Servicio no encontrado' });
@@ -69,7 +69,7 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const service = await serviceService.deleteService(req.user, req.params.id);
     if (!service) return res.status(404).json({ error: 'Servicio no encontrado' });

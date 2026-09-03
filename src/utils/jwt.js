@@ -2,9 +2,9 @@ const jwt = require('jsonwebtoken');
 
 const JWT_MIN_BYTES = 32;
 
-function signToken({ id, tenantId, role, email }) {
+function signToken({ id, tenantId, role, email, sessionVersion = 0 }) {
   return jwt.sign(
-    { sub: id, tenantId: tenantId ?? null, role, email: email ?? null },
+    { sub: id, tenantId: tenantId ?? null, role, email: email ?? null, sessionVersion },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );

@@ -25,7 +25,7 @@ router.get('/:id', authenticate, requirePermission('configuracion'), async (req,
   }
 });
 
-router.post('/', authenticate, requirePermission('configuracion'), async (req, res, next) => {
+router.post('/', authenticate, requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const room = await roomService.createRoom(req.user, req.body);
     res.status(201).json(room);
@@ -34,7 +34,7 @@ router.post('/', authenticate, requirePermission('configuracion'), async (req, r
   }
 });
 
-router.patch('/:id', authenticate, requirePermission('configuracion'), async (req, res, next) => {
+router.patch('/:id', authenticate, requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const room = await roomService.updateRoom(req.user, req.params.id, req.body);
     if (!room) return res.status(404).json({ error: 'Gabinete no encontrado' });
@@ -44,7 +44,7 @@ router.patch('/:id', authenticate, requirePermission('configuracion'), async (re
   }
 });
 
-router.delete('/:id', authenticate, requirePermission('configuracion'), async (req, res, next) => {
+router.delete('/:id', authenticate, requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const room = await roomService.deleteRoom(req.user, req.params.id);
     if (!room) return res.status(404).json({ error: 'Gabinete no encontrado' });

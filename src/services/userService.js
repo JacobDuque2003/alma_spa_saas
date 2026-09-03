@@ -13,7 +13,7 @@ class ProtectedAccountError extends AppError {
 
 function omitPasswordHash(user) {
   if (!user) return user;
-  const { passwordHash, ...rest } = user;
+  const { passwordHash, sessionVersion, ...rest } = user;
   return rest;
 }
 
@@ -40,12 +40,13 @@ const PERMISSION_KEYS = [
   'crm',
   'reportes',
   'configuracion',
+  'configuracionServicios',
+  'configuracionHorario',
   'clientesEditar',
   'clientesAnamnesis',
   'clientesHistorial',
   'clientesEstado',
   'clientesEliminar',
-  'clientesPagos',
   'clientesExportar',
   'crmEtiquetasGestionar',
   'crmRespuestasRapidasGestionar',
@@ -57,7 +58,7 @@ function normalizePermissions(input = {}) {
 }
 
 async function listUsers(actor, query = {}) {
-  const where = {};
+  const where = { deletedAt: null };
   if (actor.role === 'superadmin') {
     if (query.tenantId) where.tenantId = query.tenantId;
   } else {
@@ -109,6 +110,14 @@ async function createUser(actor, data) {
   const pw = await hashPassword(password);
 
   const created = await prisma.$transaction(async (tx) => {
+    if (role === 'dueno') {
+      const activeOwners = await tx.user.count({
+        where: { tenantId, role: 'dueno', active: true, deletedAt: null },
+      });
+      if (activeOwners > 0) {
+        throw new BadRequestError('Este negocio ya tiene una cuenta Dueña activa');
+      }
+    }
     const user = await tx.user.create({
       data: {
         email,
@@ -140,13 +149,13 @@ async function createUser(actor, data) {
       tenantId: user.tenantId,
     });
     return user;
-  });
+  }, { isolationLevel: 'Serializable' });
   return omitPasswordHash(created);
 }
 
 async function updateUser(actor, targetUserId, changes) {
   const target = await prisma.user.findUnique({ where: { id: targetUserId } });
-  if (!target) {
+  if (!target || target.deletedAt) {
     return null;
   }
   if (target.isProtected) {
@@ -179,7 +188,50 @@ async function updateUser(actor, targetUserId, changes) {
     data.accessSchedule = changes.accessSchedule;
   }
 
+  const invalidatesSession = (
+    changes.role !== undefined
+    || changes.active !== undefined
+    || !!changes.password
+    || changes.accessSchedule !== undefined
+  );
+  if (invalidatesSession) data.sessionVersion = { increment: 1 };
+
   const updated = await prisma.$transaction(async (tx) => {
+    const nextRole = changes.role ?? target.role;
+    const nextActive = changes.active ?? target.active;
+    const becomesActiveOwner = nextRole === 'dueno'
+      && nextActive !== false
+      && (target.role !== 'dueno' || target.active === false);
+    if (becomesActiveOwner) {
+      const otherActiveOwners = await tx.user.count({
+        where: {
+          tenantId: target.tenantId,
+          role: 'dueno',
+          active: true,
+          deletedAt: null,
+          id: { not: targetUserId },
+        },
+      });
+      if (otherActiveOwners > 0) {
+        throw new BadRequestError('Este negocio ya tiene una cuenta Dueña activa');
+      }
+    }
+    const removesLastOwner = target.role === 'dueno'
+      && (changes.role === 'personal' || (target.active !== false && changes.active === false));
+    if (removesLastOwner) {
+      const otherActiveOwners = await tx.user.count({
+        where: {
+          tenantId: target.tenantId,
+          role: 'dueno',
+          active: true,
+          id: { not: targetUserId },
+        },
+      });
+      if (otherActiveOwners === 0) {
+        throw new BadRequestError('Debe existir al menos una cuenta Dueña activa');
+      }
+    }
+
     const user = await tx.user.update({
       where: { id: targetUserId },
       data,
@@ -205,13 +257,13 @@ async function updateUser(actor, targetUserId, changes) {
       tenantId: target.tenantId,
     });
     return user;
-  });
+  }, { isolationLevel: 'Serializable' });
   return omitPasswordHash(updated);
 }
 
 async function deleteUser(actor, targetUserId) {
   const target = await prisma.user.findUnique({ where: { id: targetUserId } });
-  if (!target) {
+  if (!target || target.deletedAt) {
     return null;
   }
   if (target.isProtected) {
@@ -223,7 +275,31 @@ async function deleteUser(actor, targetUserId) {
   assertTenantScope(actor, target.tenantId);
 
   return prisma.$transaction(async (tx) => {
-    const deleted = await tx.user.delete({ where: { id: targetUserId } });
+    if (target.role === 'dueno') {
+      const otherActiveOwners = await tx.user.count({
+        where: {
+          tenantId: target.tenantId,
+          role: 'dueno',
+          active: true,
+          id: { not: targetUserId },
+        },
+      });
+      if (otherActiveOwners === 0) {
+        throw new BadRequestError('No se puede eliminar la única cuenta Dueña activa');
+      }
+    }
+    // Las citas, tratamientos, notas y movimientos conservan la referencia a
+    // quien actuó. Por eso la eliminación visible archiva y revoca la cuenta,
+    // en lugar de romper o borrar el historial operativo del spa.
+    const deleted = await tx.user.update({
+      where: { id: targetUserId },
+      data: {
+        active: false,
+        deletedAt: new Date(),
+        sessionVersion: { increment: 1 },
+        email: `deleted-${targetUserId}@accounts.invalid`,
+      },
+    });
     await writeAuditLog(tx, {
       actor,
       entity: 'user',
@@ -233,12 +309,12 @@ async function deleteUser(actor, targetUserId) {
       tenantId: target.tenantId,
     });
     return deleted;
-  });
+  }, { isolationLevel: 'Serializable' });
 }
 
 async function updatePermissions(actor, targetUserId, permissions) {
   const target = await prisma.user.findUnique({ where: { id: targetUserId } });
-  if (!target) {
+  if (!target || target.deletedAt) {
     return null;
   }
   if (target.isProtected) {
@@ -256,6 +332,10 @@ async function updatePermissions(actor, targetUserId, permissions) {
       where: { userId: targetUserId },
       update: safePermissions,
       create: { userId: targetUserId, ...safePermissions },
+    });
+    await tx.user.update({
+      where: { id: targetUserId },
+      data: { sessionVersion: { increment: 1 } },
     });
     await writeAuditLog(tx, {
       actor,

@@ -17,14 +17,40 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Token inválido o expirado' });
   }
 
-  req.user = { id: payload.sub, tenantId: payload.tenantId, role: payload.role, email: payload.email || null };
-
-  if (!req.user.email) {
-    try {
-      const u = await prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true } });
-      if (u) req.user.email = u.email;
-    } catch { /* email lookup best-effort */ }
+  let currentUser;
+  try {
+    currentUser = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        tenantId: true,
+        role: true,
+        email: true,
+        active: true,
+        sessionVersion: true,
+      },
+    });
+  } catch (err) {
+    return next(err);
   }
+
+  const tokenSessionVersion = Number(payload.sessionVersion ?? 0);
+  const currentSessionVersion = Number(currentUser?.sessionVersion ?? 0);
+  const identityChanged = currentUser
+    && (currentUser.role !== payload.role || currentUser.tenantId !== payload.tenantId);
+
+  if (!currentUser || currentUser.active === false || identityChanged || tokenSessionVersion !== currentSessionVersion) {
+    return res.status(401).json({ error: 'Sesión inválida o cuenta actualizada. Inicie sesión nuevamente.' });
+  }
+
+  // La identidad y el rol efectivos siempre salen de la base de datos. El JWT
+  // solo prueba que la sesión fue emitida para la misma versión de la cuenta.
+  req.user = {
+    id: currentUser.id,
+    tenantId: currentUser.tenantId,
+    role: currentUser.role,
+    email: currentUser.email || null,
+  };
 
   // Chequeo de accessSchedule al final del ciclo de auth: si el usuario está
   // fuera de su ventana, el middleware devuelve 403 con { reason:'outOfSchedule',

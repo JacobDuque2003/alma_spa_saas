@@ -68,8 +68,8 @@ async function resolveRoomConnections(tx, tenantId, roomIds) {
   return { set: rooms.map((r) => ({ id: r.id })) };
 }
 
-async function listServices(actor, query) {
-  const where = {};
+async function listServices(actor, query = {}) {
+  const where = query.includeInactive === 'true' ? {} : { active: true };
   if (actor.role === 'superadmin') {
     if (query.tenantId) where.tenantId = query.tenantId;
   } else {

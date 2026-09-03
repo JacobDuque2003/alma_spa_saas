@@ -8,18 +8,6 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 import { useAuth } from "@/lib/auth-context";
 
-const PLATFORM_SUPPORT_USER = {
-  id: "platform-support",
-  tenantId: null,
-  email: "soporte@alma.local",
-  name: "Soporte Alma",
-  role: "superadmin",
-  isProtected: true,
-  active: true,
-  canAttendAppointments: false,
-  rolePermission: null,
-};
-
 const PERMISSION_GROUPS = [
   {
     title: "Agenda",
@@ -39,7 +27,6 @@ const PERMISSION_GROUPS = [
       ["clientesHistorial", "Editar historial", "Agregar, editar o eliminar tratamientos y reservas"],
       ["clientesEstado", "Habilitar/deshabilitar", "Activar o pausar clientas"],
       ["clientesEliminar", "Eliminar clienta", "Eliminar clientas de forma completa cuando exista esa acción"],
-      ["clientesPagos", "Movimientos de cuenta", "Registrar abonos, cargos, planes y saldos"],
       ["clientesExportar", "Exportar clientas", "Descargar el directorio en Excel"],
     ],
   },
@@ -64,7 +51,9 @@ const PERMISSION_GROUPS = [
     title: "Configuración",
     description: "Servicios, precios y horario",
     items: [
-      ["configuracion", "Administrar configuración", "Servicios, precios, cabinas y horario del spa"],
+      ["configuracion", "Ver configuración", "Consultar servicios, precios, cabinas y horario del spa"],
+      ["configuracionServicios", "Modificar servicios", "Crear, editar y retirar servicios, planes y cabinas"],
+      ["configuracionHorario", "Modificar horario", "Cambiar los días y horas de atención del spa"],
     ],
   },
 ];
@@ -73,7 +62,7 @@ const MODULES = PERMISSION_GROUPS.flatMap((group) => group.items);
 const FULL_ACCESS_PERMISSIONS = Object.fromEntries(MODULES.map(([key]) => [key, true]));
 
 function roleLabel(role) {
-  return ({ superadmin: "Cuenta de plataforma", dueno: "Dueña", personal: "Terapeuta" })[role] || role;
+  return ({ superadmin: "Técnico", dueno: "Dueña", personal: "Terapeuta" })[role] || role;
 }
 function roleIcon(user, size = 16) {
   if (user?.isProtected || user?.role === "superadmin") return <ShieldCheck size={size} />;
@@ -311,7 +300,6 @@ function NewUserModal({ phase, onClose, onSaved }) {
               style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}
             >
               <option value="personal">Terapeuta</option>
-              <option value="dueno">Dueña</option>
             </select>
           </div>
 
@@ -386,14 +374,14 @@ export default function PersonalPage() {
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const newUserAnim = useAnimatedMount(showNewUser, 220);
   const mobileDetailAnim = useAnimatedMount(isMobile && mobileShowDetail, 220);
-  const canDeleteAccounts = currentUser?.role === "superadmin";
+  const canDeleteAccounts = currentUser?.role === "superadmin" || currentUser?.role === "dueno";
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
       const data = await authFetch("/users");
-      const visibleUsers = data.some((u) => u.isProtected) ? data : [PLATFORM_SUPPORT_USER, ...data];
+      const visibleUsers = data;
       setUsers(visibleUsers);
       const editable =
         visibleUsers.find((u) => !u.isProtected && u.role === "personal") ||
@@ -647,7 +635,7 @@ export default function PersonalPage() {
                       >
                         <Pencil className="alma-pencil-icon" size={13} />
                       </button>
-                      {canDeleteAccounts && (
+                      {canDeleteAccounts && user.id !== currentUser?.id && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setDeleteTarget(user); }}
                           title="Eliminar cuenta"
@@ -747,7 +735,7 @@ export default function PersonalPage() {
                 }}
               >
                 <ShieldCheck size={22} style={{ marginBottom: 12, color: "#8C6E50" }} />
-                <b style={{ display: "block", color: "#6B5540" }}>Cuenta de plataforma protegida</b>
+                <b style={{ display: "block", color: "#6B5540" }}>Cuenta técnica protegida</b>
                 El backend bloquea edición, eliminación y cambios de permisos para esta cuenta. Este panel solo muestra el estado.
               </div>
             ) : (
@@ -969,7 +957,7 @@ function AccessScheduleEditor({ user, onSaved, compact = false }) {
   return (
     <div
       style={{
-        marginTop: compact ? 0 : 32,
+        marginTop: compact ? 14 : 32,
         padding: compact ? 16 : "24px 0 0",
         borderTop: compact ? "none" : "1px solid rgba(168,154,135,0.35)",
         border: compact ? "1px solid rgba(168,154,135,0.28)" : undefined,

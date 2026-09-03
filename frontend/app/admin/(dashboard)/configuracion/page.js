@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Download, Loader2, Plus, Upload, X, Sparkles, Trash2, ImageIcon, ImageOff } from "lucide-react";
+import { Database, Loader2, Plus, Upload, X, Sparkles, Trash2, ImageIcon, ImageOff, ShieldCheck, Cloud } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 import { compressImageToDataUrl } from "@/lib/image-compress";
+import { useAuth } from "@/lib/auth-context";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
@@ -169,14 +170,16 @@ function friendlyConfigError(message, fallback) {
   return text || fallback;
 }
 
-function Toggle({ checked, onChange }) {
+function Toggle({ checked, onChange, disabled = false }) {
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
+      type="button"
+      disabled={disabled}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onChange(!checked); }}
       style={{
         width: 44, height: 24, borderRadius: 12, border: "none",
         background: checked ? "#C9A876" : "rgba(168,154,135,0.3)",
-        position: "relative", cursor: "pointer", transition: "background var(--motion-fast) var(--ease-in-out-quart)",
+        position: "relative", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, transition: "background var(--motion-fast) var(--ease-in-out-quart)",
         flexShrink: 0,
       }}
     >
@@ -495,7 +498,7 @@ function DeleteServiceModal({ service, phase, onClose, onConfirm, saving }) {
 }
 const DAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
-function BusinessHoursPanel({ onRefresh }) {
+function BusinessHoursPanel({ onRefresh, canEdit = true }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   // Nueva estructura: dos franjas independientes con toggle "franja abierta/cerrada".
@@ -601,6 +604,7 @@ function BusinessHoursPanel({ onRefresh }) {
         end={morningEnd}
         onStartChange={(v) => { setMorningStart(v); setSaved(false); setValidationMsg(null); }}
         onEndChange={(v) => { setMorningEnd(v); setSaved(false); setValidationMsg(null); }}
+        disabled={!canEdit}
       />
       <BusinessHoursRow
         label="Tarde"
@@ -610,12 +614,13 @@ function BusinessHoursPanel({ onRefresh }) {
         end={afternoonEnd}
         onStartChange={(v) => { setAfternoonStart(v); setSaved(false); setValidationMsg(null); }}
         onEndChange={(v) => { setAfternoonEnd(v); setSaved(false); setValidationMsg(null); }}
+        disabled={!canEdit}
       />
       <div>
         <label style={labelStyle}>Días laborables</label>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {DAY_LABELS.map((label, i) => (
-            <button key={i} type="button" onClick={() => toggleDay(i)} style={{ padding: "7px 14px", borderRadius: 999, border: workDays.includes(i) ? "none" : "1px solid rgba(168,154,135,0.5)", background: workDays.includes(i) ? "#8C6E50" : "transparent", color: workDays.includes(i) ? "#F7F5F0" : "#A89A87", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>
+            <button key={i} type="button" disabled={!canEdit} onClick={() => toggleDay(i)} style={{ padding: "7px 14px", borderRadius: 999, border: workDays.includes(i) ? "none" : "1px solid rgba(168,154,135,0.5)", background: workDays.includes(i) ? "#8C6E50" : "transparent", color: workDays.includes(i) ? "#F7F5F0" : "#A89A87", fontSize: 12, fontWeight: 500, cursor: canEdit ? "pointer" : "not-allowed", opacity: canEdit ? 1 : 0.6 }}>
               {label}
             </button>
           ))}
@@ -623,24 +628,26 @@ function BusinessHoursPanel({ onRefresh }) {
       </div>
       {validationMsg && <p style={{ fontSize: 13, color: "#C25450", margin: 0 }}>{validationMsg}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={save} disabled={saving} style={{ padding: "8px 22px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>
+        <button onClick={save} disabled={saving || !canEdit} style={{ padding: "8px 22px", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: !canEdit ? "not-allowed" : saving ? "wait" : "pointer", opacity: saving || !canEdit ? 0.6 : 1 }}>
           {saving ? "Guardando..." : "Guardar horario"}
         </button>
         {saved && <span style={{ fontSize: 12, color: "#8C6E50" }}>Guardado</span>}
       </div>
+      {!canEdit && <p style={{ margin: 0, fontSize: 12, color: "#A89A87" }}>Tienes acceso de consulta. La dueña puede habilitarte el permiso “Modificar horario”.</p>}
     </div>
   );
 }
 
-function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, onEndChange }) {
+function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, onEndChange, disabled = false }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 13, fontWeight: 500, color: "#6B5540" }}>{label}</span>
         <button
           type="button"
+          disabled={disabled}
           onClick={onToggle}
-          style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: open ? "rgba(85,107,47,0.12)" : "transparent", color: open ? "#556B2F" : "#A89A87", fontSize: 12, fontWeight: 500, cursor: "pointer" }}
+          style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.5)", background: open ? "rgba(85,107,47,0.12)" : "transparent", color: open ? "#556B2F" : "#A89A87", fontSize: 12, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}
         >
           {open ? "Abierta" : "Cerrada - activar"}
         </button>
@@ -649,11 +656,11 @@ function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, on
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={labelStyle}>Apertura</label>
-            <input type="time" value={start} onChange={(e) => onStartChange(e.target.value)} style={inputStyle} />
+            <input type="time" value={start} disabled={disabled} onChange={(e) => onStartChange(e.target.value)} style={inputStyle} />
           </div>
           <div>
             <label style={labelStyle}>Cierre</label>
-            <input type="time" value={end} onChange={(e) => onEndChange(e.target.value)} style={inputStyle} />
+            <input type="time" value={end} disabled={disabled} onChange={(e) => onEndChange(e.target.value)} style={inputStyle} />
           </div>
         </div>
       )}
@@ -664,6 +671,10 @@ function BusinessHoursRow({ label, open, onToggle, start, end, onStartChange, on
 export default function ConfiguracionPage() {
   const isMobile = useIsMobile();
   const toast = useToast();
+  const { user } = useAuth();
+  const hasFullAccess = ["superadmin", "dueno"].includes(user?.role);
+  const canModifyServices = hasFullAccess || !!user?.permissions?.configuracionServicios;
+  const canModifySchedule = hasFullAccess || !!user?.permissions?.configuracionHorario;
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -676,12 +687,8 @@ export default function ConfiguracionPage() {
   const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
   const mediaAnim = useAnimatedMount(!!mediaTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
-  // La lista muestra el catálogo completo (activos + inactivos) para que la
-  // dueña pueda ver todo y reactivar cualquier cosa desde el mismo lugar.
-  // Los inactivos se pintan con opacidad reducida (ver `opacity` en la fila)
-  // y quedan al final para no romper el flujo visual de la oferta activa.
-  // La lista pública de reservas — /public/:slug/services — sigue filtrando
-  // por active:true en el backend, sin cambios.
+  // Los servicios retirados no vuelven a aparecer tras recargar. El backend
+  // solo los conserva internamente para no romper citas e historiales.
   const visibleServices = useMemo(() => {
     return [...services].sort((a, b) => {
       const aActive = a.active !== false;
@@ -766,7 +773,7 @@ export default function ConfiguracionPage() {
               <SectionHeader
                 title="Servicios y precios"
                 subtitle="Cada servicio incluye su duración estándar, pausa, precio y cabinas permitidas."
-                onAdd={() => setShowServiceForm(true)}
+                onAdd={canModifyServices ? () => setShowServiceForm(true) : undefined}
                 addLabel="Añadir servicio"
               />
               <div style={{ display: "flex", flexDirection: "column" }}>
@@ -799,11 +806,12 @@ export default function ConfiguracionPage() {
                             <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{s.description}</p>
                           )}
                         </div>
-                        {!isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
+                        {!isMobile && <Toggle checked={active} disabled={!canModifyServices} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <input
                           type="color"
+                          disabled={!canModifyServices}
                           defaultValue={s.colorHex || "#8C6E50"}
                           title="Color del servicio"
                           onBlur={(e) => { if (e.target.value.toUpperCase() !== String(s.colorHex || "#8C6E50").toUpperCase()) updateService(s, { colorHex: e.target.value }); }}
@@ -811,6 +819,7 @@ export default function ConfiguracionPage() {
                         />
                         <input
                           type="number"
+                          disabled={!canModifyServices}
                           step="0.01"
                           defaultValue={Number(s.priceUsd).toFixed(2)}
                           onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
@@ -819,7 +828,8 @@ export default function ConfiguracionPage() {
                         <button
                           type="button"
                           title="Descripción y foto"
-                          onClick={() => setMediaTarget(s)}
+                          disabled={!canModifyServices}
+                          onClick={() => { if (canModifyServices) setMediaTarget(s); }}
                           className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary"
                         >
                           <ImageIcon size={15} />
@@ -827,7 +837,8 @@ export default function ConfiguracionPage() {
                         <button
                           type="button"
                           title="Eliminar servicio"
-                          onClick={() => setDeleteServiceTarget(s)}
+                          disabled={!canModifyServices}
+                          onClick={() => { if (canModifyServices) setDeleteServiceTarget(s); }}
                           style={{
                             width: 34,
                             height: 34,
@@ -843,7 +854,7 @@ export default function ConfiguracionPage() {
                         >
                           <Trash2 size={15} />
                         </button>
-                        {isMobile && <Toggle checked={active} onChange={(val) => updateService(s, { active: val })} />}
+                        {isMobile && <Toggle checked={active} disabled={!canModifyServices} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
                     </div>
                   );
@@ -853,11 +864,12 @@ export default function ConfiguracionPage() {
                     icon={<Sparkles size={28} strokeWidth={1.5} />}
                     title="Todavía no hay servicios"
                     body="Crea el primer servicio para poder reservar citas y ofrecerlo en la agenda pública."
-                    ctaLabel="Añadir servicio"
-                    onCta={() => setShowServiceForm(true)}
+                    ctaLabel={canModifyServices ? "Añadir servicio" : undefined}
+                    onCta={canModifyServices ? () => setShowServiceForm(true) : undefined}
                   />
                 )}
               </div>
+              {!canModifyServices && <p style={{ margin: "12px 0 0", fontSize: 12, color: "#A89A87" }}>Tienes acceso de consulta. La dueña puede habilitarte el permiso “Modificar servicios”.</p>}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 14 : 18 }}>
@@ -867,7 +879,7 @@ export default function ConfiguracionPage() {
                   <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Horario de atención</h3>
                   <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Define cuándo el spa acepta reservas en la agenda y en el link público.</p>
                 </div>
-                <BusinessHoursPanel />
+                <BusinessHoursPanel canEdit={canModifySchedule} />
               </div>
 
               <div
@@ -877,17 +889,31 @@ export default function ConfiguracionPage() {
                   background: "linear-gradient(145deg, rgba(253,252,250,0.98), rgba(201,168,118,0.14))",
                 }}
               >
-                <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Datos y respaldo</h3>
-                <p style={{ margin: "0 0 18px", fontSize: 13, color: "#A89A87", lineHeight: 1.45 }}>
-                  Próximo paso: respaldos en nube e importación/exportación de información.
-                </p>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-                  <button disabled style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 14px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.25)", background: "rgba(253,252,250,0.65)", color: "#A89A87", fontSize: 13 }}>
-                    <Upload size={14} /> Subir Excel
-                  </button>
-                  <button disabled style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 14px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.25)", background: "rgba(253,252,250,0.65)", color: "#A89A87", fontSize: 13 }}>
-                    <Download size={14} /> Descargar
-                  </button>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Base de datos y respaldos</h3>
+                    <p style={{ margin: 0, fontSize: 13, color: "#A89A87", lineHeight: 1.45 }}>Estado real de la actualización y protección de la información.</p>
+                  </div>
+                  <Database size={20} style={{ color: "#8C6E50", flexShrink: 0 }} />
+                </div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 14, border: "1px solid rgba(85,107,47,0.22)", background: "rgba(85,107,47,0.07)" }}>
+                    <ShieldCheck size={17} style={{ marginTop: 1, color: "#556B2F", flexShrink: 0 }} />
+                    <div>
+                      <b style={{ display: "block", fontSize: 13, color: "#556B2F" }}>Estructura actualizada automáticamente</b>
+                      <span style={{ display: "block", marginTop: 3, fontSize: 11, lineHeight: 1.45, color: "#6B5540" }}>Cada publicación aplica de forma controlada las migraciones pendientes antes de iniciar el sistema.</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 14, border: "1px solid rgba(168,154,135,0.35)", background: "rgba(253,252,250,0.72)" }}>
+                    <Cloud size={17} style={{ marginTop: 1, color: "#8C6E50", flexShrink: 0 }} />
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                        <b style={{ fontSize: 13, color: "#6B5540" }}>Copia automática independiente</b>
+                        <span style={{ padding: "2px 8px", borderRadius: 999, background: "rgba(194,84,80,0.10)", color: "#B85A56", fontSize: 10, fontWeight: 700 }}>PENDIENTE DE ACTIVAR</span>
+                      </div>
+                      <span style={{ display: "block", marginTop: 4, fontSize: 11, lineHeight: 1.45, color: "#A89A87" }}>Recomendación: copia diaria cifrada fuera del servidor, retención de 30 días y prueba de restauración mensual. No se ofrece un botón manual porque una copia segura debe continuar aunque nadie abra esta pantalla.</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -896,7 +922,7 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
+      {canModifyServices && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
       {deleteServiceAnim.shouldRender && deleteServiceTarget && (
         <DeleteServiceModal
           service={deleteServiceTarget}

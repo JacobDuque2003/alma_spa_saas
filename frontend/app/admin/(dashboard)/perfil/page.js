@@ -6,7 +6,7 @@ import { authFetch } from "@/lib/auth-client";
 import { Loader2, X } from "lucide-react";
 
 const ROLE_LABELS = {
-  superadmin: "Super Admin",
+  superadmin: "Técnico",
   dueno: "Dueña",
   admin: "Administradora",
   personal: "Terapeuta",

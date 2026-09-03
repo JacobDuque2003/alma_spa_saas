@@ -56,7 +56,7 @@ function canSeeNavItem(item, user) {
 const OUT_OF_SCHEDULE_BANNER_MS = 8000;
 
 const ROLE_LABELS = {
-  superadmin: "Super Admin",
+  superadmin: "Técnico",
   dueno: "Dueña",
   admin: "Administradora",
   personal: "Terapeuta",

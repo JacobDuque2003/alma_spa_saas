@@ -4,7 +4,7 @@ const requirePermission = require('../middleware/requirePermission');
 const categoryService = require('../services/categoryService');
 
 const router = express.Router();
-const auth = [authenticate, requirePermission('configuracion')];
+const auth = [authenticate, requirePermission('configuracionServicios')];
 
 router.get('/', authenticate, async (req, res, next) => {
   // Cualquier usuario autenticado puede listar categorías (se necesitan para formularios).
