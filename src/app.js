@@ -1,8 +1,9 @@
 require('dotenv').config();
-// Railway ejecuta `npm start`: ese ciclo siempre es producción, incluso si
-// una variable antigua del servicio quedó configurada por error como dev.
-// `npm run dev` y `npm test` conservan su entorno normal.
-if (process.env.npm_lifecycle_event === 'start') {
+// Un inicio normal o cualquier despliegue de Railway siempre es producción,
+// incluso si el servicio conserva una variable antigua configurada como dev.
+// La marca del commit es inyectada por Railway aunque use un Start Command
+// propio y omita `npm start`. El desarrollo local y los tests no cambian.
+if (process.env.npm_lifecycle_event === 'start' || process.env.RAILWAY_GIT_COMMIT_SHA) {
   process.env.NODE_ENV = 'production';
 }
 const express = require('express');
