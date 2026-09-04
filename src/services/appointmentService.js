@@ -499,6 +499,16 @@ async function createManualAppointment(actor, data) {
     throw new BadRequestError('clientId, serviceId, staffId y startsAt son requeridos');
   }
 
+  // C-1: validar clientId contra tenantId ANTES de crear la cita — sin este
+  // guard, un dueño puede crear una cita con un clientId de OTRO tenant y
+  // luego ver PII (nombre/whatsapp/ficha) al listar. Igual patrón que
+  // service/staff: findFirst scopeado por tenant, respuesta 400 uniforme
+  // para "no existe" y "otro tenant" (anti-enumeración).
+  const client = await prisma.client.findFirst({ where: { id: data.clientId, tenantId } });
+  if (!client) {
+    throw new BadRequestError('clientId invalido para este tenant');
+  }
+
   const service = await prisma.service.findFirst({ where: { id: data.serviceId, tenantId, active: true } });
   if (!service) {
     throw new BadRequestError('serviceId invalido para este tenant');
@@ -608,7 +618,23 @@ async function updateAppointment(actor, id, changes) {
   const data = {};
   if (changes.startsAt !== undefined) data.startsAt = new Date(changes.startsAt);
   if (changes.roomId !== undefined) data.roomId = changes.roomId;
-  if (changes.staffId !== undefined) data.staffId = changes.staffId;
+  if (changes.staffId !== undefined) {
+    // M-3: validar staffId contra target.tenantId — sin esto, un dueño puede
+    // asignar staffId de OTRO tenant y filtrar staff.name al listar.
+    const staff = await prisma.user.findFirst({
+      where: {
+        id: changes.staffId,
+        tenantId: target.tenantId,
+        role: { in: STAFF_ROLES },
+        active: true,
+        canAttendAppointments: true,
+      },
+    });
+    if (!staff) {
+      throw new BadRequestError('staffId invalido: no es personal habilitado para atender citas en este tenant');
+    }
+    data.staffId = changes.staffId;
+  }
   if (changes.indications !== undefined) data.indications = changes.indications ? String(changes.indications).trim() : null;
 
   if (data.startsAt || data.roomId !== undefined || data.staffId !== undefined) {

@@ -212,6 +212,7 @@ test('la query de candidatos de staff filtra explícitamente por canAttendAppoin
 
 test('createManualAppointment rechaza gabinete incompatible con la categoria del servicio', async () => {
   mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
     user: { findFirst: async () => ({ id: 'staff1' }) },
     room: { findMany: async () => [{ id: 'room-masajes' }] },
@@ -229,6 +230,7 @@ test('createManualAppointment rechaza gabinete incompatible con la categoria del
 
 test('createManualAppointment autoasigna un gabinete compatible libre si no se envia roomId', async () => {
   mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
     user: { findFirst: async () => ({ id: 'staff1' }) },
     room: { findMany: async () => [{ id: 'room1' }, { id: 'room2' }] },
@@ -254,6 +256,7 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
 
 test('createManualAppointment distingue fichas diferentes aunque los clientes tengan el mismo nombre', async () => {
   mockPrisma({
+    client: { findFirst: async () => ({ id: 'ficha-seleccionada', tenantId: 't1' }) },
     service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
     user: { findFirst: async () => ({ id: 'staff1' }) },
     room: { findMany: async () => [{ id: 'room1' }] },
@@ -275,6 +278,78 @@ test('createManualAppointment distingue fichas diferentes aunque los clientes te
   );
 
   assert.equal(result.clientId, 'ficha-seleccionada');
+});
+
+test('C-1: createManualAppointment RECHAZA clientId de otro tenant (cross-tenant PII leak guard)', async () => {
+  // Simula el ataque: dueño autenticado en tenant 't1' intenta crear una cita
+  // con un clientId que pertenece al tenant 't2'. findFirst({id, tenantId:'t1'})
+  // devuelve null porque el cliente pertenece a otro tenant.
+  let createCalled = false;
+  let clientLookupArgs = null;
+  mockPrisma({
+    client: {
+      findFirst: async (args) => {
+        clientLookupArgs = args;
+        // No existe cliente con id='cross-tenant-client' en tenant 't1'
+        return null;
+      },
+    },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findMany: async () => [],
+      create: async () => { createCalled = true; return {}; },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      { clientId: 'cross-tenant-client', serviceId: 'srv1', staffId: 'staff1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
+    ),
+    (err) => err.status === 400 && /clientId invalido/i.test(err.message)
+  );
+
+  assert.equal(createCalled, false, 'MUST NOT create the appointment when clientId is cross-tenant');
+  assert.equal(clientLookupArgs?.where?.id, 'cross-tenant-client');
+  assert.equal(clientLookupArgs?.where?.tenantId, 't1', 'lookup must be scoped to actor tenant');
+});
+
+test('M-3: updateAppointment RECHAZA staffId de otro tenant', async () => {
+  // Dueño de t1 patchea su propia cita con staffId de t2. El findFirst scopeado
+  // a target.tenantId devuelve null → rechazo 400.
+  let updateCalled = false;
+  mockPrisma({
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    user: {
+      findFirst: async (args) => {
+        // Simula que el staffId 'staff-cross-tenant' no existe en target.tenantId='t1'
+        return null;
+      },
+    },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1', tenantId: 't1', serviceId: 'srv1',
+        roomId: 'room1', staffId: 'staff1', clientId: 'c1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+      }),
+      findMany: async () => [],
+      update: async () => { updateCalled = true; return {}; },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.updateAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      'appt1',
+      { staffId: 'staff-cross-tenant' }
+    ),
+    (err) => err.status === 400 && /staffId invalido/i.test(err.message)
+  );
+
+  assert.equal(updateCalled, false, 'MUST NOT update when staffId is cross-tenant');
 });
 
 test('getAvailability devuelve lista vacía si no hay ningún staff habilitado', async () => {

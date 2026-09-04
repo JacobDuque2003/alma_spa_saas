@@ -14,7 +14,7 @@ test('lookupClient devuelve requiresIntake=true si el cliente existe pero no fir
     findUnique: async () => ({ id: 'c1', intake: { consentSigned: false } }),
   };
   const result = await clientService.lookupClient('t1', '+593999000001');
-  assert.deepEqual(result, { exists: true, clientId: 'c1', requiresIntake: true });
+  assert.deepEqual(result, { exists: true, requiresIntake: true });
 });
 
 test('lookupClient devuelve requiresIntake=false si el cliente ya firmó consentimiento', async () => {
@@ -22,7 +22,16 @@ test('lookupClient devuelve requiresIntake=false si el cliente ya firmó consent
     findUnique: async () => ({ id: 'c1', intake: { consentSigned: true } }),
   };
   const result = await clientService.lookupClient('t1', '+593999000001');
-  assert.deepEqual(result, { exists: true, clientId: 'c1', requiresIntake: false });
+  assert.deepEqual(result, { exists: true, requiresIntake: false });
+});
+
+test('M-2: lookupClient NO expone clientId en la respuesta pública', async () => {
+  prisma.client = {
+    findUnique: async () => ({ id: 'clientId-secreto', intake: { consentSigned: true } }),
+  };
+  const result = await clientService.lookupClient('t1', '+593999000001');
+  assert.ok(!('clientId' in result), 'la respuesta pública NO debe incluir clientId');
+  assert.equal(result.exists, true);
 });
 
 

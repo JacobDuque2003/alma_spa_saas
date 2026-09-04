@@ -222,7 +222,9 @@ async function lookupClient(tenantId, whatsapp) {
   }
 
   const requiresIntake = !client.intake || !client.intake.consentSigned;
-  return { exists: true, clientId: client.id, requiresIntake };
+  // M-2: no exponer clientId en respuesta pública — el server hace upsert por
+  // tenantId_whatsapp más adelante, así que el flujo público no lo necesita.
+  return { exists: true, requiresIntake };
 }
 
 /**
