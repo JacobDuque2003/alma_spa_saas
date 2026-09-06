@@ -1,0 +1,5 @@
+# Install postgresql-18 alongside Node so pg_dump matches the PostgreSQL 18
+# server version. Required by scripts/backup/run.js. Older pg_dump cannot
+# dump a newer server.
+[phases.setup]
+nixPkgs = ["nodejs_20", "postgresql_18"]
