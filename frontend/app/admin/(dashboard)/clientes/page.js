@@ -345,7 +345,10 @@ export default function ClientesPage() {
   const canEditIntake = hasClientPermission(user, "clientesAnamnesis");
   const canEditHistory = hasClientPermission(user, "clientesHistorial");
   const canToggleClientStatus = hasClientPermission(user, "clientesEstado");
-  const canExportClients = hasClientPermission(user, "clientesExportar") || hasClientPermission(user, "reportes") || hasClientPermission(user, "configuracion");
+  // clientesExportar es exclusivo — igual que el backend, sin fallbacks a
+  // reportes/configuracion, para que el toggle en Equipo controle exactamente
+  // la accion que promete.
+  const canExportClients = hasClientPermission(user, "clientesExportar");
 
   const fetchClients = useCallback(async () => {
     setLoading(true);

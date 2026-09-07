@@ -1,7 +1,6 @@
 const express = require('express');
 const authenticate = require('../middleware/authenticate');
 const requirePermission = require('../middleware/requirePermission');
-const requireAnyPermission = require('../middleware/requireAnyPermission');
 const requireRole = require('../middleware/requireRole');
 const clientService = require('../services/clientService');
 const clientIntakeService = require('../services/clientIntakeService');
@@ -21,7 +20,11 @@ const clientIntakeEdit = [authenticate, requirePermission('clientes'), requirePe
 const clientHistoryEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesHistorial')];
 const clientStatusEdit = [authenticate, requirePermission('clientes'), requirePermission('clientesEstado')];
 const clientDelete = [authenticate, requirePermission('clientes'), requirePermission('clientesEliminar')];
-const clientExport = [authenticate, requirePermission('clientes'), requireAnyPermission('clientesExportar', 'reportes', 'configuracion')];
+// clientesExportar es EXCLUSIVO — antes se aceptaba tambien reportes o
+// configuracion, pero eso hacia que desactivar el toggle "Exportar clientas"
+// no tuviera efecto si la persona tenia otros permisos amplios. Ahora el
+// toggle controla exactamente la accion que promete.
+const clientExport = [authenticate, requirePermission('clientes'), requirePermission('clientesExportar')];
 const ownerOnly = [authenticate, requireRole('superadmin', 'dueno')];
 // El módulo visual de movimientos fue retirado y ya no existe un permiso
 // delegable para operarlo. Conservamos las rutas para el historial existente,

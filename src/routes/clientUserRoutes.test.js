@@ -57,10 +57,13 @@ test('GET /clients devuelve datos base sin ClientIntake aunque el cliente tenga 
   assert.equal('intake' in res.body[0], false);
 });
 
-test('GET /clients/export exige permiso extra reportes o configuracion y no exporta ClientIntake', async () => {
+test('GET /clients/export requiere clientesExportar explicito y no exporta ClientIntake', async () => {
+  // clientesExportar ahora es EXCLUSIVO — tener reportes o configuracion NO
+  // habilita exportar (antes SI lo hacia via requireAnyPermission, y por eso
+  // desactivar solo "Exportar clientas" no tenia efecto para prueba@).
   let argsSeen = null;
   mockAccessScheduleUser();
-  prisma.rolePermission = { findUnique: async () => ({ clientes: true, reportes: true, configuracion: false }) };
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesExportar: true, reportes: false, configuracion: false }) };
   prisma.client = {
     findMany: async (args) => {
       argsSeen = args;
@@ -89,6 +92,26 @@ test('GET /clients/export exige permiso extra reportes o configuracion y no expo
   assert.match(res.text, /"Ficha","Nombre","WhatsApp"/);
   assert.match(res.text, /"0077","Camila Andrade","\+593993629256"/);
   assert.equal(res.text.includes('no debe exportarse'), false);
+});
+
+test('GET /clients/export bloquea a personal con reportes+configuracion pero SIN clientesExportar (caso Jacob 2026-09-07)', async () => {
+  // Regresion: prueba@ tenia reportes y configuracion ON. Jacob apago
+  // clientesExportar en su ficha y la funcion seguia disponible por el
+  // requireAnyPermission antiguo. El fix hace clientesExportar EXCLUSIVO.
+  mockAccessScheduleUser();
+  prisma.rolePermission = { findUnique: async () => ({
+    clientes: true,
+    clientesExportar: false,
+    reportes: true,          // habilitado, no debe bastar
+    configuracion: true,     // habilitado, no debe bastar
+    configuracionServicios: true,
+    configuracionHorario: true,
+  }) };
+  prisma.client = { findMany: async () => [] };
+
+  const res = await supertest(app).get('/clients/export').set('Authorization', `Bearer ${token()}`);
+  assert.equal(res.status, 403, 'apagar clientesExportar debe bloquear aunque el user tenga reportes/configuracion');
+  assert.match(res.body.error, /clientesExportar/);
 });
 
 test('GET /clients/export niega a personal con clientes pero sin reportes/configuracion', async () => {
