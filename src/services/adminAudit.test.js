@@ -173,6 +173,23 @@ test('updateUser writes audit log — never includes passwordHash in detail', as
   assert.ok(!auditRows[0].detail?.password, 'password must NEVER appear in audit detail');
 });
 
+test('updateUser: password reset queda registrado en audit con passwordChanged=true', async () => {
+  mockPrismaWith({
+    user: {
+      findUnique: async () => ({ id: 'u2b', isProtected: false, tenantId: 't1', active: true }),
+      update: async (args) => ({ id: 'u2b', ...args.data }),
+    },
+  });
+
+  await userService.updateUser(actor, 'u2b', { password: 'OtraNueva9!' });
+
+  assert.equal(auditRows.length, 1);
+  assert.equal(auditRows[0].action, 'update');
+  assert.equal(auditRows[0].detail?.passwordChanged, true, 'debe registrar passwordChanged=true para trazabilidad del reseteo');
+  assert.ok(!('password' in (auditRows[0].detail || {})), 'la clave nunca aparece');
+  assert.ok(!('passwordHash' in (auditRows[0].detail || {})), 'el hash nunca aparece');
+});
+
 test('deleteUser writes audit log with action=purge', async () => {
   mockPrismaWith({
     user: {

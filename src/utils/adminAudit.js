@@ -1,5 +1,9 @@
 const SUMMARY_WHITELIST = {
-  user: ['name', 'email', 'role', 'active', 'canAttendAppointments', 'isProtected'],
+  // passwordChanged es un flag booleano — nunca el hash ni la clave. Se
+  // agrega al detalle desde userService cuando un admin resetea la contraseña
+  // de otra cuenta, así queda registro en AdminAuditLog de que hubo reseteo
+  // (con action='update') sin filtrar material sensible.
+  user: ['name', 'email', 'role', 'active', 'canAttendAppointments', 'isProtected', 'passwordChanged'],
   service: ['name', 'category', 'durationMins', 'bufferMins', 'colorHex', 'priceUsd', 'offersHomeService', 'active', 'description'],
   room: ['name', 'specialty', 'sortOrder', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
   category: ['name', 'active'],

@@ -455,6 +455,30 @@ export default function PersonalPage() {
     }
   }
 
+  // Reset de contraseña de OTRA cuenta. Reutiliza el PATCH /users/:id que
+  // ya acepta {password} — el backend hashea, bump de sessionVersion (invalida
+  // sesiones existentes) y escribe AdminAuditLog con passwordChanged=true.
+  // La devolución nunca incluye el hash. La UI local no persiste la clave
+  // ingresada ni la muestra fuera del input.
+  async function resetPassword(newPassword) {
+    if (!selected || selected.isProtected) return { ok: false };
+    if (!newPassword || newPassword.length < 8) {
+      return { ok: false, error: "La contraseña debe tener al menos 8 caracteres" };
+    }
+    try {
+      const updated = await authFetch(`/users/${selected.id}`, {
+        method: "PATCH",
+        body: { password: newPassword },
+      });
+      setUsers((prev) => prev.map((account) => (account.id === selected.id ? { ...account, ...updated } : account)));
+      toast.success("Contraseña actualizada. Comparte la nueva clave con la persona.");
+      return { ok: true };
+    } catch (err) {
+      toast.error(err.message || "No se pudo actualizar la contraseña");
+      return { ok: false, error: err.message };
+    }
+  }
+
   async function deleteAccount() {
     if (!deleteTarget || deleteTarget.isProtected) return;
     setDeleting(true);
@@ -581,6 +605,7 @@ export default function PersonalPage() {
                   </div>
                   {!user.isProtected && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      {user.id !== currentUser?.id && (
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleActive(user); }}
                         disabled={toggling === user.id}
@@ -614,6 +639,7 @@ export default function PersonalPage() {
                         />
                         {user.active ? "Activa" : "Inactiva"}
                       </button>
+                      )}
                       <button
                         onClick={(e) => { e.stopPropagation(); setSelectedId(user.id); if (isMobile) setMobileShowDetail(true); }}
                         title="Editar cuenta"
@@ -766,6 +792,10 @@ export default function PersonalPage() {
                   </label>
                 </section>
 
+                {canDeleteAccounts && selected.id !== currentUser?.id && (
+                  <PasswordResetSection onReset={resetPassword} />
+                )}
+
                 {selected.role !== "personal" ? (
                   <>
                     <p style={{ fontSize: 13, color: "#A89A87", margin: "0 0 16px" }}>
@@ -846,6 +876,83 @@ function ScheduleSummary({ schedule }) {
           {openDays.map(([key, label]) => <div key={key} style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(235,232,225,0.5)", fontSize: 12, color: "#6B5540" }}><b>{label}</b><span style={{ marginLeft: 6, color: "#A89A87" }}>{normalized[key].start}–{normalized[key].end}</span></div>)}
         </div>
       ) : <span style={{ fontSize: 12, color: "#A89A87" }}>Sin horario definido.</span>}
+    </section>
+  );
+}
+
+function PasswordResetSection({ onReset }) {
+  const [pwd, setPwd] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState(null);
+
+  async function submit(event) {
+    event.preventDefault();
+    setLocalError(null);
+    if (!pwd) { setLocalError("Escribe una contraseña nueva"); return; }
+    if (pwd.length < 8) { setLocalError("La contraseña debe tener al menos 8 caracteres"); return; }
+    if (pwd !== confirm) { setLocalError("Las contraseñas no coinciden"); return; }
+    setBusy(true);
+    const result = await onReset(pwd);
+    setBusy(false);
+    if (result?.ok) {
+      // Vaciar los inputs para que la clave no quede visible en la UI y
+      // para dejar clara la confirmación en el toast.
+      setPwd("");
+      setConfirm("");
+    } else if (result?.error) {
+      setLocalError(result.error);
+    }
+  }
+
+  return (
+    <section style={{ marginBottom: 16, border: "1px solid rgba(168,154,135,0.28)", borderRadius: 16, padding: 16, background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))" }}>
+      <b style={{ display: "block", fontSize: 14, color: "#6B5540" }}>Restablecer contraseña</b>
+      <p style={{ margin: "4px 0 14px", fontSize: 12, lineHeight: 1.5, color: "#A89A87" }}>
+        Setéale una clave nueva a esta persona (por ejemplo, si la olvidó). Al guardar, sus sesiones activas se cierran automáticamente y tendrá que ingresar con la clave nueva.
+      </p>
+      <form onSubmit={submit} autoComplete="off">
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#6B5540", marginBottom: 6 }}>Nueva contraseña</label>
+        <input
+          type="password"
+          value={pwd}
+          onChange={(e) => setPwd(e.target.value)}
+          placeholder="Mínimo 8 caracteres"
+          autoComplete="new-password"
+          disabled={busy}
+          style={{ ...inputStyle, marginBottom: 10 }}
+        />
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#6B5540", marginBottom: 6 }}>Confirmar contraseña</label>
+        <input
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder="Repite la clave nueva"
+          autoComplete="new-password"
+          disabled={busy}
+          style={{ ...inputStyle, marginBottom: 10 }}
+        />
+        {localError && (
+          <p style={{ margin: "0 0 10px", padding: "8px 10px", borderRadius: 8, background: "rgba(194,84,80,0.10)", color: "#B85A56", fontSize: 12 }}>{localError}</p>
+        )}
+        <button
+          type="submit"
+          disabled={busy || !pwd}
+          style={{
+            padding: "9px 18px",
+            borderRadius: 999,
+            background: "#8C6E50",
+            color: "#F7F5F0",
+            border: "none",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: busy ? "wait" : (pwd ? "pointer" : "not-allowed"),
+            opacity: busy || !pwd ? 0.7 : 1,
+          }}
+        >
+          {busy ? "Guardando…" : "Actualizar contraseña"}
+        </button>
+      </form>
     </section>
   );
 }
