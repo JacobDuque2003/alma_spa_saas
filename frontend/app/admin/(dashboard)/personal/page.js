@@ -116,7 +116,7 @@ function PermissionGroupCard({ group, value, onChange, compact, readOnly }) {
       </div>
       <div style={{ padding: compact ? "4px 12px" : "6px 16px" }}>
         {group.items.map(([key, label, desc], i) => (
-          <label key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: compact ? "9px 0" : "12px 0", borderBottom: i < group.items.length - 1 ? "1px solid rgba(168,154,135,0.16)" : "none", cursor: readOnly ? "default" : "pointer" }}>
+          <label key={key} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: compact ? "9px 0" : "12px 0", borderBottom: i < group.items.length - 1 ? "1px solid rgba(168,154,135,0.16)" : "none", cursor: readOnly ? "default" : "pointer" }}>
             <span style={{ minWidth: 0 }}>
               <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{label}</span>
               {!compact && <span style={{ fontSize: 11, color: "#A89A87" }}>{desc}</span>}
@@ -780,7 +780,7 @@ export default function PersonalPage() {
                     <option value="dueno">Dueña</option>
                   </select>
                   {selected.id === currentUser?.id && <p style={{ margin: "-5px 0 12px", fontSize: 11, color: "#A89A87" }}>Por seguridad, una cuenta no puede cambiar su propio rol.</p>}
-                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: saving ? "wait" : "pointer" }}>
+                  <label style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: saving ? "wait" : "pointer" }}>
                     <span>
                       <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>Puede atender y ser asignada en citas</span>
                       <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "#A89A87" }}>Al activarlo, estará disponible como terapeuta en la agenda.</span>
