@@ -1,0 +1,61 @@
+# Dedicated image for the Alma Spa backup cron job.
+#
+# Moved to repo root (from scripts/backup/Dockerfile) because Railway
+# was silently falling back to Nixpacks when the Dockerfile lived in a
+# subdirectory (runtime showed "npm warn config production" — a Nixpacks
+# signature — and pg_dump ENOENT). Root-level Dockerfile paths are
+# resolved reliably.
+#
+# Railway config for the backup service (see repo memory for full flow):
+#   Builder:          Dockerfile
+#   Dockerfile Path:  Dockerfile.backup
+#   Root Directory:   (leave blank — build context is repo root)
+#   Start Command:    LEAVE BLANK  (the CMD below is what should run)
+#   Schedule:         0 8 * * *    (UTC = 03:00 America/Guayaquil)
+#   Variables:        DATABASE_URL, GCS_BUCKET, GCS_SERVICE_ACCOUNT_KEY
+#
+# The main API service (alma_spa) still builds via Nixpacks — this file
+# is used ONLY by services that explicitly select Dockerfile builder.
+
+FROM node:20-slim
+
+# Install postgresql-client-18 from the official PGDG apt repo. Older
+# pg_dump versions cannot dump a PostgreSQL 18 server, so the version
+# must match the Railway managed database. node:20-slim is Debian bookworm.
+#
+# `pg_dump --version` at the end fails the build loudly if the install
+# was silently broken (better a build failure than a runtime ENOENT).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    install -d /usr/share/postgresql-common/pgdg; \
+    curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
+    . /etc/os-release; \
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends postgresql-client-18; \
+    rm -rf /var/lib/apt/lists/*; \
+    /usr/bin/pg_dump --version; \
+    ls -l /usr/bin/pg_dump
+
+# Explicit absolute path so the backup script does not have to trust the
+# runtime PATH. run.js reads PG_DUMP_PATH and falls back to plain "pg_dump"
+# only if unset. Setting it here as ENV means: (a) it works even if a
+# platform strips the PATH; (b) the same variable is discoverable via
+# `docker inspect` for debugging.
+ENV PG_DUMP_PATH=/usr/bin/pg_dump
+
+WORKDIR /app
+
+# Install production deps only. --ignore-scripts skips Prisma's postinstall
+# (schema.prisma is not copied — backup does not use Prisma; only needs
+# @google-cloud/storage from the runtime deps).
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+# Only the backup module. Nothing else from src/ is required.
+COPY scripts/backup ./scripts/backup
+
+CMD ["node", "scripts/backup/run.js"]

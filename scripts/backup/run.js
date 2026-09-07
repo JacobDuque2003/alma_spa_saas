@@ -31,8 +31,18 @@ function assertEnv(name) {
   return value;
 }
 
+// Resolve which pg_dump binary to invoke. PG_DUMP_PATH lets the deployment
+// pin the exact binary (Dockerfile sets it to /usr/bin/pg_dump); if unset,
+// we fall back to plain "pg_dump" and let the shell resolve it via PATH.
+function resolvePgDumpBinary() {
+  const explicit = process.env.PG_DUMP_PATH;
+  if (explicit && String(explicit).trim() !== '') return String(explicit).trim();
+  return 'pg_dump';
+}
+
 function runPgDump(dbUrl, tmpPath) {
   return new Promise((resolve, reject) => {
+    const binary = resolvePgDumpBinary();
     const args = [
       '--format=custom',
       '--compress=9',
@@ -41,7 +51,7 @@ function runPgDump(dbUrl, tmpPath) {
       '--file', tmpPath,
       dbUrl,
     ];
-    const proc = spawn('pg_dump', args, {
+    const proc = spawn(binary, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -54,7 +64,7 @@ function runPgDump(dbUrl, tmpPath) {
     });
 
     proc.on('error', (err) => {
-      reject(new Error(`pg_dump no pudo ejecutarse (¿instalado?): ${err.message}`));
+      reject(new Error(`pg_dump no pudo ejecutarse (binary=${binary}, ¿instalado?): ${err.message}`));
     });
 
     proc.on('close', (code) => {
@@ -74,7 +84,8 @@ async function runBackup() {
   const tmpPath = path.join(os.tmpdir(), filename);
 
   // Do NOT log dbUrl, keyJson, or any of their values under any circumstances.
-  log('info', 'iniciando backup', { filename, bucket });
+  // pgDump is a path, not a secret — logging it helps diagnose ENOENT quickly.
+  log('info', 'iniciando backup', { filename, bucket, pgDump: resolvePgDumpBinary() });
 
   const dumpStart = Date.now();
   try {
@@ -118,7 +129,7 @@ async function runBackup() {
   return { filename, bytes: stat.size, bucket };
 }
 
-module.exports = { runBackup };
+module.exports = { runBackup, resolvePgDumpBinary };
 
 // CLI entry point — for `npm run backup:run` or Railway Cron.
 if (require.main === module) {

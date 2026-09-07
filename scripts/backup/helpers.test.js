@@ -78,3 +78,40 @@ test('parseServiceAccountKey acepta JSON valido con campos requeridos', () => {
   const parsed = parseServiceAccountKey(valid);
   assert.equal(parsed.project_id, 'test-project');
 });
+
+test('resolvePgDumpBinary usa PG_DUMP_PATH cuando esta seteada', () => {
+  const { resolvePgDumpBinary } = require('./run');
+  const prev = process.env.PG_DUMP_PATH;
+  try {
+    process.env.PG_DUMP_PATH = '/usr/bin/pg_dump';
+    assert.equal(resolvePgDumpBinary(), '/usr/bin/pg_dump');
+  } finally {
+    if (prev === undefined) delete process.env.PG_DUMP_PATH;
+    else process.env.PG_DUMP_PATH = prev;
+  }
+});
+
+test('resolvePgDumpBinary hace fallback a "pg_dump" cuando PG_DUMP_PATH no esta', () => {
+  const { resolvePgDumpBinary } = require('./run');
+  const prev = process.env.PG_DUMP_PATH;
+  try {
+    delete process.env.PG_DUMP_PATH;
+    assert.equal(resolvePgDumpBinary(), 'pg_dump');
+  } finally {
+    if (prev !== undefined) process.env.PG_DUMP_PATH = prev;
+  }
+});
+
+test('resolvePgDumpBinary ignora valores vacios o de solo espacios', () => {
+  const { resolvePgDumpBinary } = require('./run');
+  const prev = process.env.PG_DUMP_PATH;
+  try {
+    process.env.PG_DUMP_PATH = '   ';
+    assert.equal(resolvePgDumpBinary(), 'pg_dump');
+    process.env.PG_DUMP_PATH = '';
+    assert.equal(resolvePgDumpBinary(), 'pg_dump');
+  } finally {
+    if (prev === undefined) delete process.env.PG_DUMP_PATH;
+    else process.env.PG_DUMP_PATH = prev;
+  }
+});
