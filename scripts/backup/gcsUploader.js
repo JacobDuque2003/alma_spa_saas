@@ -42,4 +42,35 @@ async function uploadBackup({ localPath, bucket, filename, keyJson }) {
   });
 }
 
-module.exports = { uploadBackup, parseServiceAccountKey };
+// Downloads the newest backup .dump from the bucket to a local path. Used
+// only by the restore-test container — never touches production Postgres.
+// Returns { filename, localPath, bytes }. Throws if the bucket is empty.
+async function downloadLatestBackup({ bucket, keyJson, destDir }) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { Storage } = require('@google-cloud/storage');
+
+  const credentials = parseServiceAccountKey(keyJson);
+  const storage = new Storage({
+    projectId: credentials.project_id,
+    credentials,
+  });
+
+  // List every alma-spa-YYYY-MM-DD.dump and pick the newest by name — since
+  // the date is ISO the string sort matches chronological order.
+  const [files] = await storage.bucket(bucket).getFiles({ prefix: 'alma-spa-' });
+  const dumps = files.filter((f) => f.name.endsWith('.dump'));
+  if (dumps.length === 0) {
+    throw new Error(`el bucket ${bucket} no contiene ningun alma-spa-*.dump`);
+  }
+  dumps.sort((a, b) => (a.name < b.name ? 1 : -1));
+  const latest = dumps[0];
+
+  fs.mkdirSync(destDir, { recursive: true });
+  const localPath = path.join(destDir, path.basename(latest.name));
+  await latest.download({ destination: localPath });
+  const bytes = fs.statSync(localPath).size;
+  return { filename: latest.name, localPath, bytes };
+}
+
+module.exports = { uploadBackup, parseServiceAccountKey, downloadLatestBackup };

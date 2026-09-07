@@ -115,3 +115,49 @@ test('resolvePgDumpBinary ignora valores vacios o de solo espacios', () => {
     else process.env.PG_DUMP_PATH = prev;
   }
 });
+
+test('compareCounts: todos los conteos coinciden -> allMatch=true', () => {
+  const { compareCounts } = require('./restore-test');
+  const expected = { Tenant: 1, User: 8, Client: 7 };
+  const actual = { Tenant: { count: 1 }, User: { count: 8 }, Client: { count: 7 } };
+  const result = compareCounts(expected, actual);
+  assert.equal(result.allMatch, true);
+  assert.equal(result.rows.length, 3);
+  assert.ok(result.rows.every((r) => r.match));
+});
+
+test('compareCounts: un conteo distinto -> allMatch=false y esa fila con match=false', () => {
+  const { compareCounts } = require('./restore-test');
+  const expected = { Tenant: 1, User: 8 };
+  const actual = { Tenant: { count: 1 }, User: { count: 7 } };
+  const result = compareCounts(expected, actual);
+  assert.equal(result.allMatch, false);
+  const userRow = result.rows.find((r) => r.table === 'User');
+  assert.equal(userRow.match, false);
+  assert.equal(userRow.actual, 7);
+  assert.equal(userRow.expected, 8);
+});
+
+test('compareCounts: error al contar una tabla -> allMatch=false con error registrado', () => {
+  const { compareCounts } = require('./restore-test');
+  const expected = { Tenant: 1, User: 8 };
+  const actual = { Tenant: { count: 1 }, User: { error: 'relation "User" does not exist' } };
+  const result = compareCounts(expected, actual);
+  assert.equal(result.allMatch, false);
+  const userRow = result.rows.find((r) => r.table === 'User');
+  assert.equal(userRow.match, false);
+  assert.equal(userRow.actual, null);
+  assert.match(userRow.error, /does not exist/);
+});
+
+test('EXPECTED_COUNTS baseline 2026-09-06: 8 tablas clave con los conteos del inventario', () => {
+  const { EXPECTED_COUNTS } = require('./restore-test');
+  assert.equal(EXPECTED_COUNTS.Tenant, 1);
+  assert.equal(EXPECTED_COUNTS.User, 8);
+  assert.equal(EXPECTED_COUNTS.Client, 7);
+  assert.equal(EXPECTED_COUNTS.Appointment, 43);
+  assert.equal(EXPECTED_COUNTS.Service, 20);
+  assert.equal(EXPECTED_COUNTS.Room, 11);
+  assert.equal(EXPECTED_COUNTS.ServiceCategory, 13);
+  assert.equal(EXPECTED_COUNTS.WhatsAppMessage, 763);
+});

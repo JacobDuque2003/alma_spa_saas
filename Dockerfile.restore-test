@@ -1,0 +1,64 @@
+# Ephemeral restore-verification image for the Alma Spa backup pipeline.
+#
+# Purpose: prove that the .dump uploaded by the daily backup cron can
+# actually be restored end-to-end. Everything lives inside a single
+# short-lived container: its own PostgreSQL 18 server, a fresh temp
+# database, pg_restore against it, count comparisons, verdict, done.
+# The container never talks to production Postgres.
+#
+# Railway config for this service (see repo memory for full flow):
+#   Builder:          Dockerfile
+#   Dockerfile Path:  Dockerfile.restore-test
+#   Root Directory:   (leave blank — build context is repo root)
+#   Start Command:    LEAVE BLANK  (the CMD below is what should run)
+#   Deploy trigger:   MANUAL only (Run now / redeploy button)
+#   Variables:        GCS_BUCKET, GCS_SERVICE_ACCOUNT_KEY (reference from
+#                     the backup service so we keep one source of truth)
+#
+# It is CRITICAL that DATABASE_URL, MIGRATION_DATABASE_URL and any
+# production connection string are NOT set on this service. The script
+# also strips them defensively at boot, but the Railway service should
+# not carry them at all.
+
+FROM node:20-slim
+
+# Install both the PostgreSQL 18 server (for the in-container temp
+# database) and the client (for pg_restore, psql, pg_isready, initdb).
+# Older pg_restore cannot read a PG18 dump so the version is pinned.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    install -d /usr/share/postgresql-common/pgdg; \
+    curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
+    . /etc/os-release; \
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18; \
+    rm -rf /var/lib/apt/lists/*; \
+    /usr/lib/postgresql/18/bin/postgres --version; \
+    /usr/lib/postgresql/18/bin/pg_restore --version
+
+# Absolute paths so the script never depends on PATH resolution — same
+# defensive pattern used by the backup script after the ENOENT episode.
+ENV POSTGRES_BIN=/usr/lib/postgresql/18/bin
+ENV PG_DUMP_PATH=/usr/lib/postgresql/18/bin/pg_dump
+ENV PG_RESTORE_PATH=/usr/lib/postgresql/18/bin/pg_restore
+ENV PSQL_PATH=/usr/lib/postgresql/18/bin/psql
+ENV PGDATA=/tmp/pgdata
+ENV RESTORE_TEST_HOST=127.0.0.1
+ENV RESTORE_TEST_PORT=5432
+
+WORKDIR /app
+
+# Install production deps only. --ignore-scripts skips Prisma's
+# postinstall (schema is not copied — the restore-test does not use
+# Prisma; it only needs @google-cloud/storage from the runtime deps).
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+# Only the backup module. Nothing else from src/ is needed.
+COPY scripts/backup ./scripts/backup
+
+CMD ["node", "scripts/backup/restore-test.js"]
