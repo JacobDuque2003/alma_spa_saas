@@ -41,11 +41,18 @@ function birthdayCaptionFromDays(daysUntil) {
   return `En ${daysUntil} días`;
 }
 
+const clientSortCollator = new Intl.Collator("es", {
+  numeric: true,
+  sensitivity: "base",
+  ignorePunctuation: true,
+});
+
 function sortValue(client, key) {
-  if (key === "recordNumber") return client.recordNumber || "";
-  if (key === "birthday") return client.daysUntil ?? client.birthday ?? 9999;
-  if (key === "createdAt") return client.createdAt || "";
-  return String(client[key] || "").toLowerCase();
+  if (key === "recordNumber") return String(client.recordNumber || "");
+  if (key === "whatsapp") return String(client.whatsapp || "").replace(/\D/g, "");
+  if (key === "birthday") return client.daysUntil ?? client.birthday ?? "";
+  if (key === "active") return client.active === false ? "Deshabilitada" : "Activa";
+  return String(client[key] || "");
 }
 
 function sortClients(rows, key, direction) {
@@ -53,9 +60,20 @@ function sortClients(rows, key, direction) {
   return [...rows].sort((a, b) => {
     const av = sortValue(a, key);
     const bv = sortValue(b, key);
-    if (av < bv) return -1 * multiplier;
-    if (av > bv) return 1 * multiplier;
-    return String(a.fullName || "").localeCompare(String(b.fullName || ""), "es") * multiplier;
+    const aIsEmpty = av === "" || av == null;
+    const bIsEmpty = bv === "" || bv == null;
+
+    // Los campos pendientes quedan al final en ambos sentidos para que la
+    // lista siga siendo útil al depurar fichas incompletas.
+    if (aIsEmpty !== bIsEmpty) return aIsEmpty ? 1 : -1;
+    if (aIsEmpty) return clientSortCollator.compare(String(a.fullName || ""), String(b.fullName || ""));
+
+    const comparison = typeof av === "number" && typeof bv === "number"
+      ? av - bv
+      : clientSortCollator.compare(String(av), String(bv));
+    if (comparison !== 0) return comparison * multiplier;
+
+    return clientSortCollator.compare(String(a.fullName || ""), String(b.fullName || ""));
   });
 }
 
@@ -697,7 +715,7 @@ export default function ClientesPage() {
               <SortButton label="Teléfono" sortKey="whatsapp" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
               <SortButton label="Email" sortKey="email" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
               <SortButton label="Cumpleaños" sortKey="birthday" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: "#A89A87", textTransform: "uppercase", letterSpacing: 0.5 }}>Estado</span>
+              <SortButton label="Estado" sortKey="active" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
             </div>
           )}
           <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 7, paddingRight: isMobile ? 0 : 4 }}>
