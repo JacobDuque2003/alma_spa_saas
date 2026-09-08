@@ -34,6 +34,21 @@ test('GET /clients exige permiso clientes', async () => {
   assert.equal(res.status, 403);
 });
 
+test('GET /clients/next-record-number exige editar clientes y muestra la primera ficha libre', async () => {
+  mockAccessScheduleUser();
+  prisma.rolePermission = { findUnique: async () => ({ clientes: true, clientesEditar: true }) };
+  prisma.client = {
+    findMany: async () => [{ recordNumber: '1' }, { recordNumber: '3' }],
+  };
+
+  const res = await supertest(app)
+    .get('/clients/next-record-number')
+    .set('Authorization', `Bearer ${token()}`);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.recordNumber, '2');
+});
+
 test('GET /clients devuelve datos base sin ClientIntake aunque el cliente tenga ficha', async () => {
   let argsSeen = null;
   mockAccessScheduleUser();

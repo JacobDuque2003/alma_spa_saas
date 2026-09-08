@@ -467,10 +467,17 @@ function Shell({ children }) {
         className="alma-nav-rail flex flex-col"
         style={{
           width: sidebarCollapsed ? 76 : 214,
-          flex: `0 0 ${sidebarCollapsed ? 76 : 214}px`,
+          // Animar a la vez width y flex-basis dejaba dos medidas compitiendo
+          // entre sí y producía pequeños saltos al abrir/cerrar el menú.
+          flex: "0 0 auto",
+          // No dejar que el contenido imponga su mínimo propio durante la
+          // transición; de lo contrario al expandir se saltaba al ancho final.
+          minWidth: 0,
+          overflow: "hidden",
+          boxSizing: "border-box",
           padding: sidebarCollapsed ? "16px 10px" : "18px 14px 16px",
-          transition: "flex-basis var(--motion-base) var(--ease-out-quart)",
-          willChange: "flex-basis",
+          transition: "width 160ms var(--ease-out-quart)",
+          willChange: "width",
         }}
       >
         <div

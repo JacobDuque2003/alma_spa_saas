@@ -42,6 +42,15 @@ test('createClient reutiliza la primera ficha numérica disponible', async () =>
   assert.equal(dataSeen.recordNumber, '3');
 });
 
+test('getNextAvailableRecordNumber muestra la misma primera ficha libre', async () => {
+  prisma.client = {
+    findMany: async () => [{ recordNumber: '1' }, { recordNumber: '2' }, { recordNumber: '4' }],
+  };
+
+  const recordNumber = await clientService.getNextAvailableRecordNumber(actor);
+  assert.equal(recordNumber, '3');
+});
+
 test('createClient rechaza formato inválido', async () => {
   prisma.client = { create: async () => { throw new Error('no debería llegar'); } };
   await assert.rejects(

@@ -28,6 +28,7 @@ export function ClientForm({
   submitLabel = "Guardar",
   cancelLabel = "Cancelar",
   compact = false,
+  automaticRecordNumber,
 }) {
   const [fullName, setFullName] = useState(initial.fullName || "");
   const [whatsapp, setWhatsapp] = useState(formatEcuadorPhone(initial.whatsapp || ""));
@@ -40,6 +41,7 @@ export function ClientForm({
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
+  const usesAutomaticRecordNumber = automaticRecordNumber !== undefined;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -54,7 +56,9 @@ export function ClientForm({
         fullName: fullName.trim(),
         whatsapp: whatsapp.trim(),
         email: email.trim() || null,
-        recordNumber: recordNumber.trim() || null,
+        // En una alta la ficha siempre la confirma el servidor. La vista
+        // previa puede cambiar si otra persona crea una clienta antes.
+        recordNumber: usesAutomaticRecordNumber ? null : (recordNumber.trim() || null),
         address: address.trim() || null,
         cedula: cedula.trim() || null,
         // Para cumpleaños importados sin año real, no enviamos el ancla 2026
@@ -84,7 +88,19 @@ export function ClientForm({
       <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr 1.4fr", gap: compact ? 10 : 12 }}>
         <div>
           <label style={labelStyle}>N° de ficha</label>
-          <input style={inputStyle} value={recordNumber} onChange={(e) => setRecordNumber(e.target.value)} placeholder="Ej: 00125" />
+          <input
+            style={{ ...inputStyle, ...(usesAutomaticRecordNumber ? { background: "#F5F1EA", color: "#6B5540", fontWeight: 600 } : {}) }}
+            value={usesAutomaticRecordNumber ? (automaticRecordNumber || "") : recordNumber}
+            onChange={(e) => setRecordNumber(e.target.value)}
+            placeholder={usesAutomaticRecordNumber ? "Asignando ficha…" : "Ej: 00125"}
+            readOnly={usesAutomaticRecordNumber}
+            aria-describedby={usesAutomaticRecordNumber ? "automatic-record-number-help" : undefined}
+          />
+          {usesAutomaticRecordNumber && (
+            <p id="automatic-record-number-help" style={{ margin: "5px 0 0", fontSize: 10.5, lineHeight: 1.35, color: "#A89A87" }}>
+              Se asigna automáticamente al crear la clienta.
+            </p>
+          )}
         </div>
         <div>
           <label style={labelStyle}>Dirección</label>

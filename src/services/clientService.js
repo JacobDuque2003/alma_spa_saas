@@ -257,6 +257,15 @@ async function nextAvailableRecordNumber(tx, tenantId) {
   return String(candidate);
 }
 
+// Vista previa para el formulario de alta. La ficha definitiva se vuelve a
+// calcular al guardar: así dos personas que abran el formulario al mismo
+// tiempo nunca terminan compartiendo un número.
+async function getNextAvailableRecordNumber(actor) {
+  const tenantId = actor?.tenantId;
+  if (!tenantId) throw new BadRequestError('tenantId es requerido');
+  return nextAvailableRecordNumber(prisma, tenantId);
+}
+
 async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address, cedula }) {
   const normalized = normalizePhone(whatsapp);
   const recordNumber = await nextAvailableRecordNumber(tx, tenantId);
@@ -459,4 +468,4 @@ async function listUpcomingBirthdays(actor, days = 7) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, exportClients, searchClients, getClient, createClient, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };
+module.exports = { lookupClient, upsertClient, loadClientForActor, listClients, exportClients, searchClients, getClient, createClient, getNextAvailableRecordNumber, updateClient, deleteClient, enableClient, listUpcomingBirthdays, computeDaysUntilBirthday, todayInTimezone };

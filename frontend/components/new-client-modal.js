@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { ClientForm } from "./client-form";
 import { useToast } from "./toast-provider";
@@ -10,6 +11,21 @@ import { useToast } from "./toast-provider";
 // same UX in both places.
 export function NewClientModal({ phase, initialName = "", onClose, onSaved }) {
   const toast = useToast();
+  const [automaticRecordNumber, setAutomaticRecordNumber] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    authFetch("/clients/next-record-number")
+      .then((result) => {
+        if (active) setAutomaticRecordNumber(result?.recordNumber || null);
+      })
+      .catch(() => {
+        // Aunque falle la vista previa, el backend conserva la asignación
+        // automática al guardar y no detenemos a recepción.
+      });
+    return () => { active = false; };
+  }, []);
+
   return (
     <div
       className={`alma-backdrop alma-anim-${phase}`}
@@ -48,6 +64,7 @@ export function NewClientModal({ phase, initialName = "", onClose, onSaved }) {
         </h2>
         <ClientForm
           initial={{ fullName: initialName }}
+          automaticRecordNumber={automaticRecordNumber}
           onCancel={onClose}
           submitLabel="Crear clienta"
           onSubmit={async (payload) => {

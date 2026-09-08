@@ -98,6 +98,17 @@ router.post('/clients', clientEdit, async (req, res, next) => {
   }
 });
 
+// Se monta antes de /clients/:clientId para no confundir la ruta con una
+// ficha. Es solo una vista previa: createClient recalcula el número al crear.
+router.get('/clients/next-record-number', clientEdit, async (req, res, next) => {
+  try {
+    const recordNumber = await clientService.getNextAvailableRecordNumber(req.user);
+    res.json({ recordNumber });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Se monta ANTES de /clients/:clientId para que Express no interprete
 // "birthdays" como un clientId literal.
 router.get('/clients/birthdays', clientes, async (req, res, next) => {
