@@ -247,7 +247,7 @@ function Shell({ children }) {
 
   const navContent = (
     <>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+      <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
         {navItems.map((item) => {
           const active = item.enabled && pathname.startsWith(item.href);
           const badge = item.href === "/admin/clientes" ? badgeCount : 0;
@@ -371,7 +371,7 @@ function Shell({ children }) {
 
   if (isMobile) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      <div className="alma-mobile-shell" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
         {/* Mobile header */}
         <header
           style={{
@@ -452,7 +452,9 @@ function Shell({ children }) {
         <DrawerOverlay drawerOpen={drawerOpen} onClose={() => setDrawerOpen(false)} navContent={navContent} />
 
         {/* Main content */}
-        <main style={{ flex: 1, overflowY: "auto", background: "var(--background, #FDFCFA)" }}>{mainContent}</main>
+        <main className="alma-mobile-main" style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", background: "var(--background, #FDFCFA)" }}>
+          {mainContent}
+        </main>
         <OutOfScheduleBanner active={outOfSchedule} />
         <BirthdayToast nearBirthdays={nearBirthdays} />
       </div>
@@ -460,7 +462,7 @@ function Shell({ children }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen min-h-0 overflow-hidden">
       <aside
         className="alma-nav-rail flex flex-col"
         style={{
@@ -534,7 +536,7 @@ function Shell({ children }) {
         {navContent}
       </aside>
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-background">{mainContent}</main>
+      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-background">{mainContent}</main>
       <OutOfScheduleBanner active={outOfSchedule} />
       <BirthdayToast nearBirthdays={nearBirthdays} />
     </div>
