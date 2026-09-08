@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { BarChart3, CalendarDays, ClipboardList, Clock3, Inbox, Loader2, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, Clock3, Inbox, Loader2, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Trash2 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
@@ -447,7 +447,9 @@ export default function PersonalPage() {
     try {
       const updated = await authFetch(`/users/${selected.id}`, { method: "PATCH", body: changes });
       setUsers((prev) => prev.map((account) => (account.id === selected.id ? { ...account, ...updated } : account)));
-      toast.success(changes.role ? "Rol actualizado" : "Disponibilidad para citas actualizada");
+      if (changes.role !== undefined) toast.success("Rol actualizado");
+      else if (changes.name !== undefined) toast.success("Nombre actualizado");
+      else toast.success("Disponibilidad para citas actualizada");
     } catch (err) {
       toast.error(err.message || "No se pudo actualizar la cuenta");
     } finally {
@@ -640,27 +642,6 @@ export default function PersonalPage() {
                         {user.active ? "Activa" : "Inactiva"}
                       </button>
                       )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedId(user.id); if (isMobile) setMobileShowDetail(true); }}
-                        title="Editar cuenta"
-                        aria-label="Editar cuenta"
-                        className="alma-pencil-button"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 30,
-                          height: 30,
-                          padding: 0,
-                          borderRadius: "50%",
-                          border: "1px solid rgba(168,154,135,0.5)",
-                          background: "transparent",
-                          color: "#8C6E50",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Pencil className="alma-pencil-icon" size={13} />
-                      </button>
                       {canDeleteAccounts && user.id !== currentUser?.id && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setDeleteTarget(user); }}
@@ -792,8 +773,46 @@ export default function PersonalPage() {
                   </label>
                 </section>
 
+                <NameEditorSection
+                  key={`name-${selected.id}`}
+                  initialName={selected.name}
+                  saving={saving}
+                  onSave={(newName) => updateAccountSettings({ name: newName })}
+                />
+
                 {canDeleteAccounts && selected.id !== currentUser?.id && (
                   <PasswordResetSection onReset={resetPassword} />
+                )}
+
+                {canDeleteAccounts && selected.id !== currentUser?.id && (
+                  <section style={{ marginBottom: 16, border: "1px solid rgba(194,84,80,0.35)", borderRadius: 16, padding: 16, background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,236,235,0.6))" }}>
+                    <b style={{ display: "block", fontSize: 14, color: "#B85A56" }}>Eliminar cuenta</b>
+                    <p style={{ margin: "4px 0 14px", fontSize: 12, lineHeight: 1.5, color: "#A89A87" }}>
+                      Quita el acceso de esta persona al panel. El historial de la agenda y las fichas de clientas se conservan intactos.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(selected)}
+                      disabled={saving}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "9px 18px",
+                        borderRadius: 999,
+                        background: "#B85A56",
+                        color: "#F7F5F0",
+                        border: "none",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: saving ? "wait" : "pointer",
+                        opacity: saving ? 0.65 : 1,
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      Eliminar cuenta de {selected.name}
+                    </button>
+                  </section>
                 )}
 
                 {selected.role !== "personal" ? (
@@ -876,6 +895,60 @@ function ScheduleSummary({ schedule }) {
           {openDays.map(([key, label]) => <div key={key} style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(235,232,225,0.5)", fontSize: 12, color: "#6B5540" }}><b>{label}</b><span style={{ marginLeft: 6, color: "#A89A87" }}>{normalized[key].start}–{normalized[key].end}</span></div>)}
         </div>
       ) : <span style={{ fontSize: 12, color: "#A89A87" }}>Sin horario definido.</span>}
+    </section>
+  );
+}
+
+function NameEditorSection({ initialName, saving, onSave }) {
+  const [value, setValue] = useState(initialName || "");
+  const [localError, setLocalError] = useState(null);
+  const trimmed = value.trim();
+  const dirty = trimmed !== (initialName || "").trim();
+
+  async function submit(event) {
+    event.preventDefault();
+    setLocalError(null);
+    if (!trimmed) { setLocalError("El nombre no puede quedar vacío"); return; }
+    if (!dirty) return;
+    await onSave(trimmed);
+  }
+
+  return (
+    <section style={{ marginBottom: 16, border: "1px solid rgba(168,154,135,0.28)", borderRadius: 16, padding: 16, background: "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))" }}>
+      <b style={{ display: "block", fontSize: 14, color: "#6B5540" }}>Nombre visible</b>
+      <p style={{ margin: "4px 0 14px", fontSize: 12, lineHeight: 1.5, color: "#A89A87" }}>
+        Cambia como se muestra el nombre de esta persona en la agenda, el equipo y la ficha. El correo no se puede modificar aquí.
+      </p>
+      <form onSubmit={submit}>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={saving}
+          maxLength={80}
+          style={{ ...inputStyle, marginBottom: 10 }}
+        />
+        {localError && (
+          <p style={{ margin: "0 0 10px", padding: "8px 10px", borderRadius: 8, background: "rgba(194,84,80,0.10)", color: "#B85A56", fontSize: 12 }}>{localError}</p>
+        )}
+        <button
+          type="submit"
+          disabled={saving || !dirty || !trimmed}
+          style={{
+            padding: "9px 18px",
+            borderRadius: 999,
+            background: "#8C6E50",
+            color: "#F7F5F0",
+            border: "none",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: (saving || !dirty || !trimmed) ? "not-allowed" : "pointer",
+            opacity: (saving || !dirty || !trimmed) ? 0.6 : 1,
+          }}
+        >
+          {saving ? "Guardando…" : "Actualizar nombre"}
+        </button>
+      </form>
     </section>
   );
 }
