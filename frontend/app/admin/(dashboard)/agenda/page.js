@@ -230,6 +230,11 @@ export default function AgendaPage() {
   const [selected, setSelected] = useState(null);
   const [slotGroup, setSlotGroup] = useState(null);
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
+  // Follow-up prefill: cuando el usuario aprieta "Agendar seguimiento" en el
+  // detalle de una cita asistida, guardamos aquí el cliente, servicio y staff
+  // originales para pre-cargarlos en NewAppointmentForm. La cita vieja NO se
+  // toca — solo copia sus datos para la nueva.
+  const [followUpPrefill, setFollowUpPrefill] = useState(null);
   const [staffList, setStaffList] = useState([]);
   const [navDirection, setNavDirection] = useState(0);
   const [agendaQuery, setAgendaQuery] = useState("");
@@ -351,6 +356,7 @@ export default function AgendaPage() {
 
   function handleCreated() {
     setShowNewForm(false);
+    setFollowUpPrefill(null);
     fetchData();
   }
 
@@ -674,15 +680,29 @@ export default function AgendaPage() {
               setSelected(null);
             }
           }}
+          onFollowUp={(prefill) => {
+            // Cerrar detalle y abrir NewAppointmentForm con datos precargados.
+            // La cita original queda intacta — solo copiamos sus datos.
+            setSelected(null);
+            setFollowUpPrefill(prefill);
+            setShowNewForm(true);
+          }}
         />
       )}
       {newFormAnim.shouldRender && (
         <NewAppointmentForm
           defaultDate={selectedDate}
           phase={newFormAnim.phase}
-          onClose={() => setShowNewForm(false)}
+          onClose={() => { setShowNewForm(false); setFollowUpPrefill(null); }}
           onCreated={handleCreated}
-          preSelectedClient={preClientId ? { id: preClientId, fullName: preClientName || "" } : null}
+          preSelectedClient={
+            followUpPrefill?.client
+              ? { id: followUpPrefill.client.id, fullName: followUpPrefill.client.fullName || "" }
+              : (preClientId ? { id: preClientId, fullName: preClientName || "" } : null)
+          }
+          preSelectedServiceId={followUpPrefill?.service?.id || null}
+          preSelectedStaffId={followUpPrefill?.staff?.id || null}
+          followUpMode={!!followUpPrefill}
         />
       )}
     </div>
@@ -1436,7 +1456,7 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
     </div>
   );
 }
-function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }) {
+function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, onFollowUp }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1554,6 +1574,14 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
   }
 
   const canChange = appt.status !== "cancelado" && appt.status !== "no_show";
+  // Follow-up: pensado para citas ya cumplidas donde la clienta necesita
+  // volver (ej. tratamiento con seguimiento). Se muestra solo si la cita
+  // esta confirmada Y ya termino en el pasado — heuristica de "asistió"
+  // dado que el schema actual no tiene un status dedicado. La cita original
+  // NO se toca; el boton dispara la creacion de una CITA NUEVA con los
+  // mismos datos, delegando en NewAppointmentForm (que ya reutiliza
+  // createManualAppointment con las validaciones de tenant/disponibilidad).
+  const canFollowUp = onFollowUp && appt.status === "confirmado" && appt.endsAt && new Date(appt.endsAt) < new Date();
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" };
   const pillBtn = (bg, color, border) => ({ padding: "7px 16px", borderRadius: 999, border: border || "none", background: bg, color, fontSize: 12, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 });
   const rescheduleTimeOptions = rescheduleSlots.map((slot) => ({
@@ -1672,6 +1700,15 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated }
                     <button disabled={saving} onClick={() => changeStatus("no_show")} style={pillBtn("rgba(168,154,135,0.15)", "#A89A87", "1px solid rgba(168,154,135,0.4)")}>No asistió</button>
                   </div>
                   <button disabled={saving} onClick={() => setEditing(true)} style={pillBtn("#8C6E50", "#F7F5F0")}>Editar cita / terapeuta</button>
+                  {canFollowUp && (
+                    <button
+                      disabled={saving}
+                      onClick={() => onFollowUp({ client: appt.client, service: appt.service, staff: appt.staff })}
+                      style={pillBtn("rgba(85,107,47,0.12)", "#556B2F", "1px solid rgba(85,107,47,0.4)")}
+                    >
+                      Agendar seguimiento
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -1879,7 +1916,7 @@ function PremiumSelect({
   );
 }
 
-function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient }) {
+function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -1889,14 +1926,17 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [selectedClient, setSelectedClient] = useState(preSelectedClient || null);
   const [showNewClient, setShowNewClient] = useState(false);
   const newClientAnim = useAnimatedMount(showNewClient, 220);
-  const [serviceId, setServiceId] = useState("");
-  const [date, setDate] = useState(defaultDate);
+  // Prefills desde el flujo de "Agendar seguimiento": el serviceId y staffId
+  // vienen de la cita original; el usuario puede cambiarlos si quiere. El
+  // date/time se dejan vacios para que la persona elija cuando volvera.
+  const [serviceId, setServiceId] = useState(preSelectedServiceId || "");
+  const [date, setDate] = useState(followUpMode ? "" : defaultDate);
   const [time, setTime] = useState("");
   const [availableSlots, setAvailableSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [dayAppointments, setDayAppointments] = useState([]);
   const [roomId, setRoomId] = useState("");
-  const [staffId, setStaffId] = useState("");
+  const [staffId, setStaffId] = useState(preSelectedStaffId || "");
   const [indications, setIndications] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [validation, setValidation] = useState(null);
@@ -2231,10 +2271,15 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         </button>
         <h2
           className="font-heading"
-          style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: "0 0 20px" }}
+          style={{ fontSize: 24, fontWeight: 600, color: "#6B5540", margin: followUpMode ? "0 0 8px" : "0 0 20px" }}
         >
-          Nueva reserva
+          {followUpMode ? "Agendar seguimiento" : "Nueva reserva"}
         </h2>
+        {followUpMode && (
+          <p style={{ margin: "0 0 20px", padding: "10px 12px", borderRadius: 10, background: "rgba(85,107,47,0.10)", border: "1px solid rgba(85,107,47,0.28)", color: "#556B2F", fontSize: 12, lineHeight: 1.5 }}>
+            Se cargó automáticamente la clienta, el servicio y la terapeuta de la cita anterior. Solo elige la fecha y hora nueva. La cita original no se modifica.
+          </p>
+        )}
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Client */}
           <div>

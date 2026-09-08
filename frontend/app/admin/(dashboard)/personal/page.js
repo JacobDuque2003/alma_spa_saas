@@ -642,16 +642,6 @@ export default function PersonalPage() {
                         {user.active ? "Activa" : "Inactiva"}
                       </button>
                       )}
-                      {canDeleteAccounts && user.id !== currentUser?.id && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(user); }}
-                          title="Eliminar cuenta"
-                          aria-label={`Eliminar cuenta de ${user.name}`}
-                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, padding: 0, borderRadius: "50%", border: "1px solid rgba(194,84,80,0.35)", background: "rgba(194,84,80,0.05)", color: "#B85A56", cursor: "pointer" }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
