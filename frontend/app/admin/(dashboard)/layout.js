@@ -45,6 +45,8 @@ const NAV_ITEMS = [
   { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"], icon: ClipboardList },
 ];
 
+const UPCOMING_BIRTHDAY_DAYS = 8;
+
 function canSeeNavItem(item, user) {
   if (!user) return false;
   if (item.roles && !item.roles.includes(user.role)) return false;
@@ -181,12 +183,12 @@ function Shell({ children }) {
     };
   }, []);
 
-  // Cumpleaños próximos (7 días): alimenta el badge en Clientes y el toast diario.
+  // Cumpleaños próximos (8 días): alimenta el badge en Clientes y el toast diario.
   // 403 (personal sin permiso 'clientes') se ignora silenciosamente.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    authFetch("/clients/birthdays", { query: { days: 7 } })
+    authFetch("/clients/birthdays", { query: { days: UPCOMING_BIRTHDAY_DAYS } })
       .then((rows) => { if (!cancelled) setUpcomingBirthdays(Array.isArray(rows) ? rows : []); })
       .catch(() => { /* sin permiso o error transitorio */ });
     return () => { cancelled = true; };
