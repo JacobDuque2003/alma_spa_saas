@@ -111,8 +111,8 @@ function SummaryCard({ label, value, detail }) {
 
 function Modal({ title, phase, onClose, children }) {
   return (
-    <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(58,47,38,0.4)" }}>
-      <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 420, margin: "0 16px", borderRadius: 16, padding: 28, position: "relative", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
+    <div className={`alma-backdrop alma-anim-${phase}`} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto", background: "rgba(58,47,38,0.4)" }}>
+      <div onClick={(e) => e.stopPropagation()} className={`alma-card alma-modal alma-anim-${phase}`} style={{ width: "100%", maxWidth: 420, maxHeight: "calc(100dvh - 32px)", boxSizing: "border-box", margin: "auto", borderRadius: 16, padding: 28, position: "relative", overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", boxShadow: "0 24px 64px rgba(107,85,64,0.18)" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#A89A87" }}>
           <X size={20} />
         </button>
@@ -356,7 +356,7 @@ function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
           <p className="mt-1 text-right text-xs text-muted-foreground">{description.length}/500</p>
         </div>
         {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
-        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 4, position: "sticky", bottom: -28, zIndex: 2, padding: "12px 0 2px", background: "linear-gradient(to top, #FDFCFA 74%, rgba(253,252,250,0))" }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando..." : "Crear servicio"}</button>
         </div>

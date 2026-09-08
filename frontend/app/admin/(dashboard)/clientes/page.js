@@ -72,15 +72,20 @@ function sortValue(client, key) {
 
 function sortClients(rows, key, direction) {
   const multiplier = direction === "asc" ? 1 : -1;
+  const isInitialRecordOrder = key === "recordNumber" && direction === "asc";
   return [...rows].sort((a, b) => {
     const av = sortValue(a, key);
     const bv = sortValue(b, key);
     const aIsEmpty = av === "" || av == null;
     const bIsEmpty = bv === "" || bv == null;
 
-    // Los campos pendientes quedan al final en ambos sentidos para que la
-    // lista siga siendo útil al depurar fichas incompletas.
-    if (aIsEmpty !== bIsEmpty) return aIsEmpty ? 1 : -1;
+    // Al entrar al directorio se atienden primero las fichas pendientes; a
+    // continuación aparecen 1, 2, 3… Para los otros órdenes se conserva el
+    // comportamiento habitual: datos vacíos al final.
+    if (aIsEmpty !== bIsEmpty) {
+      if (isInitialRecordOrder) return aIsEmpty ? -1 : 1;
+      return aIsEmpty ? 1 : -1;
+    }
     if (aIsEmpty) return clientSortCollator.compare(String(a.fullName || ""), String(b.fullName || ""));
 
     const comparison = typeof av === "number" && typeof bv === "number"
@@ -386,7 +391,7 @@ export default function ClientesPage() {
   const isMobile = useIsMobile();
   const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(Boolean(preselectedId));
-  const [sortKey, setSortKey] = useState("fullName");
+  const [sortKey, setSortKey] = useState("recordNumber");
   const [sortDirection, setSortDirection] = useState("asc");
   const [actionClient, setActionClient] = useState(null);
   const [exporting, setExporting] = useState(false);
