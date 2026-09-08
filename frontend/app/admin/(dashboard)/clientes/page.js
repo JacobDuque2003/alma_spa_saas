@@ -371,7 +371,7 @@ export default function ClientesPage() {
   const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await authFetch("/clients", { query: { active: "all", limit: 300, ...(query ? { q: query } : {}) } });
+      const data = await authFetch("/clients", { query: { active: "all", limit: 1000, ...(query ? { q: query } : {}) } });
       setClients(Array.isArray(data) ? data : []);
     } catch {
       setClients([]);

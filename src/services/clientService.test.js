@@ -88,6 +88,19 @@ test('listClients active=all lista activas y deshabilitadas sin filtrar ClientIn
   assert.equal('allergiesEnc' in argsSeen.select, false);
 });
 
+test('listClients permite cargar las fichas históricas completas hasta 1.000', async () => {
+  let argsSeen = null;
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [];
+    },
+  };
+
+  await clientService.listClients({ role: 'dueno', tenantId: 't1' }, { active: 'all', limit: 5000 });
+  assert.equal(argsSeen.take, 1000);
+});
+
 test('searchClients devuelve DTO mínimo tenant-scoped y busca por teléfono local', async () => {
   let argsSeen = null;
   prisma.client = {
