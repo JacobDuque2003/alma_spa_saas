@@ -541,6 +541,9 @@ function Shell({ children }) {
 
 function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
   const Icon = item.icon;
+  const itemTitle = badge > 0 && item.href === "/admin/clientes"
+    ? `${item.label}: ${badge} cumpleaños próximos`
+    : item.label;
   const baseStyle = {
     display: "flex",
     alignItems: "center",
@@ -575,7 +578,7 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
           fontWeight: 700,
           boxShadow: active ? "0 10px 22px rgba(107,85,64,0.16)" : "none",
         }}
-        title={collapsed ? item.label : undefined}
+        title={collapsed ? itemTitle : undefined}
       >
         {Icon && <Icon size={18} strokeWidth={2} />}
         {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
@@ -588,7 +591,7 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
     <Link
       href={item.href}
       style={{ ...baseStyle, color: "#6B5540" }}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? itemTitle : undefined}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = "rgba(235,205,181,0.38)";
       }}

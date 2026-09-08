@@ -413,7 +413,7 @@ async function listUpcomingBirthdays(actor, days = 7) {
     prisma.tenant.findUnique({ where: { id: actor.tenantId }, select: { config: true } }),
     prisma.client.findMany({
       where: { tenantId: actor.tenantId, active: true, birthday: { not: null } },
-      select: { id: true, fullName: true, whatsapp: true, birthday: true, birthdayYearKnown: true },
+      select: { id: true, recordNumber: true, fullName: true, whatsapp: true, birthday: true, birthdayYearKnown: true },
     }),
   ]);
 
@@ -425,6 +425,7 @@ async function listUpcomingBirthdays(actor, days = 7) {
   return rows
     .map((c) => ({
       id: c.id,
+      recordNumber: c.recordNumber,
       fullName: c.fullName,
       whatsapp: c.whatsapp,
       birthday: toISODate(c.birthday),

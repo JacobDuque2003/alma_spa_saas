@@ -101,6 +101,25 @@ test('listClients permite cargar las fichas históricas completas hasta 1.000', 
   assert.equal(argsSeen.take, 1000);
 });
 
+test('listUpcomingBirthdays conserva la ficha de cada clienta', async () => {
+  const today = clientService.todayInTimezone(new Date(), 'America/Guayaquil');
+  let argsSeen = null;
+  prisma.tenant = { findUnique: async () => ({ config: { timezone: 'America/Guayaquil' } }) };
+  prisma.client = {
+    findMany: async (args) => {
+      argsSeen = args;
+      return [{
+        id: 'c-cumple', recordNumber: '42', fullName: 'Ana Cumple', whatsapp: '+593999000042',
+        birthday: new Date(Date.UTC(2000, today.getUTCMonth(), today.getUTCDate())), birthdayYearKnown: false,
+      }];
+    },
+  };
+
+  const result = await clientService.listUpcomingBirthdays({ tenantId: 't1' }, 7);
+  assert.equal(argsSeen.select.recordNumber, true);
+  assert.equal(result[0].recordNumber, '42');
+});
+
 test('searchClients devuelve DTO mínimo tenant-scoped y busca por teléfono local', async () => {
   let argsSeen = null;
   prisma.client = {
