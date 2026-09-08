@@ -27,11 +27,17 @@ const USER_SAFE_SELECT = {
   isProtected: true,
   active: true,
   canAttendAppointments: true,
+  jobTitle: true,
   accessSchedule: true,
   createdAt: true,
   updatedAt: true,
   rolePermission: true,
 };
+
+// Los oficios validos hoy — etiquetas descriptivas para cuentas rol=personal.
+// NO tocan permisos ni asignaciones. Free-string en DB (con default), pero
+// aceptamos solo esta whitelist desde el API para evitar drift accidental.
+const ALLOWED_JOB_TITLES = ['cosmetologa', 'terapeuta', 'masajista'];
 
 const PERMISSION_KEYS = [
   'agenda',
@@ -78,7 +84,7 @@ const MIN_PASSWORD_LENGTH = 8;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function createUser(actor, data) {
-  const { email, password, name, role, permissions, canAttendAppointments, accessSchedule } = data;
+  const { email, password, name, role, permissions, canAttendAppointments, accessSchedule, jobTitle } = data;
 
   if (!email || !EMAIL_REGEX.test(email)) {
     throw new BadRequestError('Email inválido');
@@ -100,6 +106,10 @@ async function createUser(actor, data) {
   if (accessSchedule !== undefined) {
     const err = validateSchedule(accessSchedule);
     if (err) throw new BadRequestError(err);
+  }
+
+  if (jobTitle !== undefined && !ALLOWED_JOB_TITLES.includes(jobTitle)) {
+    throw new BadRequestError(`jobTitle debe ser uno de: ${ALLOWED_JOB_TITLES.join(', ')}`);
   }
 
   const tenantId = resolveTenantId(actor, data.tenantId);
@@ -127,6 +137,9 @@ async function createUser(actor, data) {
         tenantId,
         isProtected: false,
         canAttendAppointments: !!canAttendAppointments,
+        // jobTitle solo aplica a rol=personal. Para dueno/superadmin el
+        // valor queda igual al default pero el frontend lo ignora al listar.
+        ...(jobTitle !== undefined ? { jobTitle } : {}),
         accessSchedule: accessSchedule !== undefined ? accessSchedule : null,
         ...(role === 'personal'
           ? {
@@ -181,6 +194,12 @@ async function updateUser(actor, targetUserId, changes) {
   if (changes.active !== undefined) data.active = changes.active;
   if (changes.role !== undefined) data.role = changes.role;
   if (changes.canAttendAppointments !== undefined) data.canAttendAppointments = !!changes.canAttendAppointments;
+  if (changes.jobTitle !== undefined) {
+    if (!ALLOWED_JOB_TITLES.includes(changes.jobTitle)) {
+      throw new BadRequestError(`jobTitle debe ser uno de: ${ALLOWED_JOB_TITLES.join(', ')}`);
+    }
+    data.jobTitle = changes.jobTitle;
+  }
   if (changes.password) data.passwordHash = await hashPassword(changes.password);
   if (changes.accessSchedule !== undefined) {
     const err = validateSchedule(changes.accessSchedule);
@@ -351,6 +370,7 @@ async function updatePermissions(actor, targetUserId, permissions) {
 
 module.exports = {
   ALLOWED_ROLES_FOR_CREATION,
+  ALLOWED_JOB_TITLES,
   MIN_PASSWORD_LENGTH,
   listUsers,
   createUser,

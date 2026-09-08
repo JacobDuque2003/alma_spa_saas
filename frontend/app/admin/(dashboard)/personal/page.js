@@ -64,6 +64,25 @@ const FULL_ACCESS_PERMISSIONS = Object.fromEntries(MODULES.map(([key]) => [key, 
 function roleLabel(role) {
   return ({ superadmin: "Técnico", dueno: "Dueña", personal: "Terapeuta" })[role] || role;
 }
+
+// Oficios: etiqueta descriptiva para cuentas rol=personal. NO cambia
+// permisos ni asignación de citas. Debe coincidir con ALLOWED_JOB_TITLES
+// en src/services/userService.js.
+const JOB_TITLES = [
+  { value: "cosmetologa", label: "Cosmetóloga" },
+  { value: "terapeuta", label: "Terapeuta" },
+  { value: "masajista", label: "Masajista" },
+];
+function jobTitleLabel(value) {
+  return JOB_TITLES.find((j) => j.value === value)?.label || "Terapeuta";
+}
+// Label que se muestra en el badge de la lista y en el header del detail:
+// para personal usa el oficio, para dueño/superadmin usa el label del rol.
+function accountLabel(user) {
+  if (!user) return "";
+  if (user.role === "personal") return jobTitleLabel(user.jobTitle);
+  return roleLabel(user.role);
+}
 function roleIcon(user, size = 16) {
   if (user?.isProtected || user?.role === "superadmin") return <ShieldCheck size={size} />;
   if (user?.role === "dueno") return <UserCog size={size} />;
@@ -449,6 +468,7 @@ export default function PersonalPage() {
       setUsers((prev) => prev.map((account) => (account.id === selected.id ? { ...account, ...updated } : account)));
       if (changes.role !== undefined) toast.success("Rol actualizado");
       else if (changes.name !== undefined) toast.success("Nombre actualizado");
+      else if (changes.jobTitle !== undefined) toast.success("Oficio actualizado");
       else toast.success("Disponibilidad para citas actualizada");
     } catch (err) {
       toast.error(err.message || "No se pudo actualizar la cuenta");
@@ -586,7 +606,7 @@ export default function PersonalPage() {
                           fontWeight: 500,
                         }}
                       >
-                        {roleLabel(user.role)}
+                        {accountLabel(user)}
                         {user.isProtected ? " · protegida" : ""}
                       </span>
                     </div>
@@ -714,7 +734,7 @@ export default function PersonalPage() {
                   Permisos de cuenta
                 </h2>
                 <p style={{ margin: "4px 0 0", fontSize: 13, color: "#A89A87" }}>
-                  {selected.name} · Rol: {roleLabel(selected.role)} · {selected.email}
+                  {selected.name} · {accountLabel(selected)} · {selected.email}
                 </p>
               </div>
             </div>
@@ -751,6 +771,24 @@ export default function PersonalPage() {
                     <option value="dueno">Dueña</option>
                   </select>
                   {selected.id === currentUser?.id && <p style={{ margin: "-5px 0 12px", fontSize: 11, color: "#A89A87" }}>Por seguridad, una cuenta no puede cambiar su propio rol.</p>}
+                  {selected.role === "personal" && (
+                    <>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#6B5540", marginBottom: 6 }}>Oficio (etiqueta)</label>
+                      <select
+                        value={selected.jobTitle || "terapeuta"}
+                        disabled={saving}
+                        onChange={(event) => updateAccountSettings({ jobTitle: event.target.value })}
+                        style={{ ...inputStyle, marginBottom: 12 }}
+                      >
+                        {JOB_TITLES.map((j) => (
+                          <option key={j.value} value={j.value}>{j.label}</option>
+                        ))}
+                      </select>
+                      <p style={{ margin: "-6px 0 12px", fontSize: 11, color: "#A89A87", lineHeight: 1.45 }}>
+                        Solo cambia como se muestra en el equipo. NO modifica permisos ni la asignación de citas.
+                      </p>
+                    </>
+                  )}
                   <label style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: saving ? "wait" : "pointer" }}>
                     <span>
                       <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#6B5540" }}>Puede atender y ser asignada en citas</span>

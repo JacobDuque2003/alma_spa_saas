@@ -136,6 +136,7 @@ router.get('/me', authenticate, async (req, res, next) => {
         email: true,
         role: true,
         tenantId: true,
+        jobTitle: true,
         rolePermission: true,
       },
     });
@@ -148,6 +149,7 @@ router.get('/me', authenticate, async (req, res, next) => {
       email: user.email,
       role: user.role,
       tenantId: user.tenantId,
+      jobTitle: user.jobTitle,
       permissions: effectivePermissions(user),
     });
   } catch (err) {

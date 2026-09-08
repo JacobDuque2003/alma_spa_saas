@@ -173,6 +173,36 @@ test('updateUser writes audit log — never includes passwordHash in detail', as
   assert.ok(!auditRows[0].detail?.password, 'password must NEVER appear in audit detail');
 });
 
+test('updateUser: jobTitle valido queda registrado en audit', async () => {
+  mockPrismaWith({
+    user: {
+      findUnique: async () => ({ id: 'u9', isProtected: false, tenantId: 't1', role: 'personal', active: true }),
+      update: async (args) => ({ id: 'u9', ...args.data }),
+    },
+  });
+
+  await userService.updateUser(actor, 'u9', { jobTitle: 'cosmetologa' });
+
+  assert.equal(auditRows.length, 1);
+  assert.equal(auditRows[0].action, 'update');
+  assert.equal(auditRows[0].detail?.jobTitle, 'cosmetologa', 'jobTitle debe aparecer en el audit para trazabilidad');
+});
+
+test('updateUser: jobTitle invalido es rechazado con 400 y sin audit', async () => {
+  mockPrismaWith({
+    user: {
+      findUnique: async () => ({ id: 'u9b', isProtected: false, tenantId: 't1', role: 'personal', active: true }),
+      update: async () => { throw new Error('no debe llegar aca'); },
+    },
+  });
+
+  await assert.rejects(
+    () => userService.updateUser(actor, 'u9b', { jobTitle: 'bruja' }),
+    (err) => err.status === 400 && /jobTitle/.test(err.message)
+  );
+  assert.equal(auditRows.length, 0, 'un rechazo por validacion no debe dejar rastro de audit');
+});
+
 test('updateUser: password reset queda registrado en audit con passwordChanged=true', async () => {
   mockPrismaWith({
     user: {

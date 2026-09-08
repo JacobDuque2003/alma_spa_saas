@@ -52,6 +52,11 @@ model User {
   isProtected           Boolean  @default(false)
   active                Boolean  @default(true)
   canAttendAppointments Boolean  @default(false)
+  // Etiqueta descriptiva del oficio para cuentas rol=personal (cosmetologa,
+  // terapeuta, masajista, ...). NO cambia permisos ni asignaciones — es
+  // solo para que el panel muestre quién es quién. Default 'terapeuta'
+  // porque las cuentas existentes ya se listaban así.
+  jobTitle              String   @default("terapeuta")
   sessionVersion        Int      @default(0)
   deletedAt             DateTime?
   accessSchedule        Json?
