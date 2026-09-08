@@ -767,7 +767,7 @@ export default function PersonalPage() {
                     onChange={(event) => updateAccountSettings({ role: event.target.value })}
                     style={{ ...inputStyle, marginBottom: 12, opacity: selected.id === currentUser?.id ? 0.65 : 1 }}
                   >
-                    <option value="personal">Terapeuta / personal</option>
+                    <option value="personal">Trabajador</option>
                     <option value="dueno">Dueña</option>
                   </select>
                   {selected.id === currentUser?.id && <p style={{ margin: "-5px 0 12px", fontSize: 11, color: "#A89A87" }}>Por seguridad, una cuenta no puede cambiar su propio rol.</p>}
