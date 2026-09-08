@@ -35,15 +35,16 @@ export function ClientForm({
   const [recordNumber, setRecordNumber] = useState(initial.recordNumber || "");
   const [address, setAddress] = useState(initial.address || "");
   const [cedula, setCedula] = useState(initial.cedula || "");
-  const [birthday, setBirthday] = useState(initial.birthday ? String(initial.birthday).slice(0, 10) : "");
+  const hasPartialBirthday = initial.birthday && initial.birthdayYearKnown === false;
+  const [birthday, setBirthday] = useState(hasPartialBirthday ? "" : (initial.birthday ? String(initial.birthday).slice(0, 10) : ""));
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!fullName.trim() || !whatsapp.trim()) {
-      setValidation("Nombre y teléfono son obligatorios");
+    if (!fullName.trim()) {
+      setValidation("El nombre es obligatorio");
       return;
     }
     setValidation(null);
@@ -56,7 +57,9 @@ export function ClientForm({
         recordNumber: recordNumber.trim() || null,
         address: address.trim() || null,
         cedula: cedula.trim() || null,
-        birthday: birthday || null,
+        // Para cumpleaños importados sin año real, no enviamos el ancla 2026
+        // al editar; solo se reemplaza cuando recepción complete una fecha.
+        birthday: birthday || (hasPartialBirthday ? undefined : null),
       });
     } catch (err) {
       toast.error(err?.message || "Error al guardar");
@@ -71,7 +74,7 @@ export function ClientForm({
         <input style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ej: Camila Andrade" />
       </div>
       <div>
-        <label style={labelStyle}>Teléfono</label>
+        <label style={labelStyle}>Teléfono (opcional)</label>
         <input style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="099 876 5432" />
       </div>
       <div>
@@ -95,6 +98,7 @@ export function ClientForm({
       <div>
         <label style={labelStyle}>Cumpleaños (opcional)</label>
         <input type="date" style={inputStyle} value={birthday} onChange={(e) => setBirthday(e.target.value)} />
+        {hasPartialBirthday && !birthday && <p style={{ margin: "6px 0 0", fontSize: 11, color: "#A89A87" }}>Se conoce el día y mes; falta confirmar el año de nacimiento.</p>}
       </div>
       {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>

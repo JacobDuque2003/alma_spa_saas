@@ -196,11 +196,16 @@ model Client {
   tenantId  String
   recordNumber String?
   fullName  String
-  whatsapp  String
+  // Una ficha puede existir aunque recepción aún no tenga un número de
+  // WhatsApp. La ficha (recordNumber) mantiene la identidad estable.
+  whatsapp  String?
   email     String?
   address   String?
   cedula    String?
   birthday  DateTime? @db.Date
+  // Los importes históricos pueden incluir solo día y mes. En ese caso se
+  // guarda 2026 como ancla técnica, pero nunca se muestra ni se calcula edad.
+  birthdayYearKnown Boolean @default(true)
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

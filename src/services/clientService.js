@@ -37,6 +37,7 @@ const CLIENT_SAFE_SELECT = {
   address: true,
   cedula: true,
   birthday: true,
+  birthdayYearKnown: true,
   active: true,
   createdAt: true,
   updatedAt: true,
@@ -55,7 +56,8 @@ function toClientSafeDto(client) {
     address: client.address,
     cedula: client.cedula,
     birthday: client.birthday ? toISODate(client.birthday) : null,
-    age: client.birthday ? computeAge(new Date(client.birthday), new Date()) : null,
+    birthdayYearKnown: client.birthdayYearKnown !== false,
+    age: client.birthday && client.birthdayYearKnown !== false ? computeAge(new Date(client.birthday), new Date()) : null,
     active: client.active,
     createdAt: client.createdAt,
     updatedAt: client.updatedAt,
@@ -244,11 +246,12 @@ async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address, 
 async function createClient(actor, data) {
   const tenantId = actor.role === 'superadmin' ? (data.tenantId || actor.tenantId) : actor.tenantId;
   if (!tenantId) throw new BadRequestError('tenantId es requerido');
-  if (!data.fullName || !data.whatsapp) {
-    throw new BadRequestError('fullName y whatsapp son requeridos');
+  if (!data.fullName) {
+    throw new BadRequestError('fullName es requerido');
   }
-  const whatsapp = normalizePhone(data.whatsapp);
-  if (!isValidE164(whatsapp)) {
+  const hasWhatsapp = !!String(data.whatsapp || '').trim();
+  const whatsapp = hasWhatsapp ? normalizePhone(data.whatsapp) : null;
+  if (hasWhatsapp && !isValidE164(whatsapp)) {
     throw new BadRequestError('Formato de WhatsApp inválido. Use formato E.164 (ej: +593999000001)');
   }
   if (data.email && !isValidEmail(data.email)) {
@@ -267,6 +270,7 @@ async function createClient(actor, data) {
         address: data.address ? String(data.address).trim() : null,
         cedula: data.cedula ? String(data.cedula).trim() : null,
         birthday,
+        birthdayYearKnown: birthday ? true : undefined,
       },
       select: CLIENT_SAFE_SELECT,
     });
@@ -275,10 +279,9 @@ async function createClient(actor, data) {
     // nombre del cliente existente para que el usuario sepa contra quién
     // colisiona en vez de un "ya existe" opaco.
     if (err && err.code === 'P2002') {
-      const existing = await prisma.client.findUnique({
-        where: { tenantId_whatsapp: { tenantId, whatsapp } },
-        select: { fullName: true },
-      });
+      const existing = whatsapp ? await prisma.client.findUnique({
+        where: { tenantId_whatsapp: { tenantId, whatsapp } }, select: { fullName: true },
+      }) : null;
       const name = existing?.fullName || 'otra clienta';
       throw new BadRequestError(`Ya existe una clienta con este WhatsApp: ${name}`);
     }
@@ -318,14 +321,19 @@ async function updateClient(actor, clientId, changes) {
     data.cedula = changes.cedula ? String(changes.cedula).trim() : null;
   }
   if (changes.whatsapp !== undefined) {
-    const normalized = normalizePhone(changes.whatsapp);
-    if (!isValidE164(normalized)) {
-      throw new BadRequestError('Formato de WhatsApp inválido. Use formato E.164 (ej: +593999000001)');
+    if (!String(changes.whatsapp || '').trim()) {
+      data.whatsapp = null;
+    } else {
+      const normalized = normalizePhone(changes.whatsapp);
+      if (!isValidE164(normalized)) {
+        throw new BadRequestError('Formato de WhatsApp inválido. Use formato E.164 (ej: +593999000001)');
+      }
+      data.whatsapp = normalized;
     }
-    data.whatsapp = normalized;
   }
   if (changes.birthday !== undefined) {
     data.birthday = parseBirthdayOrThrow(changes.birthday);
+    data.birthdayYearKnown = data.birthday ? true : false;
   }
 
   if (Object.keys(data).length === 0) return toClientSafeDto(client);
@@ -402,7 +410,7 @@ async function listUpcomingBirthdays(actor, days = 7) {
     prisma.tenant.findUnique({ where: { id: actor.tenantId }, select: { config: true } }),
     prisma.client.findMany({
       where: { tenantId: actor.tenantId, active: true, birthday: { not: null } },
-      select: { id: true, fullName: true, whatsapp: true, birthday: true },
+      select: { id: true, fullName: true, whatsapp: true, birthday: true, birthdayYearKnown: true },
     }),
   ]);
 
@@ -417,6 +425,7 @@ async function listUpcomingBirthdays(actor, days = 7) {
       fullName: c.fullName,
       whatsapp: c.whatsapp,
       birthday: toISODate(c.birthday),
+      birthdayYearKnown: c.birthdayYearKnown !== false,
       daysUntil: computeDaysUntilBirthday(new Date(c.birthday), today),
     }))
     .filter((r) => r.daysUntil <= window)

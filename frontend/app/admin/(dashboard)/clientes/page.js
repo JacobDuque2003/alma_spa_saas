@@ -118,7 +118,7 @@ function SortButton({ label, sortKey, activeKey, direction, onSort }) {
 
 function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isMobile }) {
   const birthdayLabel = client.birthday
-    ? `${birthdayDateLabel(client.birthday)}${client.age != null ? ` · ${client.age} años` : ""}`
+    ? `${birthdayDateLabel(client.birthday)}${client.age != null ? ` · ${client.age} años` : client.birthdayYearKnown === false ? " · año pendiente" : ""}`
     : "Sin cumpleaños";
   const statusLabel = client.active === false ? "Deshabilitada" : "Activa";
   const birthdayHint = client.daysUntil !== undefined ? birthdayCaptionFromDays(client.daysUntil) : birthdayLabel;
@@ -946,7 +946,7 @@ export default function ClientesPage() {
 
 function ClientPersonalSummaryCard({ client, appointments, canEdit, onEdit, onCopyEmail }) {
   const birthday = client?.birthday ? birthdayDateLabel(client.birthday) : "Sin fecha";
-  const age = client?.age != null ? `${client.age} años` : "Sin edad";
+  const age = client?.age != null ? `${client.age} años` : client?.birthday && client?.birthdayYearKnown === false ? "Año pendiente" : "Sin edad";
   const email = client?.email || "Sin correo";
   const orderedAppointments = [...(appointments || [])].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   const nextAppointment = orderedAppointments.find((appointment) => new Date(appointment.startsAt) >= new Date() && appointment.status !== "cancelado");
@@ -1243,7 +1243,7 @@ function EditClientModal({ client, phase, onClose, onSaved }) {
   return (
     <ClientModalShell title="Editar clienta" phase={phase} onClose={onClose}>
       <ClientForm
-        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, recordNumber: client.recordNumber, address: client.address, cedula: client.cedula, birthday: client.birthday }}
+        initial={{ fullName: client.fullName, whatsapp: client.whatsapp, email: client.email, recordNumber: client.recordNumber, address: client.address, cedula: client.cedula, birthday: client.birthday, birthdayYearKnown: client.birthdayYearKnown }}
         onCancel={onClose}
         submitLabel="Guardar"
         onSubmit={async (payload) => {
