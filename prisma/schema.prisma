@@ -106,6 +106,9 @@ model Service {
   tenantId          String
   name              String
   category          String
+  // Un subservicio conserva su identidad y precio propios, pero hereda la
+  // categoría operativa, color y cabinas de este servicio principal.
+  parentServiceId   String?
   durationMins      Int      @default(60)
   bufferMins        Int      @default(15)
   colorHex          String   @default("#8C6E50")
@@ -120,12 +123,15 @@ model Service {
   updatedAt         DateTime @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  parentService Service?     @relation("ServiceSubservices", fields: [parentServiceId], references: [id], onDelete: SetNull)
+  subservices   Service[]    @relation("ServiceSubservices")
   plans        Plan[]        @relation("PlanServices")
   rooms        Room[]        @relation("RoomServices")
   appointments Appointment[]
   treatmentHistories TreatmentHistory[]
 
   @@index([tenantId, category, active])
+  @@index([tenantId, parentServiceId, active])
 }
 
 model ServiceCategory {
@@ -222,6 +228,7 @@ model Client {
   @@unique([tenantId, recordNumber])
   @@index([tenantId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, active, fullName])
 }
 
 model ClientIntake {

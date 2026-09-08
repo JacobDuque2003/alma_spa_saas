@@ -469,7 +469,8 @@ function Shell({ children }) {
           width: sidebarCollapsed ? 76 : 214,
           flex: `0 0 ${sidebarCollapsed ? 76 : 214}px`,
           padding: sidebarCollapsed ? "16px 10px" : "18px 14px 16px",
-          transition: "width var(--motion-base) var(--ease-out-quart), flex-basis var(--motion-base) var(--ease-out-quart)",
+          transition: "flex-basis var(--motion-base) var(--ease-out-quart)",
+          willChange: "flex-basis",
         }}
       >
         <div

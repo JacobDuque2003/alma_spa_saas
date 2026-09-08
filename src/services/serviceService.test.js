@@ -42,6 +42,41 @@ test('createService ignora un tenantId forjado en el body y usa el del JWT del a
   assert.equal(result.tenantId, 'tenant-real-del-jwt');
 });
 
+test('createService crea un subservicio con categoría, color y cabinas del servicio principal', async () => {
+  let createData = null;
+  mockPrisma({
+    service: {
+      findUnique: async () => ({
+        id: 'parent-1', tenantId: 't1', name: 'Masajes relajantes', category: 'Masajes',
+        colorHex: '#8C6E50', active: true, parentServiceId: null, rooms: [{ id: 'room-1' }],
+      }),
+      create: async ({ data }) => { createData = data; return { id: 'child-1', ...data }; },
+    },
+  });
+
+  await serviceService.createService(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Masaje con piedras calientes', category: 'no usar', parentServiceId: 'parent-1', priceUsd: 45 }
+  );
+
+  assert.equal(createData.parentServiceId, 'parent-1');
+  assert.equal(createData.category, 'Masajes');
+  assert.equal(createData.colorHex, '#8C6E50');
+  assert.deepEqual(createData.rooms, { set: [{ id: 'room-1' }] });
+});
+
+test('createService rechaza colores fuera de la paleta aprobada', async () => {
+  mockPrisma({ service: { create: async () => ({}) } });
+
+  await assert.rejects(
+    () => serviceService.createService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      { name: 'Servicio', category: 'Masajes', colorHex: '#123456', priceUsd: 45 }
+    ),
+    (err) => err.status === 400 && /predefinidos/i.test(err.message)
+  );
+});
+
 test('createService acepta duración variable válida y conserva buffer de 15 minutos por defecto', async () => {
   mockPrisma({ service: { create: async (args) => ({ id: 'nuevo', ...args.data }) } });
 

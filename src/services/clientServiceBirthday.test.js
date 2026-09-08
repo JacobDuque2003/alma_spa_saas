@@ -31,6 +31,17 @@ test('createClient sin birthday guarda null y el DTO devuelve null', async () =>
   assert.equal(dto.birthday, null);
 });
 
+test('createClient reutiliza la primera ficha numérica disponible', async () => {
+  let dataSeen = null;
+  prisma.client = {
+    findMany: async () => [{ recordNumber: '1' }, { recordNumber: '2' }, { recordNumber: '4' }],
+    create: async ({ data }) => { dataSeen = data; return { ...data, id: 'c-ficha', active: true, createdAt: new Date(), updatedAt: new Date() }; },
+  };
+
+  await clientService.createClient(actor, { fullName: 'Ficha libre', whatsapp: '+593999000006' });
+  assert.equal(dataSeen.recordNumber, '3');
+});
+
 test('createClient rechaza formato inválido', async () => {
   prisma.client = { create: async () => { throw new Error('no debería llegar'); } };
   await assert.rejects(

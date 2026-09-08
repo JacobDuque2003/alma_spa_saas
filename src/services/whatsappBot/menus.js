@@ -202,7 +202,7 @@ function categoryList(categories, { tone, body } = {}) {
   };
 }
 
-function servicesInCategory(services, categoryName, { tone } = {}) {
+function servicesInCategory(services, categoryName, { tone, body } = {}) {
   const rows = services.slice(0, 10).map((s) => ({
     id: `${SERVICE_PREFIX}${s.id}`,
     title: String(s.name).slice(0, 24),
@@ -211,9 +211,9 @@ function servicesInCategory(services, categoryName, { tone } = {}) {
   const label = categoryDisplayName(categoryName).slice(0, 30);
   return {
     type: 'list',
-    body: { text: tone === 'tu'
+    body: { text: body || (tone === 'tu'
       ? `*${label}* — toca uno para ver más`
-      : `*${label}* — toque uno para ver más` },
+      : `*${label}* — toque uno para ver más`) },
     footer: { text: 'Alma Spa 🌿' },
     action: {
       button: 'Ver servicios',

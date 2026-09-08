@@ -237,12 +237,33 @@ async function lookupClient(tenantId, whatsapp) {
  * se crea o actualiza como parte de la misma operación atómica que crea
  * su ClientIntake y sus Appointment.
  */
+async function nextAvailableRecordNumber(tx, tenantId) {
+  // Las fichas son el identificador visible y único de la clienta. Partimos
+  // del primer hueco libre, no del último número usado, para recuperar las
+  // fichas históricas que quedaron disponibles. La restricción única de
+  // base de datos sigue siendo la autoridad final ante dos altas simultáneas.
+  if (typeof tx?.client?.findMany !== 'function') return null;
+  const rows = await tx.client.findMany({
+    where: { tenantId, recordNumber: { not: null } },
+    select: { recordNumber: true },
+    orderBy: { recordNumber: 'asc' },
+  });
+  const occupied = new Set(rows
+    .map((row) => String(row.recordNumber || '').trim())
+    .filter((value) => /^\d+$/.test(value))
+    .map(Number));
+  let candidate = 1;
+  while (occupied.has(candidate)) candidate += 1;
+  return String(candidate);
+}
+
 async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address, cedula }) {
   const normalized = normalizePhone(whatsapp);
+  const recordNumber = await nextAvailableRecordNumber(tx, tenantId);
   return tx.client.upsert({
     where: { tenantId_whatsapp: { tenantId, whatsapp: normalized } },
     update: { fullName, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
-    create: { tenantId, fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
+    create: { tenantId, ...(recordNumber ? { recordNumber } : {}), fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
   });
 }
 
@@ -263,10 +284,11 @@ async function createClient(actor, data) {
   const birthday = data.birthday !== undefined ? parseBirthdayOrThrow(data.birthday) : null;
   let client;
   try {
+    const automaticRecordNumber = data.recordNumber ? null : await nextAvailableRecordNumber(prisma, tenantId);
     client = await prisma.client.create({
       data: {
         tenantId,
-        recordNumber: data.recordNumber ? String(data.recordNumber).trim() : null,
+        recordNumber: data.recordNumber ? String(data.recordNumber).trim() : automaticRecordNumber,
         fullName: String(data.fullName).trim(),
         whatsapp,
         email: data.email ? String(data.email).trim().toLowerCase() : null,
@@ -315,7 +337,8 @@ async function updateClient(actor, clientId, changes) {
     }
   }
   if (changes.recordNumber !== undefined) {
-    data.recordNumber = changes.recordNumber ? String(changes.recordNumber).trim() : null;
+    if (!changes.recordNumber) throw new BadRequestError('La ficha no se puede dejar vacía');
+    data.recordNumber = String(changes.recordNumber).trim();
   }
   if (changes.address !== undefined) {
     data.address = changes.address ? String(changes.address).trim() : null;

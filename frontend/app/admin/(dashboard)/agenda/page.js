@@ -1983,7 +1983,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const serviceOptions = useMemo(
     () => services.map((service) => ({
       value: service.id,
-      label: service.name,
+      label: service.parentService?.name ? `${service.parentService.name} — ${service.name}` : service.name,
       caption: `${service.durationMins} min de sesión · ${service.bufferMins ?? 15} min de pausa · $${Number(service.priceUsd).toFixed(2)}`,
       color: premiumCabinColor(service.colorHex || "#8C6E50"),
     })),

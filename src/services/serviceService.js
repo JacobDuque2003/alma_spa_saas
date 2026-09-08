@@ -5,6 +5,13 @@ const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit'
 const { decodeImageDataUrl, normalizeDescription } = require('../utils/serviceImage');
 
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+// Paleta aprobada de Alma Spa. Mantener la oferta en colores definidos evita
+// que cada servicio termine con un tono distinto y sin relación visual.
+const SERVICE_COLOR_PALETTE = new Set([
+  '#8C6E50', '#C9A876', '#D81B60', '#8E24AA', '#0B8043', '#F4511E',
+  '#795548', '#9E9D24', '#C0CA33', '#AB47BC', '#E67C73', '#F6BF26',
+  '#3F51B5', '#7CB342', '#33B679', '#009688', '#7986CB',
+]);
 
 // select explícito (no `omit`: no soportado en esta versión de @prisma/client)
 // que deja fuera imageData a propósito — el binario nunca viaja en listados
@@ -14,6 +21,7 @@ const SERVICE_SELECT_WITHOUT_IMAGE = {
   tenantId: true,
   name: true,
   category: true,
+  parentServiceId: true,
   durationMins: true,
   bufferMins: true,
   colorHex: true,
@@ -25,6 +33,7 @@ const SERVICE_SELECT_WITHOUT_IMAGE = {
   imageUpdatedAt: true,
   createdAt: true,
   updatedAt: true,
+  parentService: { select: { id: true, name: true, colorHex: true } },
   rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } },
 };
 
@@ -50,7 +59,41 @@ function normalizeColor(value) {
   if (typeof value !== 'string' || !HEX_COLOR_RE.test(value)) {
     throw new BadRequestError('colorHex debe tener formato hexadecimal, por ejemplo #8C6E50');
   }
-  return value.toUpperCase();
+  const color = value.toUpperCase();
+  if (!SERVICE_COLOR_PALETTE.has(color)) {
+    throw new BadRequestError('Elige uno de los colores predefinidos de Alma Spa');
+  }
+  return color;
+}
+
+function optionalId(value) {
+  return value ? String(value).trim() : null;
+}
+
+async function resolveParentService(tx, tenantId, parentServiceId, ownId = null) {
+  const id = optionalId(parentServiceId);
+  if (!id) return null;
+  if (id === ownId) throw new BadRequestError('Un servicio no puede ser subservicio de sí mismo');
+  const parent = await tx.service.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      tenantId: true,
+      name: true,
+      category: true,
+      colorHex: true,
+      active: true,
+      parentServiceId: true,
+      rooms: { select: { id: true } },
+    },
+  });
+  if (!parent || parent.tenantId !== tenantId || !parent.active) {
+    throw new BadRequestError('El servicio principal seleccionado no está disponible');
+  }
+  if (parent.parentServiceId) {
+    throw new BadRequestError('Solo se permite un nivel de subservicios');
+  }
+  return parent;
 }
 
 async function resolveRoomConnections(tx, tenantId, roomIds) {
@@ -138,14 +181,18 @@ async function createService(actor, data) {
   }
 
   return prisma.$transaction(async (tx) => {
-    const rooms = await resolveRoomConnections(tx, tenantId, data.roomIds);
+    const parent = await resolveParentService(tx, tenantId, data.parentServiceId);
+    const rooms = parent
+      ? { set: parent.rooms.map((room) => ({ id: room.id })) }
+      : await resolveRoomConnections(tx, tenantId, data.roomIds);
     const createData = {
       tenantId,
       name: String(data.name).trim(),
-      category: String(data.category).trim(),
+      category: parent ? parent.category : String(data.category).trim(),
+      parentServiceId: parent?.id || null,
       durationMins: data.durationMins === undefined ? 60 : normalizeDuration(data.durationMins),
       bufferMins: normalizeBuffer(data.bufferMins),
-      colorHex: normalizeColor(data.colorHex),
+      colorHex: parent ? parent.colorHex : normalizeColor(data.colorHex),
       priceUsd: data.priceUsd,
       offersHomeService: false,
       active: true,
@@ -186,7 +233,8 @@ async function updateService(actor, id, changes) {
   applyImageChange(data, changes);
 
   const hasRoomChanges = changes.roomIds !== undefined;
-  if (Object.keys(data).length === 0 && !hasRoomChanges) return target;
+  const hasParentChange = changes.parentServiceId !== undefined;
+  if (Object.keys(data).length === 0 && !hasRoomChanges && !hasParentChange) return target;
 
   if (data.active === false && target.active) {
     const otherActiveSameCategory = await prisma.service.count({
@@ -205,7 +253,21 @@ async function updateService(actor, id, changes) {
   }
 
   return prisma.$transaction(async (tx) => {
-    const rooms = await resolveRoomConnections(tx, target.tenantId, changes.roomIds);
+    const parent = hasParentChange
+      ? await resolveParentService(tx, target.tenantId, changes.parentServiceId, id)
+      : null;
+    const effectiveParentId = hasParentChange ? parent?.id || null : target.parentServiceId;
+    if (effectiveParentId) {
+      const effectiveParent = parent || await resolveParentService(tx, target.tenantId, effectiveParentId, id);
+      data.parentServiceId = effectiveParent.id;
+      data.category = effectiveParent.category;
+      data.colorHex = effectiveParent.colorHex;
+    } else if (hasParentChange) {
+      data.parentServiceId = null;
+    }
+    const rooms = effectiveParentId
+      ? { set: (parent || await resolveParentService(tx, target.tenantId, effectiveParentId, id)).rooms.map((room) => ({ id: room.id })) }
+      : await resolveRoomConnections(tx, target.tenantId, changes.roomIds);
     const updated = await tx.service.update({
       where: { id },
       data: {
@@ -214,6 +276,17 @@ async function updateService(actor, id, changes) {
       },
       select: SERVICE_SELECT_WITHOUT_IMAGE,
     });
+    // Cuando el servicio principal cambia de color o categoría, sus
+    // subservicios se sincronizan en la misma transacción.
+    if (!effectiveParentId && (data.colorHex !== undefined || data.category !== undefined)) {
+      await tx.service.updateMany({
+        where: { tenantId: target.tenantId, parentServiceId: id },
+        data: {
+          ...(data.colorHex !== undefined ? { colorHex: data.colorHex } : {}),
+          ...(data.category !== undefined ? { category: data.category } : {}),
+        },
+      });
+    }
     const action = resolveAction('service', data, target);
     await writeAuditLog(tx, {
       actor,

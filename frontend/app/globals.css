@@ -153,6 +153,11 @@
     overscroll-behavior-y: contain;
     scroll-behavior: smooth;
   }
+
+  .alma-team-mobile-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
 }
 
 @layer components {
@@ -168,6 +173,7 @@
       radial-gradient(circle at 50% 8%, rgba(235,205,181,0.48), transparent 22%),
       linear-gradient(180deg, #FDFCFA 0%, #F5F1EA 100%);
     box-shadow: 12px 0 32px rgba(107,85,64,0.055);
+    contain: layout paint;
   }
 
   @keyframes alma-pencil-write {
@@ -236,6 +242,8 @@
   /* Mobile drawer panel */
   .alma-drawer {
     transform: translateX(-100%);
+    will-change: transform;
+    backface-visibility: hidden;
     transition: transform var(--motion-slow) var(--ease-out-quart);
   }
   .alma-drawer.alma-anim-entered { transform: translateX(0); }
@@ -396,6 +404,58 @@
     background: #C9A876;
     opacity: 0;
     animation: alma-confetti-pop 2200ms var(--ease-out-quart) both;
+  }
+
+  /* Celebración reservada para la ficha que cumple hoy. El efecto vive dentro
+     de su propia tarjeta para no distraer en la lista de próximos cumpleaños. */
+  .alma-birthday-row {
+    background: linear-gradient(135deg, #FFFDF7, rgba(255,239,186,0.82)) !important;
+    border-color: rgba(201,168,118,0.72) !important;
+  }
+  .alma-birthday-row-confetti {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .alma-birthday-row-confetti i {
+    position: absolute;
+    top: -10px;
+    left: calc((var(--birthday-confetti-index, 0) + 1) * 5%);
+    width: 7px;
+    height: 10px;
+    border-radius: 2px;
+    background: #C9A876;
+    opacity: 0;
+    animation: alma-birthday-row-fall 3300ms linear infinite;
+  }
+  .alma-birthday-row-confetti i:nth-child(3n) { background: #E67C73; width: 5px; height: 8px; }
+  .alma-birthday-row-confetti i:nth-child(3n + 1) { background: #33B679; width: 8px; height: 5px; }
+  .alma-birthday-row-confetti i:nth-child(1) { left: 5%; animation-delay: -800ms; }
+  .alma-birthday-row-confetti i:nth-child(2) { left: 12%; animation-delay: -1900ms; }
+  .alma-birthday-row-confetti i:nth-child(3) { left: 18%; animation-delay: -400ms; }
+  .alma-birthday-row-confetti i:nth-child(4) { left: 25%; animation-delay: -2400ms; }
+  .alma-birthday-row-confetti i:nth-child(5) { left: 31%; animation-delay: -1300ms; }
+  .alma-birthday-row-confetti i:nth-child(6) { left: 38%; animation-delay: -2800ms; }
+  .alma-birthday-row-confetti i:nth-child(7) { left: 44%; animation-delay: -600ms; }
+  .alma-birthday-row-confetti i:nth-child(8) { left: 51%; animation-delay: -2000ms; }
+  .alma-birthday-row-confetti i:nth-child(9) { left: 57%; animation-delay: -1000ms; }
+  .alma-birthday-row-confetti i:nth-child(10) { left: 64%; animation-delay: -2600ms; }
+  .alma-birthday-row-confetti i:nth-child(11) { left: 70%; animation-delay: -500ms; }
+  .alma-birthday-row-confetti i:nth-child(12) { left: 76%; animation-delay: -1700ms; }
+  .alma-birthday-row-confetti i:nth-child(13) { left: 82%; animation-delay: -2900ms; }
+  .alma-birthday-row-confetti i:nth-child(14) { left: 88%; animation-delay: -1100ms; }
+  .alma-birthday-row-confetti i:nth-child(15) { left: 94%; animation-delay: -2200ms; }
+  .alma-birthday-row-confetti i:nth-child(16) { left: 9%; animation-delay: -3100ms; }
+  .alma-birthday-row-confetti i:nth-child(17) { left: 47%; animation-delay: -1500ms; }
+  .alma-birthday-row-confetti i:nth-child(18) { left: 67%; animation-delay: -3200ms; }
+  .alma-birthday-row > :not(.alma-birthday-row-confetti) { position: relative; z-index: 1; }
+  @keyframes alma-birthday-row-fall {
+    0% { opacity: 0; transform: translate3d(0, -8px, 0) rotate(0deg); }
+    14% { opacity: 0.9; }
+    86% { opacity: 0.85; }
+    100% { opacity: 0; transform: translate3d(18px, 92px, 0) rotate(250deg); }
   }
   .alma-birthday-confetti span:nth-child(4n) { background: #EBCDB5; }
   .alma-birthday-confetti span:nth-child(4n + 1) { background: #8C6E50; }

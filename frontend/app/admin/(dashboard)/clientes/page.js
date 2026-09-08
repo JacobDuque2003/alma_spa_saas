@@ -14,6 +14,21 @@ import { ClientImportModal } from "@/components/client-import-modal";
 import { useToast } from "@/components/toast-provider";
 import { formatEcuadorPhone } from "@/lib/phone-format";
 
+// Cache breve en memoria del navegador: al volver a Clientes no hay que
+// descargar de nuevo las cientos de fichas si nada cambió. Nunca sustituye a
+// la base de datos y se invalida en cuanto se crea, edita, importa o cambia
+// el estado de una clienta.
+const CLIENT_DIRECTORY_CACHE_TTL_MS = 30_000;
+const clientDirectoryCache = new Map();
+
+function directoryCacheKey(tenantId, query) {
+  return `${tenantId || "current"}:${String(query || "").trim().toLocaleLowerCase("es-EC")}`;
+}
+
+function invalidateClientDirectoryCache() {
+  clientDirectoryCache.clear();
+}
+
 function initials(name = "") {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "CL";
 }
@@ -141,11 +156,14 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
   const statusLabel = client.active === false ? "Deshabilitada" : "Activa";
   const birthdayHint = client.daysUntil !== undefined ? birthdayCaptionFromDays(client.daysUntil) : birthdayLabel;
   const emailValue = client.email || "—";
+  const birthdayToday = view === "cumples" && client.daysUntil === 0;
+  const confetti = birthdayToday ? <BirthdayRowConfetti /> : null;
 
   if (isMobile) {
     return (
       <button
         onClick={onSelect}
+        className={birthdayToday ? "alma-birthday-row" : undefined}
         style={{
           display: "flex",
           alignItems: "center",
@@ -158,8 +176,11 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
           textAlign: "left",
           width: "100%",
           boxShadow: selected ? "0 16px 34px rgba(107,85,64,0.14)" : "0 10px 24px rgba(107,85,64,0.07), inset 0 1px 0 rgba(255,255,255,0.9)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
+        {confetti}
         <span style={{ width: 38, height: 38, borderRadius: "50%", background: selected ? "#C9A876" : "rgba(201,168,118,0.32)", color: selected ? "#F7F5F0" : "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
           {initials(client.fullName)}
         </span>
@@ -177,6 +198,7 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
   return (
     <div
       onClick={onSelect}
+      className={birthdayToday ? "alma-birthday-row" : undefined}
       style={{
         display: "grid",
         gridTemplateColumns: "82px minmax(210px,1.25fr) minmax(150px,0.8fr) minmax(220px,1fr) minmax(140px,0.7fr) 104px",
@@ -191,8 +213,10 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
         boxShadow: selected ? "0 18px 38px rgba(107,85,64,0.15), inset 0 1px 0 rgba(255,255,255,0.82)" : "0 12px 28px rgba(107,85,64,0.07), inset 0 1px 0 rgba(255,255,255,0.92)",
         cursor: "pointer",
         position: "relative",
+        overflow: "hidden",
       }}
     >
+      {confetti}
       <div style={{ fontSize: 12, color: client.recordNumber ? "#6B5540" : "#A89A87", fontWeight: 700 }}>
         {client.recordNumber || "—"}
       </div>
@@ -228,6 +252,14 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
         {statusLabel}
       </span>
     </div>
+  );
+}
+
+function BirthdayRowConfetti() {
+  return (
+    <span className="alma-birthday-row-confetti" aria-hidden="true">
+      {Array.from({ length: 18 }, (_, index) => <i key={index} />)}
+    </span>
   );
 }
 
@@ -368,17 +400,26 @@ export default function ClientesPage() {
   // la accion que promete.
   const canExportClients = hasClientPermission(user, "clientesExportar");
 
-  const fetchClients = useCallback(async () => {
+  const fetchClients = useCallback(async ({ force = false } = {}) => {
+    const cacheKey = directoryCacheKey(user?.tenantId, query);
+    const cached = clientDirectoryCache.get(cacheKey);
+    if (!force && cached && Date.now() - cached.savedAt < CLIENT_DIRECTORY_CACHE_TTL_MS) {
+      setClients(cached.rows);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await authFetch("/clients", { query: { active: "all", limit: 1000, ...(query ? { q: query } : {}) } });
-      setClients(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      clientDirectoryCache.set(cacheKey, { rows, savedAt: Date.now() });
+      setClients(rows);
     } catch {
       setClients([]);
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, user?.tenantId]);
 
   useEffect(() => {
     const t = setTimeout(fetchClients, 250);
@@ -535,7 +576,8 @@ export default function ClientesPage() {
       toast.success("Clienta habilitada");
       setView("todas");
       setSelectedId(clientId);
-      fetchClients();
+      invalidateClientDirectoryCache();
+      fetchClients({ force: true });
       fetchDetail();
     } catch (err) {
       toast.error(err.message || "No se pudo habilitar la clienta");
@@ -568,6 +610,7 @@ export default function ClientesPage() {
           onClose={() => setShowNewClient(false)}
           onSaved={(created) => {
             setShowNewClient(false);
+            invalidateClientDirectoryCache();
             setClients((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
             openClientDetail(created.id);
           }}
@@ -577,7 +620,7 @@ export default function ClientesPage() {
         <ClientImportModal
           phase={importClientsAnim.phase}
           onClose={() => setShowImportClients(false)}
-          onImported={() => fetchClients()}
+          onImported={() => { invalidateClientDirectoryCache(); fetchClients({ force: true }); }}
         />
       )}
       {/* Sidebar list */}
@@ -783,7 +826,7 @@ export default function ClientesPage() {
                 client={actionClient || detail}
                 phase={editClientAnim.phase}
                 onClose={() => { setShowEditClient(false); setActionClient(null); }}
-                onSaved={() => { setShowEditClient(false); setActionClient(null); fetchDetail(); fetchClients(); }}
+                onSaved={() => { setShowEditClient(false); setActionClient(null); invalidateClientDirectoryCache(); fetchDetail(); fetchClients({ force: true }); }}
               />
             )}
             {deleteClientAnim.shouldRender && (
@@ -796,7 +839,8 @@ export default function ClientesPage() {
                   setActionClient(null);
                   setDetail(null);
                   setSelectedId(null);
-                  fetchClients();
+                  invalidateClientDirectoryCache();
+                  fetchClients({ force: true });
                 }}
               />
             )}

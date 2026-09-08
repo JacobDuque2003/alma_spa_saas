@@ -518,7 +518,20 @@ export default function PersonalPage() {
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, minHeight: 0, height: isMobile ? "auto" : "100%", boxSizing: "border-box", padding: isMobile ? "16px" : "28px 32px", display: "flex", gap: isMobile ? 0 : 24, overflow: "hidden" }}>
+    <div
+      className={isMobile ? "alma-team-mobile-scroll" : undefined}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        height: "100%",
+        boxSizing: "border-box",
+        padding: isMobile ? "16px" : "28px 32px",
+        display: "flex",
+        gap: isMobile ? 0 : 24,
+        overflow: isMobile ? "auto" : "hidden",
+      }}
+    >
       {/* User list */}
       {(!isMobile || !mobileShowDetail) && (
       <div style={{ width: isMobile ? "100%" : 420, flex: isMobile ? "1" : "0 0 420px", minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -553,7 +566,7 @@ export default function PersonalPage() {
         ) : loadError && users.length === 0 ? (
           <div style={{ padding: 16, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", paddingRight: 2, flex: 1, minHeight: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", paddingRight: 2, flex: 1, minHeight: 0, WebkitOverflowScrolling: "touch" }}>
             {users.map((user) => {
               const isSelected = user.id === selectedId;
               return (

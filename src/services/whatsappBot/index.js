@@ -592,20 +592,28 @@ function isBotVisibleService(service) {
     && !HIDDEN_SERVICE_NAMES.has(name);
 }
 
-async function loadVisibleServicesForBot(tenantId, { category } = {}) {
+async function loadVisibleServicesForBot(tenantId, { category, parentServiceId } = {}) {
   const where = { tenantId, active: true };
   if (category) where.category = category;
+  if (parentServiceId) where.parentServiceId = parentServiceId;
   const services = await prisma.service.findMany({
     where,
-    select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, description: true, active: true },
-    orderBy: category ? { name: 'asc' } : [{ category: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, category: true, parentServiceId: true, priceUsd: true, durationMins: true, description: true, active: true },
+    orderBy: (category || parentServiceId) ? { name: 'asc' } : [{ category: 'asc' }, { name: 'asc' }],
   });
   const visible = services.filter(isBotVisibleService);
   if (category) {
     const expected = String(category);
     return visible.filter((service) => String(service.category || '') === expected);
   }
+  if (parentServiceId) {
+    return visible.filter((service) => String(service.parentServiceId || '') === String(parentServiceId));
+  }
   return visible;
+}
+
+async function loadVisibleSubservicesForBot(tenantId, parentServiceId) {
+  return loadVisibleServicesForBot(tenantId, { parentServiceId });
 }
 
 async function getDailyCostForConversation(tenantId, conversationId) {
@@ -1749,7 +1757,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   if (selectionId.startsWith(menus.SERVICE_PAGE_PREFIX)) {
     const page = Number.parseInt(selectionId.slice(menus.SERVICE_PAGE_PREFIX.length), 10);
     const fs = state.getFlowState(waId) || {};
-    if (fs?.booking?.step === 'select_service') {
+    if (['select_service', 'select_subservice'].includes(fs?.booking?.step)) {
       return handleBook({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
     }
     return handleListServices({ tenant, connection, conv, waId, tone, page: Number.isFinite(page) ? page : 0 });
@@ -1879,6 +1887,19 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
     return handleListServices({ tenant, connection, conv, waId, tone });
   }
 
+  // Un servicio principal organiza sus opciones antes de mostrar el detalle.
+  // Cada hija sigue siendo una reserva normal, con su duración y precio.
+  if (!svc.parentServiceId) {
+    const subservices = await loadVisibleSubservicesForBot(tenant.id, svc.id);
+    if (subservices.length > 0) {
+      const payload = menus.servicesInCategory(subservices, svc.name, { tone });
+      const r = await transport.sendInteractive(connection, waId, payload);
+      await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[subservicios de ${svc.name}]` });
+      state.setFlowState(waId, { flow: 'service_subcategories', parentServiceId: svc.id, tone, unclearCount: 0 });
+      return;
+    }
+  }
+
   const descLine = `\n\n${serviceCatalogDescription(svc) || serviceInfoFallback(svc)}`;
   const icon = menus.serviceEmoji(svc);
   const caption = `${icon} *_${svc.name}_*\n💰 $${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
@@ -1942,7 +1963,9 @@ function buildVisibleCategories(services) {
 // ─── Booking flow ──────────────────────────────────────────────
 
 async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page = 0, requestedDate = null, requestedTime = null }) {
-  const visible = await loadVisibleServicesForBot(tenant.id);
+  // La reserva parte por servicios principales. Al elegir uno que tiene
+  // variantes, el siguiente paso muestra sus subservicios concretos.
+  const visible = (await loadVisibleServicesForBot(tenant.id)).filter((service) => !service.parentServiceId);
   if (visible.length === 0) {
     const msg = tone === 'tu'
       ? '😅 *Aún no tenemos servicios disponibles*\n\nComunícate con recepción 💛'
@@ -2078,6 +2101,32 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return handleBook({ tenant, connection, conv, waId, tone });
+  }
+
+  if (!svc.parentServiceId) {
+    const subservices = await loadVisibleSubservicesForBot(tenant.id, svc.id);
+    if (subservices.length > 0) {
+      const prev = state.getFlowState(waId) || {};
+      state.setFlowState(waId, {
+        flow: 'booking',
+        booking: {
+          ...prev.booking,
+          step: 'select_subservice',
+          parentServiceId: svc.id,
+          parentServiceName: svc.name,
+        },
+        clientName: prev.clientName,
+        tone,
+        unclearCount: 0,
+      });
+      const body = tone === 'tu'
+        ? `✨ *${svc.name}*\n\nElige el tipo de tratamiento que quieres reservar:`
+        : `✨ *${svc.name}*\n\nElija el tipo de tratamiento que desea reservar:`;
+      const payload = menus.servicesInCategory(subservices, svc.name, { tone, body });
+      const r = await transport.sendInteractive(connection, waId, payload);
+      await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[selección de subservicio de ${svc.name}]` });
+      return;
+    }
   }
 
   const prev = state.getFlowState(waId) || {};

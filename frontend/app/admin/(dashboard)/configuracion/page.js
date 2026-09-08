@@ -24,6 +24,33 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+const SERVICE_COLORS = [
+  { value: "#8C6E50", label: "Bronce" }, { value: "#C9A876", label: "Dorado" },
+  { value: "#D81B60", label: "Rosa" }, { value: "#8E24AA", label: "Violeta" },
+  { value: "#0B8043", label: "Verde" }, { value: "#F4511E", label: "Naranja" },
+  { value: "#795548", label: "Café" }, { value: "#9E9D24", label: "Oliva" },
+  { value: "#C0CA33", label: "Lima" }, { value: "#AB47BC", label: "Lila" },
+  { value: "#E67C73", label: "Coral" }, { value: "#F6BF26", label: "Ámbar" },
+  { value: "#3F51B5", label: "Azul" }, { value: "#7CB342", label: "Hoja" },
+  { value: "#33B679", label: "Esmeralda" }, { value: "#009688", label: "Turquesa" },
+  { value: "#7986CB", label: "Índigo" },
+];
+
+function ServiceColorPalette({ value, onChange, disabled = false, compact = false }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: compact ? 5 : 7 }} aria-label="Color del servicio">
+      {SERVICE_COLORS.map((color) => {
+        const active = String(value || "").toUpperCase() === color.value;
+        return (
+          <button key={color.value} type="button" disabled={disabled} onClick={() => onChange?.(color.value)} title={color.label} aria-label={`Color ${color.label}`} aria-pressed={active}
+            style={{ width: compact ? 18 : 24, height: compact ? 18 : 24, borderRadius: "50%", padding: 0, border: active ? "3px solid #6B5540" : "2px solid rgba(253,252,250,0.96)", outline: active ? "1px solid rgba(107,85,64,0.32)" : "1px solid rgba(168,154,135,0.32)", background: color.value, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1 }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function SectionHeader({ title, subtitle, onAdd, addLabel }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
@@ -193,12 +220,13 @@ function Toggle({ checked, onChange, disabled = false }) {
   );
 }
 
-function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
+function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
   const [durationMins, setDurationMins] = useState("60");
   const [bufferMins, setBufferMins] = useState("15");
   const [colorHex, setColorHex] = useState("#8C6E50");
+  const [parentServiceId, setParentServiceId] = useState("");
   const [description, setDescription] = useState("");
   const [selectedRoomIds, setSelectedRoomIds] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -207,6 +235,8 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
 
   const activeRooms = rooms.filter((room) => room.active !== false);
   const selectedRooms = activeRooms.filter((room) => selectedRoomIds.includes(room.id));
+  const parentServices = services.filter((service) => service.active !== false && !service.parentServiceId);
+  const selectedParent = parentServices.find((service) => service.id === parentServiceId) || null;
 
   function toggleRoom(roomId) {
     setSelectedRoomIds((prev) => prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [...prev, roomId]);
@@ -215,14 +245,14 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim() || selectedRoomIds.length === 0 || priceUsd === "" || Number(priceUsd) < 0 || !Number(durationMins)) {
+    if (!name.trim() || (!selectedParent && selectedRoomIds.length === 0) || priceUsd === "" || Number(priceUsd) < 0 || !Number(durationMins)) {
       setValidation("Faltan datos: nombre, precio, duración y al menos una cabina.");
       return;
     }
     setValidation(null);
     setSaving(true);
     try {
-      const primaryArea = selectedRooms[0]?.specialty || "general";
+      const primaryArea = selectedParent?.category || selectedRooms[0]?.specialty || "general";
       const created = await authFetch("/services", {
         method: "POST",
         body: {
@@ -231,9 +261,10 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
           priceUsd: Number(priceUsd),
           durationMins: Number(durationMins),
           bufferMins: Number(bufferMins || 15),
-          colorHex,
+          colorHex: selectedParent?.colorHex || colorHex,
           description: description.trim() || undefined,
-          roomIds: selectedRoomIds,
+          roomIds: selectedParent ? undefined : selectedRoomIds,
+          parentServiceId: selectedParent?.id || null,
           offersHomeService: false,
         },
       });
@@ -250,6 +281,25 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Nombre</label><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Masaje relajante" /></div>
         <div>
+          <label style={labelStyle}>Servicio principal (opcional)</label>
+          <select
+            value={parentServiceId}
+            onChange={(e) => {
+              const nextId = e.target.value;
+              setParentServiceId(nextId);
+              const parent = parentServices.find((service) => service.id === nextId);
+              if (parent) setColorHex(parent.colorHex || "#8C6E50");
+            }}
+            style={{ ...inputStyle, cursor: "pointer", appearance: "none" }}
+          >
+            <option value="">Servicio principal / categoría nueva</option>
+            {parentServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+          </select>
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#A89A87" }}>
+            {selectedParent ? `Será subservicio de ${selectedParent.name}; heredará color y cabinas.` : "Un servicio principal puede tener subservicios después."}
+          </p>
+        </div>
+        <div>
           <label style={labelStyle}>Área / cabinas permitidas</label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             {activeRooms.map((room) => {
@@ -258,7 +308,8 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
                 <button
                   key={room.id}
                   type="button"
-                  onClick={() => toggleRoom(room.id)}
+                  onClick={() => { if (!selectedParent) toggleRoom(room.id); }}
+                  disabled={Boolean(selectedParent)}
                   style={{
                     padding: "9px 10px",
                     borderRadius: 12,
@@ -268,7 +319,8 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
                     fontSize: 12,
                     fontWeight: checked ? 700 : 500,
                     textAlign: "left",
-                    cursor: "pointer",
+                    cursor: selectedParent ? "not-allowed" : "pointer",
+                    opacity: selectedParent ? 0.56 : 1,
                   }}
                 >
                   {room.name}
@@ -277,16 +329,19 @@ function ServiceFormModal({ rooms, phase, onClose, onSaved }) {
             })}
           </div>
           <p style={{ margin: "7px 0 0", fontSize: 11, color: "#A89A87" }}>
-            La agenda asignará automáticamente una cabina disponible entre las seleccionadas.
+            {selectedParent ? "Las cabinas se toman del servicio principal para conservar su disponibilidad." : "La agenda asignará automáticamente una cabina disponible entre las seleccionadas."}
           </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div><label style={labelStyle}>Duración</label><input type="number" min="15" step="15" style={inputStyle} value={durationMins} onChange={(e) => setDurationMins(e.target.value)} placeholder="60" /></div>
           <div><label style={labelStyle}>Pausa</label><input type="number" min="0" step="5" style={inputStyle} value={bufferMins} onChange={(e) => setBufferMins(e.target.value)} placeholder="15" /></div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 84px", gap: 10, alignItems: "end" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, alignItems: "end" }}>
           <div><label style={labelStyle}>Precio (USD)</label><input type="number" step="0.01" min="0" style={inputStyle} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="45.00" /></div>
-          <div><label style={labelStyle}>Color</label><input type="color" style={{ ...inputStyle, padding: 5, height: 40 }} value={colorHex} onChange={(e) => setColorHex(e.target.value)} /></div>
+          <div>
+            <label style={labelStyle}>Color {selectedParent ? "heredado" : "del servicio"}</label>
+            <ServiceColorPalette value={selectedParent?.colorHex || colorHex} onChange={setColorHex} disabled={Boolean(selectedParent)} />
+          </div>
         </div>
         <div>
           <label className="mb-1.5 block text-xs text-muted-foreground">Descripción para clientas (opcional — se puede agregar después)</label>
@@ -690,12 +745,19 @@ export default function ConfiguracionPage() {
   // Los servicios retirados no vuelven a aparecer tras recargar. El backend
   // solo los conserva internamente para no romper citas e historiales.
   const visibleServices = useMemo(() => {
-    return [...services].sort((a, b) => {
+    const ordered = [...services].sort((a, b) => {
       const aActive = a.active !== false;
       const bActive = b.active !== false;
       if (aActive !== bActive) return aActive ? -1 : 1;
       return String(a.name || "").localeCompare(String(b.name || ""));
     });
+    const childrenByParent = new Map();
+    for (const service of ordered.filter((service) => service.parentServiceId)) {
+      const group = childrenByParent.get(service.parentServiceId) || [];
+      group.push(service);
+      childrenByParent.set(service.parentServiceId, group);
+    }
+    return ordered.filter((service) => !service.parentServiceId).flatMap((service) => [service, ...(childrenByParent.get(service.id) || [])]);
   }, [services]);
   const averagePrice = activeServices.length
     ? activeServices.reduce((sum, s) => sum + Number(s.priceUsd || 0), 0) / activeServices.length
@@ -779,6 +841,7 @@ export default function ConfiguracionPage() {
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {visibleServices.map((s, i, arr) => {
                   const active = s.active !== false;
+                  const isSubservice = Boolean(s.parentServiceId);
                   return (
                     <div key={s.id} style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5, flexDirection: isMobile ? "column" : "row" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, width: "100%" }}>
@@ -791,9 +854,10 @@ export default function ConfiguracionPage() {
                           )}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: isSubservice ? 14 : 0 }}>
                             <span style={{ width: 9, height: 9, borderRadius: "50%", background: s.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)" }} />
                             <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
+                            {isSubservice && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50", fontWeight: 700 }}>Subservicio de {s.parentService?.name || "servicio principal"}</span>}
                             {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
                           </div>
                           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>
@@ -809,14 +873,11 @@ export default function ConfiguracionPage() {
                         {!isMobile && <Toggle checked={active} disabled={!canModifyServices} onChange={(val) => updateService(s, { active: val })} />}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <input
-                          type="color"
-                          disabled={!canModifyServices}
-                          defaultValue={s.colorHex || "#8C6E50"}
-                          title="Color del servicio"
-                          onBlur={(e) => { if (e.target.value.toUpperCase() !== String(s.colorHex || "#8C6E50").toUpperCase()) updateService(s, { colorHex: e.target.value }); }}
-                          style={{ width: 40, height: 34, padding: 4, borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", cursor: "pointer", flexShrink: 0 }}
-                        />
+                        {isSubservice ? (
+                          <span title="Color heredado del servicio principal" style={{ width: 24, height: 24, borderRadius: "50%", background: s.colorHex || "#8C6E50", border: "3px solid #FDFCFA", outline: "1px solid rgba(168,154,135,0.32)", flexShrink: 0 }} />
+                        ) : (
+                          <ServiceColorPalette compact value={s.colorHex || "#8C6E50"} disabled={!canModifyServices} onChange={(colorHex) => { if (colorHex !== String(s.colorHex || "").toUpperCase()) updateService(s, { colorHex }); }} />
+                        )}
                         <input
                           type="number"
                           disabled={!canModifyServices}
@@ -922,7 +983,7 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {canModifyServices && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
+      {canModifyServices && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} services={services} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
       {deleteServiceAnim.shouldRender && deleteServiceTarget && (
         <DeleteServiceModal
           service={deleteServiceTarget}
