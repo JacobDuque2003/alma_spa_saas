@@ -65,6 +65,43 @@ test('createService crea un subservicio con categoría, color y cabinas del serv
   assert.deepEqual(createData.rooms, { set: [{ id: 'room-1' }] });
 });
 
+test('createService guarda appointmentSchedule valido para un servicio', async () => {
+  let createData = null;
+  mockPrisma({ service: { create: async (args) => { createData = args.data; return { id: 'nuevo', ...args.data }; } } });
+  const appointmentSchedule = {
+    monday: { morning: { start: '09:00', end: '12:00' }, afternoon: null },
+    sunday: null,
+  };
+
+  const result = await serviceService.createService(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Facial', category: 'faciales', priceUsd: 30, appointmentSchedule }
+  );
+
+  assert.deepEqual(createData.appointmentSchedule, appointmentSchedule);
+  assert.deepEqual(result.appointmentSchedule, appointmentSchedule);
+});
+
+test('updateService rechaza appointmentSchedule invalido', async () => {
+  mockPrisma({
+    service: {
+      findUnique: async () => ({ id: 's1', tenantId: 't1', category: 'masajes', active: true }),
+      update: async () => {
+        throw new Error('no debe actualizar si el horario es inválido');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => serviceService.updateService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      's1',
+      { appointmentSchedule: { monday: { morning: { start: '20:00', end: '09:00' }, afternoon: null } } }
+    ),
+    (err) => err.status === 400 && /appointmentSchedule/.test(err.message)
+  );
+});
+
 test('createService rechaza colores fuera de la paleta aprobada', async () => {
   mockPrisma({ service: { create: async () => ({}) } });
 

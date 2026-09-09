@@ -3,8 +3,8 @@ const SUMMARY_WHITELIST = {
   // agrega al detalle desde userService cuando un admin resetea la contraseña
   // de otra cuenta, así queda registro en AdminAuditLog de que hubo reseteo
   // (con action='update') sin filtrar material sensible.
-  user: ['name', 'email', 'role', 'active', 'canAttendAppointments', 'isProtected', 'jobTitle', 'passwordChanged'],
-  service: ['name', 'category', 'durationMins', 'bufferMins', 'colorHex', 'priceUsd', 'offersHomeService', 'active', 'description'],
+  user: ['name', 'email', 'role', 'active', 'canAttendAppointments', 'appointmentSchedule', 'isProtected', 'jobTitle', 'passwordChanged'],
+  service: ['name', 'category', 'durationMins', 'bufferMins', 'appointmentSchedule', 'colorHex', 'priceUsd', 'offersHomeService', 'active', 'description'],
   room: ['name', 'specialty', 'sortOrder', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
   category: ['name', 'active'],
   auth: [],

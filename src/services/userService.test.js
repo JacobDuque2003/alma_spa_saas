@@ -126,6 +126,49 @@ test('updateUser permite ajustar rol y disponibilidad de citas, creando permisos
   assert.equal(result.rolePermission.id, 'rp5');
 });
 
+test('updateUser guarda horario clínico de citas sin cerrar la sesión de la terapeuta', async () => {
+  let updateData = null;
+  const appointmentSchedule = {
+    monday: { morning: { start: '09:00', end: '12:00' }, afternoon: null },
+    saturday: null,
+  };
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'staff1', isProtected: false, tenantId: 't1', role: 'personal', active: true }),
+      update: async (args) => {
+        updateData = args.data;
+        return { id: 'staff1', ...args.data };
+      },
+    },
+  });
+
+  const result = await userService.updateUser(
+    { role: 'dueno', tenantId: 't1', id: 'owner1', email: 'owner@test.com' },
+    'staff1',
+    { appointmentSchedule }
+  );
+
+  assert.deepEqual(updateData, { appointmentSchedule });
+  assert.deepEqual(result.appointmentSchedule, appointmentSchedule);
+});
+
+test('updateUser rechaza horario clínico de citas mal formado', async () => {
+  mockPrisma({
+    user: {
+      findUnique: async () => ({ id: 'staff1', isProtected: false, tenantId: 't1', role: 'personal', active: true }),
+    },
+  });
+
+  await assert.rejects(
+    () => userService.updateUser(
+      { role: 'dueno', tenantId: 't1', id: 'owner1', email: 'owner@test.com' },
+      'staff1',
+      { appointmentSchedule: { funday: null } }
+    ),
+    (err) => err.status === 400 && /appointmentSchedule\.funday/.test(err.message)
+  );
+});
+
 test('updateUser no permite cambiar el propio rol ni roles fuera de la lista', async () => {
   mockPrisma({
     user: {
@@ -525,6 +568,35 @@ test('[SECURITY] happy path: crear personal valido funciona correctamente', asyn
   assert.ok(capturedData.passwordHash, 'Debe tener hash de password');
   assert.ok(!result.passwordHash, 'Respuesta no debe exponer passwordHash');
   assert.equal(result.id, 'u-nuevo');
+});
+
+test('createUser acepta horario clínico de citas válido para personal', async () => {
+  let capturedData;
+  const appointmentSchedule = {
+    tuesday: { morning: { start: '10:00', end: '13:00' }, afternoon: null },
+  };
+  mockPrisma({
+    user: {
+      create: async (args) => {
+        capturedData = args.data;
+        return { id: 'u-horario', ...args.data, rolePermission: { id: 'rp-horario' } };
+      },
+    },
+  });
+
+  const result = await userService.createUser(
+    { role: 'dueno', tenantId: 'tenant-spa', id: 'a1', email: 'a@test.com' },
+    {
+      email: 'horario@almaspa.test',
+      password: 'SecurePass123',
+      name: 'Terapeuta Horario',
+      role: 'personal',
+      appointmentSchedule,
+    }
+  );
+
+  assert.deepEqual(capturedData.appointmentSchedule, appointmentSchedule);
+  assert.deepEqual(result.appointmentSchedule, appointmentSchedule);
 });
 
 test('[SECURITY] ALLOWED_ROLES_FOR_CREATION solo contiene personal y dueno', () => {

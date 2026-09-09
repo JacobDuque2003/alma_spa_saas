@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Database, Loader2, Plus, Upload, X, Sparkles, Trash2, ImageIcon, ImageOff, ShieldCheck, Cloud } from "lucide-react";
+import { CalendarClock, Database, Loader2, Plus, Upload, X, Sparkles, Trash2, ImageIcon, ImageOff, ShieldCheck, Cloud } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 import { compressImageToDataUrl } from "@/lib/image-compress";
 import { useAuth } from "@/lib/auth-context";
+import { ErrorState, LoadingState } from "@/components/async-state";
 
 function money(v) {
   return `$${Number(v || 0).toFixed(2)}`;
@@ -127,6 +128,15 @@ const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid rgb
 const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 };
 const pillPrimary = { padding: "10px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
 const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid #8C6E50", background: "none", color: "#8C6E50", fontSize: 14, fontWeight: 500, cursor: "pointer", flex: 1 };
+const WEEK_DAYS = [
+  { key: "monday", label: "Lunes" },
+  { key: "tuesday", label: "Martes" },
+  { key: "wednesday", label: "Miércoles" },
+  { key: "thursday", label: "Jueves" },
+  { key: "friday", label: "Viernes" },
+  { key: "saturday", label: "Sábado" },
+  { key: "sunday", label: "Domingo" },
+];
 
 const cardPaddingDesktop = { padding: 28 };
 const cardPaddingMobile = { padding: 18 };
@@ -427,7 +437,7 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
       const body = { description: description.trim() || null };
       if (newImagePreview) body.image = newImagePreview;
       else if (removeImage) body.image = null;
-      const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body });
+      const updated = await authFetch(`/services/${service.id}/schedule`, { method: "PATCH", body });
       toast.success("Descripción y foto guardadas.");
       onSaved(updated);
     } catch (err) {
@@ -516,6 +526,139 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
             className="flex-1 rounded-full bg-primary py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
           >
             {saving ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function defaultDaySchedule(open = true) {
+  return open
+    ? { morning: { start: "09:00", end: "12:00" }, afternoon: { start: "15:00", end: "20:00" } }
+    : null;
+}
+
+function draftFromSchedule(schedule) {
+  const hasOwnSchedule = schedule && typeof schedule === "object";
+  const draft = {};
+  for (const day of WEEK_DAYS) {
+    draft[day.key] = hasOwnSchedule && Object.prototype.hasOwnProperty.call(schedule, day.key)
+      ? schedule[day.key]
+      : defaultDaySchedule(day.key !== "sunday");
+  }
+  return draft;
+}
+
+function serviceScheduleSummary(service) {
+  if (service?.appointmentSchedule) return "Horario propio";
+  if (service?.parentService?.appointmentSchedule) return "Hereda horario del servicio principal";
+  return "Hereda horario general";
+}
+
+function ServiceScheduleModal({ service, phase, onClose, onSaved }) {
+  const [mode, setMode] = useState(service?.appointmentSchedule ? "custom" : "inherit");
+  const [draft, setDraft] = useState(() => draftFromSchedule(service?.appointmentSchedule));
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  function setDayOpen(dayKey, open) {
+    setDraft((prev) => ({ ...prev, [dayKey]: open ? defaultDaySchedule(true) : null }));
+  }
+
+  function updateWindow(dayKey, period, field, value) {
+    setDraft((prev) => {
+      const current = prev[dayKey] || defaultDaySchedule(true);
+      const nextWindow = { ...(current[period] || { start: period === "morning" ? "09:00" : "15:00", end: period === "morning" ? "12:00" : "20:00" }), [field]: value };
+      return { ...prev, [dayKey]: { ...current, [period]: nextWindow } };
+    });
+  }
+
+  function togglePeriod(dayKey, period, enabled) {
+    setDraft((prev) => {
+      const current = prev[dayKey] || defaultDaySchedule(true);
+      return {
+        ...prev,
+        [dayKey]: {
+          ...current,
+          [period]: enabled
+            ? { start: period === "morning" ? "09:00" : "15:00", end: period === "morning" ? "12:00" : "20:00" }
+            : null,
+        },
+      };
+    });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const schedule = Object.fromEntries(WEEK_DAYS.map((day) => {
+        const value = draft[day.key];
+        if (!value || (!value.morning && !value.afternoon)) return [day.key, null];
+        return [day.key, { morning: value.morning || null, afternoon: value.afternoon || null }];
+      }));
+      const body = mode === "inherit" ? { appointmentSchedule: null } : { appointmentSchedule: schedule };
+      const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body });
+      toast.success("Horario del servicio guardado.");
+      onSaved(updated);
+    } catch (err) {
+      toast.error(friendlyConfigError(err.message, "No se pudo guardar el horario."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Horario — ${service?.name || ""}`} phase={phase} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button type="button" onClick={() => setMode("inherit")} style={{ ...pillSecondary, background: mode === "inherit" ? "rgba(201,168,118,0.16)" : "transparent" }}>
+            Heredar
+          </button>
+          <button type="button" onClick={() => setMode("custom")} style={{ ...pillSecondary, background: mode === "custom" ? "rgba(201,168,118,0.16)" : "transparent" }}>
+            Propio
+          </button>
+        </div>
+        {mode === "inherit" ? (
+          <p style={{ margin: 0, fontSize: 13, color: "#8C6E50", lineHeight: 1.45 }}>
+            Este servicio seguirá el horario {service?.parentServiceId ? "del servicio principal, y luego el del spa" : "general del spa"}.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {WEEK_DAYS.map((day) => {
+              const value = draft[day.key];
+              const open = value !== null;
+              return (
+                <div key={day.key} style={{ border: "1px solid rgba(168,154,135,0.32)", borderRadius: 12, padding: 10, background: "#FDFCFA" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: open ? 10 : 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{day.label}</span>
+                    <Toggle checked={open} onChange={(checked) => setDayOpen(day.key, checked)} />
+                  </div>
+                  {open && (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {["morning", "afternoon"].map((period) => {
+                        const win = value?.[period];
+                        const enabled = !!win;
+                        return (
+                          <div key={period} style={{ display: "grid", gridTemplateColumns: "68px 1fr 1fr auto", gap: 8, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: "#A89A87" }}>{period === "morning" ? "Mañana" : "Tarde"}</span>
+                            <input type="time" disabled={!enabled} value={win?.start || ""} onChange={(e) => updateWindow(day.key, period, "start", e.target.value)} style={inputStyle} />
+                            <input type="time" disabled={!enabled} value={win?.end || ""} onChange={(e) => updateWindow(day.key, period, "end", e.target.value)} style={inputStyle} />
+                            <Toggle checked={enabled} onChange={(checked) => togglePeriod(day.key, period, checked)} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <button type="button" disabled={saving} onClick={onClose} style={pillSecondary}>Cancelar</button>
+          <button type="button" disabled={saving} onClick={save} style={{ ...pillPrimary, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.65 : 1 }}>
+            {saving ? "Guardando…" : "Guardar horario"}
           </button>
         </div>
       </div>
@@ -738,9 +881,11 @@ export default function ConfiguracionPage() {
   const [deleteServiceTarget, setDeleteServiceTarget] = useState(null);
   const [deletingService, setDeletingService] = useState(false);
   const [mediaTarget, setMediaTarget] = useState(null);
+  const [scheduleTarget, setScheduleTarget] = useState(null);
   const serviceAnim = useAnimatedMount(showServiceForm, 220);
   const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
   const mediaAnim = useAnimatedMount(!!mediaTarget, 220);
+  const scheduleAnim = useAnimatedMount(!!scheduleTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
   // Los servicios retirados no vuelven a aparecer tras recargar. El backend
   // solo los conserva internamente para no romper citas e historiales.
@@ -821,12 +966,10 @@ export default function ConfiguracionPage() {
           <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, precios y horario de atención del spa.</p>
         </div>
 
-        {loadError && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>}
-
         {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
-          </div>
+          <LoadingState title="Cargando configuración" body="Estamos preparando servicios, cabinas y horario de atención." />
+        ) : loadError ? (
+          <ErrorState title="No pudimos cargar la configuración" body={loadError} onAction={fetchData} />
         ) : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.55fr) minmax(320px, 0.85fr)", gap: isMobile ? 14 : 18, alignItems: "start" }}>
@@ -866,6 +1009,9 @@ export default function ConfiguracionPage() {
                           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#8C6E50", opacity: 0.82 }}>
                             Cabinas permitidas: {Array.isArray(s.rooms) && s.rooms.length > 0 ? s.rooms.map((room) => room.name).join(", ") : "sin cabina asignada"}
                           </p>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6B5540", opacity: 0.78 }}>
+                            Horario: {serviceScheduleSummary(s)}
+                          </p>
                           {s.description && (
                             <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{s.description}</p>
                           )}
@@ -894,6 +1040,16 @@ export default function ConfiguracionPage() {
                           className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary"
                         >
                           <ImageIcon size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Horario del servicio"
+                          disabled={!canModifySchedule}
+                          onClick={() => { if (canModifySchedule) setScheduleTarget(s); }}
+                          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary"
+                          style={{ opacity: canModifySchedule ? 1 : 0.45 }}
+                        >
+                          <CalendarClock size={15} />
                         </button>
                         <button
                           type="button"
@@ -1000,6 +1156,17 @@ export default function ConfiguracionPage() {
           onClose={() => setMediaTarget(null)}
           onSaved={(updated) => {
             setMediaTarget(null);
+            setServices((prev) => prev.map((svc) => (svc.id === updated.id ? { ...svc, ...updated } : svc)));
+          }}
+        />
+      )}
+      {scheduleAnim.shouldRender && scheduleTarget && (
+        <ServiceScheduleModal
+          service={scheduleTarget}
+          phase={scheduleAnim.phase}
+          onClose={() => setScheduleTarget(null)}
+          onSaved={(updated) => {
+            setScheduleTarget(null);
             setServices((prev) => prev.map((svc) => (svc.id === updated.id ? { ...svc, ...updated } : svc)));
           }}
         />

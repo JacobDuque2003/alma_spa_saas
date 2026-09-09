@@ -77,11 +77,14 @@ export async function login(email, password) {
   return data.user;
 }
 
-export async function logout() {
+export async function logout({ reason } = {}) {
   // Best-effort: if the network is down we still want to leave the app.
   await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
   // Limpia flags de session (birthday toast, etc.) para que el próximo
   // login vuelva a mostrar cosas one-shot por sesión.
-  try { sessionStorage.removeItem("alma:birthdayToastShown"); } catch { /* noop */ }
+  try {
+    sessionStorage.removeItem("alma:birthdayToastShown");
+    if (reason) sessionStorage.setItem("alma:sessionNotice", reason);
+  } catch { /* noop */ }
   window.location.href = "/admin/login";
 }

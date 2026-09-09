@@ -363,6 +363,91 @@ test('getAvailability devuelve lista vacía si no hay ningún staff habilitado',
   assert.deepEqual(slots, []);
 });
 
+test('getAvailabilityDetails explica cuando el servicio esta cerrado ese día', async () => {
+  mockPrisma({
+    service: {
+      findFirst: async () => ({
+        id: 'srv1',
+        name: 'Masaje lunar',
+        category: 'masajes',
+        durationMins: 60,
+        bufferMins: 15,
+        appointmentSchedule: { monday: null },
+      }),
+    },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    user: { findMany: async () => [{ id: 'staff1' }] },
+  });
+
+  const result = await appointmentService.getAvailabilityDetails({
+    tenantId: 't1',
+    tenantConfig: {
+      workDays: [1, 2, 3, 4, 5, 6],
+      businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null },
+    },
+    serviceId: 'srv1',
+    date: '2099-08-03',
+    modality: 'spa',
+  });
+
+  assert.deepEqual(result.slots, []);
+  assert.match(result.emptyReason, /lunes/);
+});
+
+test('createManualAppointment rechaza horario fuera del appointmentSchedule del servicio', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: {
+      findFirst: async () => ({
+        id: 'srv1',
+        name: 'Facial de mañana',
+        category: 'facial',
+        durationMins: 60,
+        bufferMins: 15,
+        priceUsd: 30,
+        appointmentSchedule: { saturday: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
+      }),
+    },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: { findMany: async () => [] },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2099-08-01T19:00:00.000Z', modality: 'presencial' }
+    ),
+    (err) => err.status === 400 && /Facial de mañana/.test(err.message)
+  );
+});
+
+test('createManualAppointment rechaza horario fuera del appointmentSchedule de la terapeuta', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', name: 'Masaje', category: 'masajes', durationMins: 60, bufferMins: 15, priceUsd: 30 }) },
+    user: {
+      findFirst: async () => ({
+        id: 'staff1',
+        name: 'María',
+        appointmentSchedule: {
+          saturday: { morning: { start: '09:00', end: '12:00' }, afternoon: null },
+        },
+      }),
+    },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: { findMany: async () => [] },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      { clientId: 'c1', serviceId: 'srv1', staffId: 'staff1', startsAt: '2099-08-01T19:00:00.000Z', modality: 'presencial' }
+    ),
+    (err) => err.status === 400 && /horario clínico de María/.test(err.message)
+  );
+});
+
 test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita actual y respeta el bloque completo', async () => {
   mockPrisma({
     service: {
@@ -419,6 +504,7 @@ test('listAppointments permite filtrar historial por clienta sin salir del tenan
 test('updateAppointment rechaza reprogramar fuera del horario dividido', async () => {
   mockPrisma({
     service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
     room: { findMany: async () => [{ id: 'room1', specialty: 'masajes' }] },
     appointment: {
       findUnique: async () => ({

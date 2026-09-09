@@ -564,6 +564,85 @@
     margin-left: auto;
   }
 
+  /* Estados compartidos: carga, error y vacío dentro de módulos del panel. */
+  .alma-state {
+    width: 100%;
+    min-height: 156px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 28px 18px;
+    box-sizing: border-box;
+    border-radius: 12px;
+    text-align: center;
+    color: #6B5540;
+  }
+  .alma-state[data-compact="true"] {
+    min-height: 96px;
+    padding: 18px 12px;
+    gap: 8px;
+  }
+  .alma-state[data-variant="error"] {
+    background: rgba(194, 84, 80, 0.08);
+    border: 1px solid rgba(194, 84, 80, 0.18);
+  }
+  .alma-state[data-variant="empty"] {
+    background: rgba(253, 252, 250, 0.54);
+    border: 1px dashed rgba(168, 154, 135, 0.34);
+  }
+  .alma-state-icon {
+    color: #8C6E50;
+  }
+  .alma-state[data-variant="error"] .alma-state-icon {
+    color: #B85A56;
+  }
+  .alma-state-empty-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #8C6E50;
+    background: rgba(201, 168, 118, 0.16);
+  }
+  .alma-state[data-compact="true"] .alma-state-empty-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+  .alma-state-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #6B5540;
+  }
+  .alma-state-body {
+    max-width: 420px;
+    margin: 5px auto 0;
+    font-size: 12.5px;
+    line-height: 1.48;
+    color: #A89A87;
+  }
+  .alma-state-action {
+    margin-top: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(140, 110, 80, 0.32);
+    background: #FDFCFA;
+    color: #8C6E50;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
   /* Loading / splash interno */
   .alma-loading-screen {
     min-height: 100vh;

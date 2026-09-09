@@ -11,6 +11,7 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { ClientForm } from "@/components/client-form";
 import { NewClientModal } from "@/components/new-client-modal";
 import { ClientImportModal } from "@/components/client-import-modal";
+import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 import { useToast } from "@/components/toast-provider";
 import { formatEcuadorPhone } from "@/lib/phone-format";
 
@@ -379,6 +380,7 @@ export default function ClientesPage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(preselectedId || null);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState("");
   const [view, setView] = useState("todas");
   const [statusFilter, setStatusFilter] = useState("todas");
   const [birthdayList, setBirthdayList] = useState([]);
@@ -388,6 +390,7 @@ export default function ClientesPage() {
   const [treatments, setTreatments] = useState([]);
   const [clientAppointments, setClientAppointments] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const isMobile = useIsMobile();
   const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(Boolean(preselectedId));
@@ -414,13 +417,15 @@ export default function ClientesPage() {
       return;
     }
     setLoading(true);
+    setListError("");
     try {
       const data = await authFetch("/clients", { query: { active: "all", limit: 1000, ...(query ? { q: query } : {}) } });
       const rows = Array.isArray(data) ? data : [];
       clientDirectoryCache.set(cacheKey, { rows, savedAt: Date.now() });
       setClients(rows);
-    } catch {
+    } catch (err) {
       setClients([]);
+      setListError(err?.message || "No pudimos cargar el directorio de clientas.");
     } finally {
       setLoading(false);
     }
@@ -450,6 +455,7 @@ export default function ClientesPage() {
   const fetchDetail = useCallback(async () => {
     if (!selectedId) return;
     setDetailLoading(true);
+    setDetailError("");
     try {
       const [clientData, intakeData, treatmentsData, appointmentData] = await Promise.all([
         authFetch(`/clients/${selectedId}`),
@@ -461,8 +467,9 @@ export default function ClientesPage() {
       setIntake(intakeData);
       setTreatments(Array.isArray(treatmentsData) ? treatmentsData : []);
       setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
-    } catch {
+    } catch (err) {
       setDetail(null);
+      setDetailError(err?.message || "No pudimos abrir esta ficha.");
     } finally {
       setDetailLoading(false);
     }
@@ -768,13 +775,17 @@ export default function ClientesPage() {
           )}
           <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 7, paddingRight: isMobile ? 0 : 4 }}>
           {listLoading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
-              <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
-            </div>
+            <LoadingState compact title="Cargando clientas" body="Estamos preparando el directorio." />
+          ) : listError ? (
+            <ErrorState compact title="No pudimos cargar las clientas" body={listError} onAction={() => fetchClients({ force: true })} />
           ) : visibleClients.length === 0 ? (
-            <p style={{ textAlign: "center", padding: "40px 12px", fontSize: 13, color: "#A89A87" }}>
-              {view === "cumples" ? "Sin cumpleaños en los próximos 8 días." : "Sin resultados."}
-            </p>
+            <EmptyState
+              compact
+              title={view === "cumples" ? "Sin cumpleaños próximos" : "No encontramos clientas"}
+              body={view === "cumples" ? "No hay cumpleaños dentro de los próximos 8 días." : query ? "Prueba con otro nombre, teléfono o número de ficha." : "Crea o importa la primera ficha para empezar a trabajar."}
+              actionLabel={!query && view !== "cumples" && canEditClients ? "Nueva clienta" : undefined}
+              onAction={!query && view !== "cumples" && canEditClients ? () => setShowNewClient(true) : undefined}
+            />
           ) : (
             visibleClients.map((client) => (
               <ClientDirectoryRow
@@ -821,9 +832,9 @@ export default function ClientesPage() {
             Selecciona una clienta para ver su ficha.
           </div>
         ) : detailLoading && !detail ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-            <Loader2 size={24} className="animate-spin" style={{ color: "#8C6E50" }} />
-          </div>
+          <LoadingState title="Abriendo ficha" body="Estamos reuniendo datos, historial y citas de la clienta." />
+        ) : detailError && !detail ? (
+          <ErrorState title="No pudimos abrir esta ficha" body={detailError} onAction={fetchDetail} />
         ) : detail ? (
           <>
             {editClientAnim.shouldRender && (

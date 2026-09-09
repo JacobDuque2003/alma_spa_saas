@@ -3,6 +3,7 @@ const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
 const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
 const { decodeImageDataUrl, normalizeDescription } = require('../utils/serviceImage');
+const { validateAppointmentSchedule } = require('../utils/serviceSchedule');
 
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
 // Paleta aprobada de Alma Spa. Mantener la oferta en colores definidos evita
@@ -24,6 +25,7 @@ const SERVICE_SELECT_WITHOUT_IMAGE = {
   parentServiceId: true,
   durationMins: true,
   bufferMins: true,
+  appointmentSchedule: true,
   colorHex: true,
   priceUsd: true,
   offersHomeService: true,
@@ -33,7 +35,7 @@ const SERVICE_SELECT_WITHOUT_IMAGE = {
   imageUpdatedAt: true,
   createdAt: true,
   updatedAt: true,
-  parentService: { select: { id: true, name: true, colorHex: true } },
+  parentService: { select: { id: true, name: true, colorHex: true, appointmentSchedule: true } },
   rooms: { select: { id: true, name: true, specialty: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } },
 };
 
@@ -192,6 +194,7 @@ async function createService(actor, data) {
       parentServiceId: parent?.id || null,
       durationMins: data.durationMins === undefined ? 60 : normalizeDuration(data.durationMins),
       bufferMins: normalizeBuffer(data.bufferMins),
+      appointmentSchedule: data.appointmentSchedule === undefined ? null : data.appointmentSchedule,
       colorHex: parent ? parent.colorHex : normalizeColor(data.colorHex),
       priceUsd: data.priceUsd,
       offersHomeService: false,
@@ -199,6 +202,8 @@ async function createService(actor, data) {
       description: normalizeDescription(data.description) ?? null,
       ...(rooms !== undefined ? { rooms } : {}),
     };
+    const scheduleErr = validateAppointmentSchedule(createData.appointmentSchedule);
+    if (scheduleErr) throw new BadRequestError(scheduleErr);
     applyImageChange(createData, data);
     const service = await tx.service.create({
       data: createData,
@@ -226,6 +231,11 @@ async function updateService(actor, id, changes) {
   if (changes.priceUsd !== undefined) data.priceUsd = changes.priceUsd;
   if (changes.durationMins !== undefined) data.durationMins = normalizeDuration(changes.durationMins);
   if (changes.bufferMins !== undefined) data.bufferMins = normalizeBuffer(changes.bufferMins);
+  if (changes.appointmentSchedule !== undefined) {
+    const scheduleErr = validateAppointmentSchedule(changes.appointmentSchedule);
+    if (scheduleErr) throw new BadRequestError(scheduleErr);
+    data.appointmentSchedule = changes.appointmentSchedule;
+  }
   if (changes.colorHex !== undefined) data.colorHex = normalizeColor(changes.colorHex);
   if (changes.offersHomeService !== undefined) data.offersHomeService = false;
   if (changes.active !== undefined) data.active = !!changes.active;

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
+import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 
 const ENTITY_OPTIONS = [
   { value: "", label: "Todas" },
@@ -242,21 +243,13 @@ export default function LogsPage() {
         )}
       </div>
 
-      {error && (
-        <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13, marginBottom: 12 }}>
-          {error}
-        </div>
-      )}
-
       <div className="alma-card" style={{ flex: 1, overflow: "auto" }}>
         {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
-            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
-          </div>
+          <LoadingState title="Cargando registros" body="Estamos revisando los movimientos del panel." />
+        ) : error ? (
+          <ErrorState title="No pudimos cargar los registros" body={error} onAction={fetchLogs} />
         ) : rows.length === 0 ? (
-          <div style={{ padding: 40, textAlign: "center", color: "#A89A87", fontSize: 14 }}>
-            No hay registros para los filtros seleccionados.
-          </div>
+          <EmptyState title="No hay registros con esos filtros" body="Cambia la fecha, el módulo o limpia los filtros para ampliar la búsqueda." />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: isMobile ? 12 : 13 }}>
             <thead>

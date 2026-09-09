@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -13,11 +13,23 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      const message = sessionStorage.getItem("alma:sessionNotice");
+      if (message) {
+        setNotice(message);
+        sessionStorage.removeItem("alma:sessionNotice");
+      }
+    } catch { /* noop */ }
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
     try {
       await login(email, password);
@@ -67,6 +79,9 @@ export default function LoginPage() {
             </div>
             {error && (
               <p className="text-sm text-destructive text-center">{error}</p>
+            )}
+            {notice && !error && (
+              <p className="rounded-lg bg-secondary/35 px-3 py-2 text-center text-sm text-primary">{notice}</p>
             )}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Ingresando…" : "Ingresar"}

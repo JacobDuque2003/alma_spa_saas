@@ -5,6 +5,7 @@ const prisma = require('../utils/prisma');
 const { resolveTenantId } = require('../utils/tenantScope');
 const { BadRequestError } = require('../utils/errors');
 const { normalize: normalizeBusinessHours, validateShape } = require('../utils/businessHours');
+const { normalizeWorkDays } = require('../utils/serviceSchedule');
 
 const router = express.Router();
 
@@ -19,15 +20,16 @@ function validateBusinessHours(bh) {
 
 function validateWorkDays(wd) {
   if (!Array.isArray(wd)) {
-    throw new BadRequestError('workDays debe ser un arreglo de numeros 0-6');
+    throw new BadRequestError('workDays debe ser un arreglo de números 1-7');
   }
   for (const d of wd) {
-    if (typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > 6) {
-      throw new BadRequestError('Cada elemento de workDays debe ser un entero entre 0 y 6');
+    if (typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > 7) {
+      throw new BadRequestError('Cada elemento de workDays debe ser un entero entre 1 y 7');
     }
   }
-  // Deduplicate and sort for consistency
-  const unique = [...new Set(wd)].sort((a, b) => a - b);
+  // Acepta 0 como domingo por compatibilidad histórica, pero persiste ISO:
+  // lunes=1, domingo=7. Así agenda, reportes y bot hablan el mismo idioma.
+  const unique = normalizeWorkDays(wd).sort((a, b) => a - b);
   return unique;
 }
 
