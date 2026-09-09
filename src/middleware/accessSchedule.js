@@ -110,9 +110,17 @@ async function accessSchedule(req, res, next) {
       nextWindowOpensAt: result.nextWindowOpensAt ? result.nextWindowOpensAt.toISOString() : null,
     });
   } catch (err) {
-    // Fail-open ante errores inesperados (no dejar auth colgada por un bug aquí).
-    // El error se sigue propagando para logging server-side.
-    console.warn('[accessSchedule] error, fail-open:', err?.message);
+    // En produccion, el horario es un control de autorizacion: si no podemos
+    // evaluarlo, no dejamos pasar escrituras. Las lecturas siguen su camino
+    // porque fuera de horario ya son permitidas como solo lectura.
+    console.warn('[accessSchedule] error evaluando horario:', err?.message);
+    const method = String(req.method || '').toUpperCase();
+    const readOnlyMethod = ['GET', 'HEAD', 'OPTIONS'].includes(method);
+    if (process.env.NODE_ENV === 'production' && !readOnlyMethod) {
+      return res.status(503).json({
+        error: 'No se pudo verificar el horario de acceso. Intente nuevamente en unos minutos.',
+      });
+    }
     return next();
   }
 }

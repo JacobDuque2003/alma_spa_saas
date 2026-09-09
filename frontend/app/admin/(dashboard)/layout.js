@@ -56,6 +56,7 @@ function canSeeNavItem(item, user) {
 
 // Tiempo suficiente para leer el aviso completo sin que quede fijo en pantalla.
 const OUT_OF_SCHEDULE_BANNER_MS = 8000;
+const SIDEBAR_MOTION = "260ms var(--ease-out-quart)";
 
 const ROLE_LABELS = {
   superadmin: "Técnico",
@@ -247,7 +248,7 @@ function Shell({ children }) {
 
   const navContent = (
     <>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}>
         {navItems.map((item) => {
           const active = item.enabled && pathname.startsWith(item.href);
           const badge = item.href === "/admin/clientes" ? badgeCount : 0;
@@ -279,9 +280,23 @@ function Shell({ children }) {
             cursor: "pointer",
             fontSize: 12,
             fontWeight: 600,
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            transition: `width ${SIDEBAR_MOTION}, margin ${SIDEBAR_MOTION}, border-radius ${SIDEBAR_MOTION}, gap ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
           }}
         >
-          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <><PanelLeftClose size={16} /> Ocultar menú</>}
+          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={16} />}
+          <span
+            style={{
+              maxWidth: sidebarCollapsed ? 0 : 92,
+              opacity: sidebarCollapsed ? 0 : 1,
+              transform: sidebarCollapsed ? "translateX(-6px)" : "translateX(0)",
+              overflow: "hidden",
+              transition: `max-width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
+            }}
+          >
+            Ocultar menú
+          </span>
         </button>
       )}
 
@@ -294,6 +309,7 @@ function Shell({ children }) {
           padding: sidebarCollapsed ? "10px 0" : "10px 10px",
           borderTop: "1px solid rgba(168,154,135,0.35)",
           justifyContent: sidebarCollapsed ? "center" : "flex-start",
+          transition: `gap ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
         }}
       >
         {user && (
@@ -307,6 +323,7 @@ function Shell({ children }) {
                 textDecoration: "none",
                 minWidth: 0,
                 flex: sidebarCollapsed ? "0 0 auto" : 1,
+                overflow: "hidden",
               }}
               title="Mi perfil"
             >
@@ -327,8 +344,18 @@ function Shell({ children }) {
               >
                 {getInitials(user.name)}
               </span>
-              {!sidebarCollapsed && (
-              <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                aria-hidden={sidebarCollapsed}
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  maxWidth: sidebarCollapsed ? 0 : 124,
+                  opacity: sidebarCollapsed ? 0 : 1,
+                  transform: sidebarCollapsed ? "translateX(-6px)" : "translateX(0)",
+                  overflow: "hidden",
+                  transition: `max-width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
+                }}
+              >
                 <div
                   style={{
                     fontSize: 12,
@@ -345,9 +372,7 @@ function Shell({ children }) {
                   {ROLE_LABELS[user.role] || user.role}
                 </div>
               </div>
-              )}
             </Link>
-            {!sidebarCollapsed && (
             <button
               onClick={logout}
               style={{
@@ -357,12 +382,16 @@ function Shell({ children }) {
                 color: "#A89A87",
                 padding: 4,
                 display: "inline-flex",
+                width: sidebarCollapsed ? 0 : 24,
+                opacity: sidebarCollapsed ? 0 : 1,
+                overflow: "hidden",
+                pointerEvents: sidebarCollapsed ? "none" : "auto",
+                transition: `width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart)`,
               }}
               title="Cerrar sesión"
             >
               <LogOut size={16} />
             </button>
-            )}
           </>
         )}
       </div>
@@ -476,8 +505,9 @@ function Shell({ children }) {
           overflow: "hidden",
           boxSizing: "border-box",
           padding: sidebarCollapsed ? "16px 10px" : "18px 14px 16px",
-          transition: "width 160ms var(--ease-out-quart)",
+          transition: `width ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
           willChange: "width",
+          transform: "translateZ(0)",
         }}
       >
         <div
@@ -487,11 +517,14 @@ function Shell({ children }) {
             justifyContent: sidebarCollapsed ? "center" : "space-between",
             gap: 10,
             padding: sidebarCollapsed ? "0 0 16px" : "0 2px 16px",
+            transition: `padding ${SIDEBAR_MOTION}`,
           }}
         >
-          {!sidebarCollapsed ? (
+          <div style={{ position: "relative", width: "100%", height: 46, display: "flex", justifyContent: "center" }}>
             <div
               style={{
+                position: "absolute",
+                inset: "0 auto auto 0",
                 display: "inline-flex",
                 alignItems: "baseline",
                 gap: 4,
@@ -500,6 +533,10 @@ function Shell({ children }) {
                 background: "#F7F5F0",
                 border: "1px solid rgba(168,154,135,0.28)",
                 boxShadow: "0 12px 30px rgba(107,85,64,0.08)",
+                opacity: sidebarCollapsed ? 0 : 1,
+                transform: sidebarCollapsed ? "translateX(-8px) scale(0.98)" : "translateX(0) scale(1)",
+                pointerEvents: sidebarCollapsed ? "none" : "auto",
+                transition: `opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
               }}
             >
               <span
@@ -518,10 +555,10 @@ function Shell({ children }) {
                 Spa
               </span>
             </div>
-          ) : (
             <div
               className="font-heading"
               style={{
+                position: "absolute",
                 width: 46,
                 height: 46,
                 borderRadius: 18,
@@ -535,11 +572,15 @@ function Shell({ children }) {
                 fontSize: 16,
                 fontWeight: 700,
                 letterSpacing: 1.4,
+                opacity: sidebarCollapsed ? 1 : 0,
+                transform: sidebarCollapsed ? "scale(1)" : "scale(0.9)",
+                pointerEvents: sidebarCollapsed ? "auto" : "none",
+                transition: `opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
               }}
             >
               A
             </div>
-          )}
+          </div>
         </div>
         {navContent}
       </aside>
@@ -553,28 +594,42 @@ function Shell({ children }) {
 
 function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
   const Icon = item.icon;
+  const desktopCollapsed = collapsed && !isMobile;
   const itemTitle = badge > 0 && item.href === "/admin/clientes"
     ? `${item.label}: ${badge} cumpleaños próximos`
     : item.label;
   const baseStyle = {
     display: "flex",
     alignItems: "center",
-    justifyContent: collapsed && !isMobile ? "center" : "flex-start",
-    gap: collapsed && !isMobile ? 0 : 10,
-    padding: isMobile ? "14px 16px" : collapsed ? "12px 0" : "11px 13px",
+    justifyContent: desktopCollapsed ? "center" : "flex-start",
+    gap: desktopCollapsed ? 0 : 10,
+    padding: isMobile ? "14px 16px" : desktopCollapsed ? "12px 0" : "11px 13px",
     borderRadius: active ? 18 : 16,
     fontSize: isMobile ? 15 : 13,
     textDecoration: "none",
-    transition: "background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart), border-radius var(--motion-fast) var(--ease-out-quart)",
+    transition: `background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart), border-radius var(--motion-fast) var(--ease-out-quart), gap ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
     minHeight: isMobile ? 44 : 46,
     position: "relative",
+    overflow: "hidden",
   };
+  const labelStyle = isMobile
+    ? { flex: 1 }
+    : {
+      flex: 1,
+      minWidth: 0,
+      maxWidth: desktopCollapsed ? 0 : 126,
+      opacity: desktopCollapsed ? 0 : 1,
+      transform: desktopCollapsed ? "translateX(-6px)" : "translateX(0)",
+      overflow: "hidden",
+      whiteSpace: "nowrap",
+      transition: `max-width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
+    };
 
   if (!item.enabled) {
     return (
       <div style={{ ...baseStyle, color: "rgba(168,154,135,0.5)", cursor: "not-allowed" }}>
         {Icon && <Icon size={18} />}
-        {!collapsed && item.label}
+        <span style={labelStyle}>{item.label}</span>
       </div>
     );
   }
@@ -590,11 +645,11 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
           fontWeight: 700,
           boxShadow: active ? "0 10px 22px rgba(107,85,64,0.16)" : "none",
         }}
-        title={collapsed ? itemTitle : undefined}
+        title={desktopCollapsed ? itemTitle : undefined}
       >
         {Icon && <Icon size={18} strokeWidth={2} />}
-        {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
-        {badge > 0 && <span className="alma-badge" style={collapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
+        <span style={labelStyle}>{item.label}</span>
+        {badge > 0 && <span className="alma-badge" style={desktopCollapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
       </Link>
     );
   }
@@ -603,7 +658,7 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
     <Link
       href={item.href}
       style={{ ...baseStyle, color: "#6B5540" }}
-      title={collapsed ? itemTitle : undefined}
+      title={desktopCollapsed ? itemTitle : undefined}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = "rgba(235,205,181,0.38)";
       }}
@@ -612,8 +667,8 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
       }}
     >
       {Icon && <Icon size={18} strokeWidth={1.8} />}
-      {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
-      {badge > 0 && <span className="alma-badge" style={collapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
+      <span style={labelStyle}>{item.label}</span>
+      {badge > 0 && <span className="alma-badge" style={desktopCollapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
     </Link>
   );
 }

@@ -1,3 +1,8 @@
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const projectRoot = dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -9,6 +14,9 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  turbopack: {
+    root: projectRoot,
+  },
   async headers() {
     return [
       {

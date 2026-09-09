@@ -7,6 +7,7 @@ const VALID_METRICS = [
   'desempeno-terapeutas',
   'cancelaciones',
   'clientes-nuevos-recurrentes',
+  'movimiento-por-dia-hora',
 ];
 
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5, 6];
@@ -57,8 +58,84 @@ async function computeMetric(tenantId, metric, from, to, actor) {
     case 'desempeno-terapeutas': return desempenoTerapeutas(tenantId, from, to, actor);
     case 'cancelaciones': return cancelaciones(tenantId, from, to);
     case 'clientes-nuevos-recurrentes': return clientesNuevosRecurrentes(tenantId, from, to);
+    case 'movimiento-por-dia-hora': return movimientoPorDiaHora(tenantId, from, to);
     default: return null;
   }
+}
+
+// Distribucion de citas por dia de la semana y por hora del dia, para que
+// el panel muestre cuando hay mas demanda. Todo el calculo respeta la zona
+// horaria del tenant (default America/Guayaquil) para que "lunes 15:00" sea
+// el lunes 15:00 local del spa, no UTC. Solo cuenta citas que efectivamente
+// ocupan agenda: pendiente, pendiente_bot y confirmado.
+const WEEKDAY_MAP = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+const WEEKDAY_LABELS = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo' };
+
+function localDayHour(date, tz) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    weekday: 'short',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const wd = parts.find((p) => p.type === 'weekday')?.value;
+  const hh = parts.find((p) => p.type === 'hour')?.value;
+  return { iso: WEEKDAY_MAP[wd] || null, hour: hh != null ? parseInt(hh, 10) : null };
+}
+
+async function movimientoPorDiaHora(tenantId, from, to) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
+  const tz = tenant?.config?.timezone || 'America/Guayaquil';
+
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      status: { in: ['pendiente', 'pendiente_bot', 'confirmado'] },
+      startsAt: { gte: from, lt: to },
+    },
+    select: { startsAt: true },
+  });
+
+  const byDayMap = new Map();
+  for (let i = 1; i <= 7; i++) byDayMap.set(i, 0);
+  const byHourMap = new Map();
+  for (let h = 0; h < 24; h++) byHourMap.set(h, 0);
+
+  let peakDay = null;
+  let peakHour = null;
+  let peakCount = 0;
+  const cellMap = new Map();
+
+  for (const a of appointments) {
+    const { iso, hour } = localDayHour(a.startsAt, tz);
+    if (iso == null || hour == null) continue;
+    byDayMap.set(iso, byDayMap.get(iso) + 1);
+    byHourMap.set(hour, byHourMap.get(hour) + 1);
+    const key = `${iso}:${hour}`;
+    const next = (cellMap.get(key) || 0) + 1;
+    cellMap.set(key, next);
+    if (next > peakCount) {
+      peakCount = next;
+      peakDay = iso;
+      peakHour = hour;
+    }
+  }
+
+  const byDay = [...byDayMap.entries()].map(([iso, count]) => ({
+    iso,
+    label: WEEKDAY_LABELS[iso],
+    count,
+  }));
+  const byHour = [...byHourMap.entries()].map(([hour, count]) => ({ hour, count }));
+
+  return {
+    total: appointments.length,
+    byDay,
+    byHour,
+    peak: peakCount > 0
+      ? { iso: peakDay, dayLabel: WEEKDAY_LABELS[peakDay], hour: peakHour, count: peakCount }
+      : null,
+  };
 }
 
 async function ocupacionGabinetes(tenantId, from, to) {

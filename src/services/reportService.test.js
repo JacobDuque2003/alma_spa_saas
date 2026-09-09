@@ -12,14 +12,65 @@ const TENANT_ID = 't-report';
 const DUENO = { id: 'u-dueno', tenantId: TENANT_ID, role: 'dueno' };
 const PERSONAL = { id: 'u-personal', tenantId: TENANT_ID, role: 'personal' };
 
-test('VALID_METRICS contiene las 6 métricas del plan', () => {
-  assert.equal(VALID_METRICS.length, 6);
+test('VALID_METRICS contiene las 7 métricas del plan', () => {
+  assert.equal(VALID_METRICS.length, 7);
   assert.ok(VALID_METRICS.includes('ocupacion-gabinetes'));
   assert.ok(VALID_METRICS.includes('ingresos-servicio'));
   assert.ok(VALID_METRICS.includes('servicios-vendidos'));
   assert.ok(VALID_METRICS.includes('desempeno-terapeutas'));
   assert.ok(VALID_METRICS.includes('cancelaciones'));
   assert.ok(VALID_METRICS.includes('clientes-nuevos-recurrentes'));
+  assert.ok(VALID_METRICS.includes('movimiento-por-dia-hora'));
+});
+
+test('movimiento-por-dia-hora: agrupa por día y hora con la TZ del tenant', async () => {
+  const from = new Date('2026-09-01T00:00:00Z');
+  const to = new Date('2026-09-30T00:00:00Z');
+
+  prisma.tenant = { findUnique: async () => ({ config: { timezone: 'America/Guayaquil' } }) };
+  prisma.appointment = {
+    findMany: async () => [
+      // Lunes 07/09/2026 → 09:00 Guayaquil = 14:00 UTC
+      { startsAt: new Date('2026-09-07T14:00:00Z') },
+      { startsAt: new Date('2026-09-07T14:30:00Z') },
+      { startsAt: new Date('2026-09-07T20:00:00Z') }, // Lunes 15:00 local
+      // Viernes 11/09 → 10:00 local = 15:00 UTC
+      { startsAt: new Date('2026-09-11T15:00:00Z') },
+    ],
+  };
+
+  const result = await getReport('t-report', 'movimiento-por-dia-hora', from, to, { role: 'dueno', tenantId: 't-report' });
+  assert.equal(result.metric, 'movimiento-por-dia-hora');
+  assert.equal(result.data.total, 4);
+
+  const monday = result.data.byDay.find((d) => d.iso === 1);
+  const friday = result.data.byDay.find((d) => d.iso === 5);
+  assert.equal(monday.count, 3, 'lunes debe tener 3 citas');
+  assert.equal(friday.count, 1, 'viernes debe tener 1 cita');
+
+  const hour9 = result.data.byHour.find((h) => h.hour === 9);
+  const hour10 = result.data.byHour.find((h) => h.hour === 10);
+  const hour15 = result.data.byHour.find((h) => h.hour === 15);
+  assert.equal(hour9.count, 2, 'dos citas a las 9am local');
+  assert.equal(hour10.count, 1);
+  assert.equal(hour15.count, 1);
+
+  // Peak: lunes 9am con 2 citas
+  assert.equal(result.data.peak.iso, 1);
+  assert.equal(result.data.peak.hour, 9);
+  assert.equal(result.data.peak.count, 2);
+});
+
+test('movimiento-por-dia-hora: sin citas devuelve arrays llenos con ceros y peak null', async () => {
+  prisma.tenant = { findUnique: async () => ({ config: {} }) };
+  prisma.appointment = { findMany: async () => [] };
+  const result = await getReport('t-report', 'movimiento-por-dia-hora',
+    new Date('2026-09-01T00:00:00Z'), new Date('2026-09-30T00:00:00Z'),
+    { role: 'dueno', tenantId: 't-report' });
+  assert.equal(result.data.total, 0);
+  assert.equal(result.data.byDay.length, 7);
+  assert.equal(result.data.byHour.length, 24);
+  assert.equal(result.data.peak, null);
 });
 
 test('countWorkDaysInRange: semana lun-sáb en julio 2026', () => {

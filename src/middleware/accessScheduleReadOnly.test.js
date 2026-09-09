@@ -114,3 +114,27 @@ test('accessSchedule también invalida una cuenta dueña deshabilitada', async (
   assert.equal(nextCalled, false);
   assert.equal(res.statusCode, 401);
 });
+
+test('accessSchedule bloquea mutaciones en producción si el horario no se puede verificar', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  prisma.user = { findUnique: async () => { throw new Error('db unavailable'); } };
+  prisma.tenant = { findUnique: async () => ({ config: { timezone: 'America/Guayaquil' } }) };
+
+  const req = {
+    method: 'POST',
+    user: { id: 'u-prod', email: 'staff@alma.test', role: 'personal', tenantId: 't1' },
+  };
+  const res = mockResponse();
+  let nextCalled = false;
+
+  try {
+    await accessSchedule(req, res, () => { nextCalled = true; });
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 503);
+});
