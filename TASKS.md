@@ -23,7 +23,7 @@
 - [x] Sincronizar creación manual, reserva pública, reprogramación y confirmación del bot para que todos usen la misma función central de disponibilidad, incluyendo horario clínico de trabajadoras.
 - [x] Actualizar el bot de WhatsApp y las pantallas para que "no hay disponibilidad" pueda explicar la razón con texto humano.
 - [x] Añadir pruebas unitarias y de ruta para herencia de horarios, overrides de subservicios, ruta segura, rango fuera de horario, bot y reserva pública.
-- [ ] Aplicar migración en producción/staging después de confirmar respaldo y estado de migraciones pendientes.
+- [x] Aplicar migración en producción mediante deploy Railway; verificado 2026-09-09 con disponibilidad pública leyendo horarios de servicios y trabajadoras.
 - [ ] Añadir verificación real end-to-end: editar horario de un subservicio, comprobar agenda, reserva pública, bot, reprogramación y mensajes de error.
 - [x] Documentar la regla final en `docs/arquitectura.md` para que futuras fases no dupliquen lógica de disponibilidad.
 
