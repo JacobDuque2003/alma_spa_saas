@@ -4,7 +4,6 @@ const { assertTenantScope, resolveTenantId, ForbiddenTenantError } = require('..
 const { AppError, BadRequestError } = require('../utils/errors');
 const { pickSafe, resolveAction, writeAuditLog } = require('../utils/adminAudit');
 const { validateSchedule } = require('../utils/accessSchedule');
-const { validateAppointmentSchedule } = require('../utils/serviceSchedule');
 
 class ProtectedAccountError extends AppError {
   constructor() {
@@ -30,7 +29,6 @@ const USER_SAFE_SELECT = {
   canAttendAppointments: true,
   jobTitle: true,
   accessSchedule: true,
-  appointmentSchedule: true,
   createdAt: true,
   updatedAt: true,
   rolePermission: true,
@@ -86,7 +84,7 @@ const MIN_PASSWORD_LENGTH = 8;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function createUser(actor, data) {
-  const { email, password, name, role, permissions, canAttendAppointments, accessSchedule, appointmentSchedule, jobTitle } = data;
+  const { email, password, name, role, permissions, canAttendAppointments, accessSchedule, jobTitle } = data;
 
   if (!email || !EMAIL_REGEX.test(email)) {
     throw new BadRequestError('Email inválido');
@@ -107,10 +105,6 @@ async function createUser(actor, data) {
   // businessHours por default, no un fallback silencioso del backend.
   if (accessSchedule !== undefined) {
     const err = validateSchedule(accessSchedule);
-    if (err) throw new BadRequestError(err);
-  }
-  if (appointmentSchedule !== undefined) {
-    const err = validateAppointmentSchedule(appointmentSchedule);
     if (err) throw new BadRequestError(err);
   }
 
@@ -147,7 +141,6 @@ async function createUser(actor, data) {
         // valor queda igual al default pero el frontend lo ignora al listar.
         ...(jobTitle !== undefined ? { jobTitle } : {}),
         accessSchedule: accessSchedule !== undefined ? accessSchedule : null,
-        appointmentSchedule: appointmentSchedule !== undefined ? appointmentSchedule : null,
         ...(role === 'personal'
           ? {
               rolePermission: {
@@ -165,7 +158,7 @@ async function createUser(actor, data) {
       entity: 'user',
       entityId: user.id,
       action: 'create',
-      detail: pickSafe('user', { name, email, role, canAttendAppointments: !!canAttendAppointments, appointmentSchedule: appointmentSchedule !== undefined ? appointmentSchedule : null }),
+      detail: pickSafe('user', { name, email, role, canAttendAppointments: !!canAttendAppointments }),
       tenantId: user.tenantId,
     });
     return user;
@@ -212,11 +205,6 @@ async function updateUser(actor, targetUserId, changes) {
     const err = validateSchedule(changes.accessSchedule);
     if (err) throw new BadRequestError(err);
     data.accessSchedule = changes.accessSchedule;
-  }
-  if (changes.appointmentSchedule !== undefined) {
-    const err = validateAppointmentSchedule(changes.appointmentSchedule);
-    if (err) throw new BadRequestError(err);
-    data.appointmentSchedule = changes.appointmentSchedule;
   }
 
   const invalidatesSession = (

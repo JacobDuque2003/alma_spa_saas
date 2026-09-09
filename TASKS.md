@@ -5,27 +5,19 @@
 - [x] Clientes: quitar el contenedor grande que envolvía todas las filas para evitar "cuadros dentro de cuadros".
 - [x] Clientes: diferenciar "Editar datos" de "Editar ficha" para que la ficha de anamnesis no tenga doble acción confusa.
 - [x] Barra lateral izquierda: apertura/cierre suave en una sola transicion coordinada, sin desmontar logo/textos/botones por partes.
-- [x] Estados de carga/error/vacio: componente compartido aplicado en Agenda, Clientes, CRM, Reportes, Equipo, Logs, Configuracion y reserva publica.
-- [ ] Unificar controles visuales pendientes: selectores y calendario/date picker con el mismo estilo premium.
+- [ ] Unificar controles visuales pendientes: selectores, calendario/date picker y estados de Agenda con el mismo estilo premium.
 - [ ] Equipo: seguir simplificando permisos y horarios para reducir scroll y ruido visual.
 - [ ] Reportes: mejorar lectura con gráficos/jerarquía visual menos genérica.
 
-## Horarios de citas — en implementación
+## Duración de servicios y disponibilidad — corrección de enfoque
 
-- [x] Definir el modelo de datos para horario por `Service`, heredable desde servicio padre hacia subservicios cuando no haya override propio.
-- [x] Decidir precedencia base de disponibilidad: días laborables, horario global del tenant, horario del servicio/subservicio, horario de cabina y citas existentes.
-- [x] Agregar migraciones Prisma con horarios estructurados por día y ventanas mañana/tarde para servicios y trabajadoras.
-- [x] Exponer endpoint seguro `PATCH /services/:id/schedule` bajo permiso `configuracionHorario`, sin permitir cambios de precio/cabinas/nombre en esa ruta.
-- [x] Actualizar la pantalla de Configuración para editar horario de todos los servicios y subservicios, mostrando claramente cuándo heredan horario y cuándo tienen horario propio.
-- [x] Añadir horario laboral de atención de trabajadoras separado de `accessSchedule` para no mezclar seguridad de acceso al panel con disponibilidad clínica.
-- [x] Actualizar la pantalla de Equipo para editar el horario clínico de cada trabajadora sin cambiar su horario de acceso.
-- [x] Sincronizar `appointmentService.getAvailability` y `getRescheduleAvailability` para cruzar horario de servicio/subservicio con cabinas, modalidad y bloque completo duración+pausa.
-- [x] Sincronizar creación manual, reserva pública, reprogramación y confirmación del bot para que todos usen la misma función central de disponibilidad, incluyendo horario clínico de trabajadoras.
-- [x] Actualizar el bot de WhatsApp y las pantallas para que "no hay disponibilidad" pueda explicar la razón con texto humano.
-- [x] Añadir pruebas unitarias y de ruta para herencia de horarios, overrides de subservicios, ruta segura, rango fuera de horario, bot y reserva pública.
-- [x] Aplicar migración en producción mediante deploy Railway; verificado 2026-09-09 con disponibilidad pública leyendo horarios de servicios y trabajadoras.
-- [ ] Añadir verificación real end-to-end: editar horario de un subservicio, comprobar agenda, reserva pública, bot, reprogramación y mensajes de error.
-- [x] Documentar la regla final en `docs/arquitectura.md` para que futuras fases no dupliquen lógica de disponibilidad.
+- [x] Revertir funcionalmente el deploy que agregó “Horario de citas” en Equipo y “Horario general/propio” por servicio.
+- [x] Mantener el horario de atención del local como única ventana general de reserva (`Tenant.config.businessHours` + días laborables).
+- [x] Mantener el horario de acceso de cada trabajadora como control de sesión/panel, no como disponibilidad clínica separada.
+- [x] Permitir editar por servicio y subservicio la duración de sesión (`durationMins`) y pausa (`bufferMins`).
+- [x] Mostrar bloque total por servicio como sesión + pausa, y usar ese bloque para calcular cuántas reservas caben en el día.
+- [ ] Verificación real end-to-end: cambiar duración/pausa de un servicio, comprobar agenda, reserva pública y bot.
+- [ ] Mejorar mensaje vacío cuando una duración muy larga no cabe en el horario abierto del local/cabina.
 
 ## Blindaje de seguridad — auditoría OWASP/NIST (2026-08-17)
 
@@ -38,21 +30,17 @@
 - [x] Cuentas deshabilitadas: una sesión existente queda bloqueada al siguiente request, incluso si es dueña/superadmin.
 - [x] Auditoria 2026-09-09: dependencias backend/frontend en 0 vulnerabilidades conocidas, SQL raw revisado sin variantes unsafe, webhook WhatsApp HMAC fail-closed, barra lateral corregida y reporte guardado en `docs/security-audit-2026-09-09.md`.
 - [x] Horario de acceso: en produccion, las mutaciones fallan cerrado si no se puede verificar el horario.
-- [x] Sesion: cierre automatico por inactividad en el panel, configurable con `NEXT_PUBLIC_SESSION_IDLE_MINUTES` (default 60 min).
-- [x] CORS backend: whitelist por `ALLOWED_ORIGINS`/`PUBLIC_BASE_URL`, localhost solo en desarrollo y preflight desconocido bloqueado en produccion.
-- [x] Invalidación global de sesión después de cambio/recuperación de clave mediante `sessionVersion` en JWT.
+- [ ] Invalidación global de sesión después de cambio/recuperación de clave (token versionado o tabla de sesiones).
 - [ ] Checklist imagen 2026-09-09: poner Cloudflare delante y verificar proxy/headers reales en produccion.
 - [ ] Checklist imagen 2026-09-09: forzar HTTPS extremo a extremo y revisar redirecciones canonicales.
 - [ ] Checklist imagen 2026-09-09: revisar historial Git por secretos antiguos y rotar cualquier clave que haya pasado por chat, logs o commits.
 - [ ] Checklist imagen 2026-09-09: eliminar rutas de prueba o dejarlas inaccesibles en produccion.
 - [ ] Checklist imagen 2026-09-09: agregar CSP estricta con nonce/hashes compatible con Next.js.
-- [ ] Produccion: configurar `ALLOWED_ORIGINS` con los dominios reales del panel y reserva publica.
+- [ ] Checklist imagen 2026-09-09: restringir CORS con whitelist real de dominios del panel y reserva publica.
 - [ ] Rate limiting distribuido (Redis) antes de escalar a varias instancias.
 - [ ] MFA y recuperación de cuenta endurecida para dueña/superadmin.
 - [ ] Revisión de infraestructura Railway: variables, CORS, roles de base de datos, backup/restore y alertas, sin exponer secretos.
-- [ ] RLS PostgreSQL fase 1: crear rol app no-owner, funcion `app.current_tenant_id()`, politicas por `tenantId` y modo de prueba con `FORCE ROW LEVEL SECURITY` en staging.
-- [ ] RLS PostgreSQL fase 2: cablear Prisma para ejecutar cada operacion tenant-scoped dentro de transacciones con `SET LOCAL app.tenant_id`, sin romper superadmin ni migraciones.
-- [ ] RLS PostgreSQL fase 3: activar en produccion por grupos de tablas, con verificacion de agenda, bot, reserva publica, CRM, reportes y scripts de mantenimiento.
+- [ ] RLS o defensa equivalente en base de datos antes de escalar multi-tenant con varios clientes reales.
 - [ ] Buckets privados para cualquier medio persistido fuera de Meta/DB, con URLs firmadas de corta vida.
 - [ ] Backups automatizados, restauracion probada mensual y 2FA obligatorio en cuentas administrativas.
 - [ ] Logging estructurado, monitoreo y procedimiento de respuesta ante incidentes.

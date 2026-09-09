@@ -27,11 +27,8 @@ const crmEvents = require('../crmEventBus');
 const { normalizePhone, isValidE164, waIdToPhone } = require('../../utils/phone');
 const { SlotUnavailableError } = require('../../utils/errors');
 const { normalize: normalizeBusinessHours } = require('../../utils/businessHours');
-const { normalizeWorkDays } = require('../../utils/serviceSchedule');
 const { getTenantTimezone } = require('../../utils/timezone');
 
-const originalGetAvailability = appointmentService.getAvailability;
-const originalGetRescheduleAvailability = appointmentService.getRescheduleAvailability;
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
 const HIDDEN_SERVICE_NAMES = new Set(['cumpleanos', 'cumpleaños', 'valoracion', 'valoración']);
@@ -79,20 +76,6 @@ function safeTail(value, size = 4) {
   if (value === null || value === undefined) return null;
   const str = String(value);
   return str.length <= size ? str : str.slice(-size);
-}
-
-async function getAvailabilityForBot(args) {
-  if (appointmentService.getAvailability !== originalGetAvailability) {
-    return { slots: await appointmentService.getAvailability(args), emptyReason: null };
-  }
-  return appointmentService.getAvailabilityDetails(args);
-}
-
-async function getRescheduleAvailabilityForBot(args) {
-  if (appointmentService.getRescheduleAvailability !== originalGetRescheduleAvailability) {
-    return { slots: await appointmentService.getRescheduleAvailability(args), emptyReason: null };
-  }
-  return appointmentService.getRescheduleAvailabilityDetails(args);
 }
 
 function logBot(level, event, data = {}) {
@@ -215,7 +198,9 @@ function isReceptionOpenNow(tenantConfig = {}, now = new Date()) {
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' })
     .format(now).toLowerCase();
   const weekdayIndex = WEEKDAY_NAME_TO_INDEX[weekday];
-  const workDays = normalizeWorkDays(tenantConfig?.workDays);
+  const workDays = Array.isArray(tenantConfig?.workDays)
+    ? tenantConfig.workDays.map(Number)
+    : [1, 2, 3, 4, 5, 6];
   if (!workDays.includes(weekdayIndex)) return false;
 
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -2034,9 +2019,8 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
   const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
   const bookingClient = await lookupClientByWaId(tenant.id, waId);
   let slots;
-  let emptyReason = null;
   try {
-    const availability = await getAvailabilityForBot({
+    slots = await appointmentService.getAvailability({
       tenantId: tenant.id,
       tenantConfig: tenantData?.config,
       serviceId: service.id,
@@ -2044,8 +2028,6 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
       modality: 'spa',
       clientId: bookingClient?.id || null,
     });
-    slots = availability.slots;
-    emptyReason = availability.emptyReason;
   } catch (err) {
     logBot('warn', 'smart booking: error de disponibilidad', { error: err.message, date });
     return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: service.id });
@@ -2061,7 +2043,7 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
       tone,
       unclearCount: 0,
     });
-    const body = `😔 *No hay horarios ese día* para _${service.name}_\n\n${emptyReason || 'Ese día no queda un espacio que combine servicio, cabina y terapeuta.'}\n\n¿Probamos otro día?`;
+    const body = `😔 *No hay horarios ese día* para _${service.name}_\n\n¿Probamos otro día?`;
     const payload = menus.datePicker({ tone, body });
     const r = await transport.sendInteractive(connection, waId, payload);
     await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[sin horarios, elegir otro día]' });
@@ -2236,9 +2218,8 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
   }
 
   let slots;
-  let emptyReason = null;
   try {
-    const availability = await getAvailabilityForBot({
+    slots = await appointmentService.getAvailability({
       tenantId: tenant.id,
       tenantConfig: tenantData?.config,
       serviceId: fs.booking.serviceId,
@@ -2246,8 +2227,6 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
       modality: 'spa',
       clientId: bookingClient?.id || null,
     });
-    slots = availability.slots;
-    emptyReason = availability.emptyReason;
   } catch (err) {
     logBot('warn', 'error al buscar disponibilidad', { error: err.message });
     const msg = '😅 *Hubo un problema al buscar horarios*\n\nProbemos de nuevo:';
@@ -2260,7 +2239,7 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
   }
 
   if (slots.length === 0) {
-    const msg = `😔 *No hay horarios ese día*\n\n${emptyReason || 'Ese día no queda un espacio que combine servicio, cabina y terapeuta.'}\n\n¿Probamos otro?`;
+    const msg = '😔 *No hay horarios ese día*\n\n¿Probamos otro?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     const dp = menus.datePicker({ tone });
@@ -2649,17 +2628,14 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
   }
 
   let slots;
-  let emptyReason = null;
   try {
     const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
-    const availability = await getRescheduleAvailabilityForBot({
+    slots = await appointmentService.getRescheduleAvailability({
       tenantId: tenant.id,
       tenantConfig: tenantData?.config,
       appointmentId: fs.reschedule.appointmentId,
       date,
     });
-    slots = availability.slots;
-    emptyReason = availability.emptyReason;
   } catch (err) {
     logBot('warn', 'error al buscar horarios para reprogramar', { error: err.message, date });
     const msg = '😅 *Hubo un problema al buscar horarios*\n\nProbemos de nuevo:';
@@ -2673,8 +2649,8 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
 
   if (slots.length === 0) {
     const msg = tone === 'tu'
-      ? `😔 *No hay horarios ese día para tu espacio*\n\n${emptyReason || 'Ese día no queda una combinación libre para mover tu cita.'}\n\n¿Probamos otro?`
-      : `😔 *No hay horarios ese día para su espacio*\n\n${emptyReason || 'Ese día no queda una combinación libre para mover su cita.'}\n\n¿Probamos otro?`;
+      ? '😔 *No hay horarios ese día para tu espacio*\n\n¿Probamos otro?'
+      : '😔 *No hay horarios ese día para su espacio*\n\n¿Probamos otro?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     const payload = menus.datePicker({ tone });

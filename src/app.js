@@ -26,7 +26,6 @@ const tenantConfigRoutes = require('./routes/tenantConfig');
 const auditLogRoutes = require('./routes/auditLog');
 const searchRoutes = require('./routes/search');
 const backupRoutes = require('./routes/admin/backup');
-const cors = require('./middleware/cors');
 const errorHandler = require('./middleware/errorHandler');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
@@ -38,7 +37,6 @@ const app = express();
 // la IP real al final de X-Forwarded-For. Con 1, Express toma la última
 // entrada, ignorando IPs falsas inyectadas por un atacante.
 app.set('trust proxy', 1);
-app.use(cors);
 
 // B1: headers de seguridad para API pura (sin HTML server-rendered).
 app.use(helmet({

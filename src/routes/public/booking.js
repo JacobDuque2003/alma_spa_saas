@@ -24,14 +24,14 @@ router.get('/services', ipRateLimit, async (req, res, next) => {
 
 router.get('/availability', ipRateLimit, async (req, res, next) => {
   try {
-    const availability = await appointmentService.getAvailabilityDetails({
+    const slots = await appointmentService.getAvailability({
       tenantId: req.publicTenant.id,
       tenantConfig: req.publicTenant.config,
       serviceId: req.query.serviceId,
       date: req.query.date,
       modality: req.query.modality,
     });
-    res.json(availability);
+    res.json({ slots });
   } catch (err) {
     next(err);
   }

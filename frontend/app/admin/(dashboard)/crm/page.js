@@ -14,7 +14,6 @@ import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 import { useAuth } from "@/lib/auth-context";
-import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 
 const DEFAULT_LABELS = [
   { key: "consulta", text: "Consulta", tone: "blue" },
@@ -1283,11 +1282,11 @@ export default function CRMPage() {
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-2">
           {loading ? (
-            <LoadingState compact title="Cargando conversaciones" body="Estamos trayendo los chats más recientes." />
-          ) : loadError ? (
-            <ErrorState compact title="No pudimos cargar la bandeja" body={loadError} onAction={() => fetchConversations(false)} />
+            <div className="flex justify-center py-10">
+              <Loader2 size={20} className="animate-spin text-warm-gray" />
+            </div>
           ) : conversations.length === 0 ? (
-            <EmptyState compact icon={<MessageSquare size={18} />} title="No hay conversaciones" body="Cuando una clienta escriba por WhatsApp, aparecerá aquí." />
+            <p className="text-center py-10 text-sm text-warm-gray">No hay conversaciones.</p>
           ) : (
             <div className="flex flex-col gap-0.5">
               {conversations.map((c) => renderConversationCard(c))}
@@ -1443,10 +1442,8 @@ export default function CRMPage() {
           </div>
         </div>
 
-        {loadError && selected && (
-          <div className="mx-4 mt-3">
-            <ErrorState compact title="La bandeja necesita reconectar" body={loadError} onAction={() => fetchConversations(false)} />
-          </div>
+        {loadError && (
+          <div className="mx-4 mt-3 p-3 rounded-lg bg-gold/15 text-bronze text-sm">{loadError}</div>
         )}
 
         {/* Messages */}
@@ -1458,11 +1455,7 @@ export default function CRMPage() {
             onTouchStart={stopFollowingOpeningMedia}
             className="h-full overflow-y-auto overscroll-contain p-4 flex flex-col gap-3"
           >
-            {messages.length === 0 ? (
-              <EmptyState compact icon={<MessageSquare size={18} />} title="Sin mensajes visibles" body="Esta conversación todavía no tiene mensajes para mostrar." />
-            ) : (
-              messages.map((m, index) => renderMessageBubble(m, index))
-            )}
+            {messages.map((m, index) => renderMessageBubble(m, index))}
             <div ref={messagesEndRef} />
           </div>
           {showScrollBottom && (

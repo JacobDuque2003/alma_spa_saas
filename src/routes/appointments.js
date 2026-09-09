@@ -29,14 +29,14 @@ router.get('/availability', async (req, res, next) => {
   try {
     const tenantId = resolveTenantId(req.user);
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-    const availability = await appointmentService.getAvailabilityDetails({
+    const slots = await appointmentService.getAvailability({
       tenantId,
       tenantConfig: tenant?.config || {},
       serviceId: req.query.serviceId,
       date: req.query.date,
       modality: req.query.modality || 'presencial',
     });
-    res.json(availability);
+    res.json({ slots });
   } catch (err) {
     next(err);
   }
@@ -46,7 +46,7 @@ router.get('/:id/reschedule-availability', async (req, res, next) => {
   try {
     const tenantId = resolveTenantId(req.user);
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-    const availability = await appointmentService.getRescheduleAvailabilityDetails({
+    const slots = await appointmentService.getRescheduleAvailability({
       tenantId,
       tenantConfig: tenant?.config || {},
       appointmentId: req.params.id,
@@ -54,7 +54,7 @@ router.get('/:id/reschedule-availability', async (req, res, next) => {
       roomId: req.query.roomId || undefined,
       staffId: req.query.staffId || undefined,
     });
-    res.json(availability);
+    res.json({ slots });
   } catch (err) {
     next(err);
   }

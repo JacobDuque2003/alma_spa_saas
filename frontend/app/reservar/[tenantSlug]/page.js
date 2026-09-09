@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 
 const STEPS = ["Servicio", "Fecha y hora", "Tus datos", "Confirmación"];
 
@@ -62,17 +61,13 @@ function StepIndicator({ current }) {
   );
 }
 
-function ServiceStep({ services, selected, onSelect, loading, error, onRetry }) {
+function ServiceStep({ services, selected, onSelect, loading }) {
   if (loading) {
-    return <LoadingState title="Cargando servicios" body="Estamos preparando los tratamientos disponibles." />;
-  }
-
-  if (error) {
-    return <ErrorState title="No pudimos cargar los servicios" body={error} onAction={onRetry} />;
+    return <div className="text-center py-12 text-muted-foreground">Cargando servicios...</div>;
   }
 
   if (!services.length) {
-    return <EmptyState title="No hay servicios disponibles" body="El spa todavía no tiene tratamientos activos para reserva pública." />;
+    return <div className="text-center py-12 text-muted-foreground">No hay servicios disponibles en este momento.</div>;
   }
 
   const grouped = {};
@@ -123,27 +118,19 @@ function ServiceStep({ services, selected, onSelect, loading, error, onRetry }) 
 function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [slotError, setSlotError] = useState("");
-  const [emptyReason, setEmptyReason] = useState("");
   const days = getNextDays(14);
 
   const fetchSlots = useCallback(async () => {
     if (!date || !service) return;
     setLoadingSlots(true);
-    setSlotError("");
-    setEmptyReason("");
     setSlot(null);
     try {
       const data = await publicFetch(`/${tenantSlug}/availability`, {
         query: { serviceId: service.id, date, modality: "spa" },
       });
-      const nextSlots = data.slots || [];
-      setSlots(nextSlots);
-      setEmptyReason(nextSlots.length === 0 ? (data.emptyReason || "") : "");
-    } catch (err) {
+      setSlots(data.slots || []);
+    } catch {
       setSlots([]);
-      setEmptyReason("");
-      setSlotError(err?.message || "No pudimos consultar los horarios.");
     } finally {
       setLoadingSlots(false);
     }
@@ -188,11 +175,9 @@ function DateTimeStep({ tenantSlug, service, date, setDate, slot, setSlot }) {
         <div>
           <Label className="text-sm font-medium mb-2 block">Hora disponible</Label>
           {loadingSlots ? (
-            <LoadingState compact title="Consultando disponibilidad" body="Estamos revisando agenda, cabina y terapeuta disponible." />
-          ) : slotError ? (
-            <ErrorState compact title="No pudimos consultar este día" body={slotError} onAction={fetchSlots} />
+            <div className="text-center py-6 text-muted-foreground">Consultando disponibilidad...</div>
           ) : slots.length === 0 ? (
-            <EmptyState compact title="Sin horarios disponibles" body={emptyReason || "Ese día no tiene espacios libres para este servicio. Prueba otra fecha."} />
+            <div className="text-center py-6 text-muted-foreground">No hay horarios disponibles este día</div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {slots.map((s) => (
@@ -324,7 +309,6 @@ export default function BookingPage() {
   const [step, setStep] = useState(0);
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(true);
-  const [servicesError, setServicesError] = useState("");
   const [selectedService, setSelectedService] = useState(null);
   const [date, setDate] = useState(null);
   const [slot, setSlot] = useState(null);
@@ -334,26 +318,9 @@ export default function BookingPage() {
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    setLoadingServices(true);
-    setServicesError("");
     publicFetch(`/${tenantSlug}/services`)
       .then(setServices)
-      .catch((err) => {
-        setServices([]);
-        setServicesError(err?.message || "No pudimos cargar los servicios del spa.");
-      })
-      .finally(() => setLoadingServices(false));
-  }, [tenantSlug]);
-
-  const reloadServices = useCallback(() => {
-    setLoadingServices(true);
-    setServicesError("");
-    publicFetch(`/${tenantSlug}/services`)
-      .then(setServices)
-      .catch((err) => {
-        setServices([]);
-        setServicesError(err?.message || "No pudimos cargar los servicios del spa.");
-      })
+      .catch(() => setServices([]))
       .finally(() => setLoadingServices(false));
   }, [tenantSlug]);
 
@@ -426,8 +393,6 @@ export default function BookingPage() {
             selected={selectedService}
             onSelect={setSelectedService}
             loading={loadingServices}
-            error={servicesError}
-            onRetry={reloadServices}
           />
         )}
 

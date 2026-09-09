@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { BarChart3, CalendarClock, CalendarDays, ClipboardList, Clock3, Inbox, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Trash2 } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, Clock3, Inbox, Loader2, Settings, ShieldCheck, UserCog, Users, X, ArrowLeft, Trash2 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
 import { useAuth } from "@/lib/auth-context";
-import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 
 const PERMISSION_GROUPS = [
   {
@@ -109,12 +108,6 @@ function permissionsSummary(user) {
     .map((group) => group.title);
   const enabled = enabledGroups.length ? enabledGroups : MODULES.filter(([k]) => rp[k]).map(([, label]) => label);
   return enabled.length ? enabled.join(", ") : "Sin permisos activos";
-}
-
-function appointmentScheduleSummary(user) {
-  if (user?.role !== "personal") return "";
-  if (!user.canAttendAppointments) return "No atiende citas";
-  return user.appointmentSchedule ? "Citas: horario propio" : "Citas: horario general";
 }
 
 function PermissionGroupCard({ group, value, onChange, compact, readOnly }) {
@@ -567,11 +560,11 @@ export default function PersonalPage() {
         </div>
 
         {loading ? (
-          <LoadingState title="Cargando equipo" body="Estamos revisando cuentas, permisos y horarios de acceso." />
+          <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
+          </div>
         ) : loadError && users.length === 0 ? (
-          <ErrorState title="No pudimos cargar el equipo" body={loadError} onAction={fetchUsers} />
-        ) : users.length === 0 ? (
-          <EmptyState title="Todavía no hay cuentas visibles" body="Cuando agregues personal, sus permisos y horarios aparecerán aquí." actionLabel="Agregar usuario" onAction={() => setShowNewUser(true)} />
+          <div style={{ padding: 16, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", paddingRight: 2, flex: 1, minHeight: 0, WebkitOverflowScrolling: "touch" }}>
             {users.map((user) => {
@@ -643,7 +636,6 @@ export default function PersonalPage() {
                       {user.isProtected
                         ? "Acceso técnico del sistema"
                         : permissionsSummary(user)}
-                      {appointmentScheduleSummary(user) ? ` · ${appointmentScheduleSummary(user)}` : ""}
                     </p>
                   </div>
                   {!user.isProtected && (
@@ -878,11 +870,6 @@ export default function PersonalPage() {
                       Activa solo lo que esta persona necesita para su trabajo. Los cambios aplican al instante.
                     </p>
                     <PermissionGroupList value={draft} onChange={updatePermission} compact={isMobile} />
-                    <AppointmentScheduleEditor
-                      compact
-                      user={selected}
-                      onSaved={(updated) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, appointmentSchedule: updated.appointmentSchedule } : u)))}
-                    />
                     <AccessScheduleEditor
                       compact
                       user={selected}
@@ -1124,183 +1111,6 @@ function initialDraftFromUser(user) {
   const draft = { alwaysAllowed: !!s.alwaysAllowed };
   for (const [k] of SCHEDULE_DAYS) draft[k] = s[k] || null;
   return draft;
-}
-
-function defaultAppointmentDay(open = true) {
-  return open
-    ? { morning: { start: "09:00", end: "12:00" }, afternoon: { start: "15:00", end: "20:00" } }
-    : null;
-}
-
-function initialAppointmentDraft(schedule) {
-  const hasSchedule = schedule && typeof schedule === "object";
-  const draft = {};
-  for (const [key] of SCHEDULE_DAYS) {
-    draft[key] = hasSchedule && Object.prototype.hasOwnProperty.call(schedule, key)
-      ? schedule[key]
-      : defaultAppointmentDay(key !== "sunday");
-  }
-  return draft;
-}
-
-function AppointmentScheduleEditor({ user, onSaved, compact = false }) {
-  const toast = useToast();
-  const appointmentSchedule = user?.appointmentSchedule;
-  const [mode, setMode] = useState(user?.appointmentSchedule ? "custom" : "inherit");
-  const [draft, setDraft] = useState(() => initialAppointmentDraft(appointmentSchedule));
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setMode(appointmentSchedule ? "custom" : "inherit");
-    setDraft(initialAppointmentDraft(appointmentSchedule));
-  }, [user?.id, appointmentSchedule]);
-
-  function setDayOpen(dayKey, open) {
-    setDraft((prev) => ({ ...prev, [dayKey]: open ? defaultAppointmentDay(true) : null }));
-  }
-
-  function updateWindow(dayKey, period, field, value) {
-    setDraft((prev) => {
-      const current = prev[dayKey] || defaultAppointmentDay(true);
-      const fallback = period === "morning"
-        ? { start: "09:00", end: "12:00" }
-        : { start: "15:00", end: "20:00" };
-      return {
-        ...prev,
-        [dayKey]: {
-          ...current,
-          [period]: { ...(current[period] || fallback), [field]: value },
-        },
-      };
-    });
-  }
-
-  function togglePeriod(dayKey, period, enabled) {
-    setDraft((prev) => {
-      const current = prev[dayKey] || defaultAppointmentDay(true);
-      const fallback = period === "morning"
-        ? { start: "09:00", end: "12:00" }
-        : { start: "15:00", end: "20:00" };
-      return {
-        ...prev,
-        [dayKey]: {
-          ...current,
-          [period]: enabled ? fallback : null,
-        },
-      };
-    });
-  }
-
-  function buildSchedulePayload() {
-    return Object.fromEntries(SCHEDULE_DAYS.map(([key]) => {
-      const value = draft[key];
-      if (!value || (!value.morning && !value.afternoon)) return [key, null];
-      return [key, { morning: value.morning || null, afternoon: value.afternoon || null }];
-    }));
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const updated = await authFetch(`/users/${user.id}`, {
-        method: "PATCH",
-        body: { appointmentSchedule: mode === "inherit" ? null : buildSchedulePayload() },
-      });
-      toast.success("Horario de citas guardado");
-      if (onSaved) onSaved(updated);
-    } catch (err) {
-      toast.error(err?.message || "No se pudo guardar el horario de citas");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section
-      style={{
-        marginTop: compact ? 14 : 32,
-        padding: compact ? 16 : "24px 0 0",
-        border: compact ? "1px solid rgba(168,154,135,0.28)" : undefined,
-        borderTop: compact ? undefined : "1px solid rgba(168,154,135,0.35)",
-        borderRadius: compact ? 16 : undefined,
-        background: compact ? "linear-gradient(135deg, rgba(253,252,250,0.92), rgba(247,245,240,0.78))" : undefined,
-        boxShadow: compact ? "0 14px 28px rgba(107,85,64,0.06)" : undefined,
-      }}
-    >
-      <div style={{ marginBottom: 12 }}>
-        <h3 className="font-heading" style={{ fontSize: compact ? 17 : 18, fontWeight: 600, color: "#6B5540", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
-          <CalendarClock size={16} />
-          Horario de citas
-        </h3>
-        <p style={{ margin: 0, fontSize: compact ? 12 : 13, color: "#A89A87", lineHeight: 1.45 }}>
-          Controla cuándo esta persona puede aparecer disponible en la agenda, reservas y bot.
-        </p>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-        <button type="button" onClick={() => setMode("inherit")} disabled={saving} style={{ ...pillSecondary, background: mode === "inherit" ? "rgba(201,168,118,0.16)" : "transparent", cursor: saving ? "wait" : "pointer" }}>
-          General
-        </button>
-        <button type="button" onClick={() => setMode("custom")} disabled={saving} style={{ ...pillSecondary, background: mode === "custom" ? "rgba(201,168,118,0.16)" : "transparent", cursor: saving ? "wait" : "pointer" }}>
-          Propio
-        </button>
-      </div>
-
-      {mode === "inherit" ? (
-        <p style={{ margin: 0, fontSize: 13, color: "#8C6E50", lineHeight: 1.45 }}>
-          Esta persona seguirá el horario general del spa para citas, además de las reglas de servicio y cabina.
-        </p>
-      ) : (
-        <div style={{ display: "grid", gap: 10 }}>
-          {SCHEDULE_DAYS.map(([key, label]) => {
-            const value = draft[key];
-            const open = value !== null;
-            return (
-              <div key={key} style={{ border: "1px solid rgba(168,154,135,0.32)", borderRadius: 12, padding: 10, background: "#FDFCFA" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: open ? 10 : 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#6B5540" }}>{label}</span>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: saving ? "wait" : "pointer" }}>
-                    <span style={{ fontSize: 12, color: open ? "#556B2F" : "#A89A87" }}>{open ? "Atiende" : "No atiende"}</span>
-                    <input type="checkbox" checked={open} disabled={saving} onChange={(event) => setDayOpen(key, event.target.checked)} style={{ width: 17, height: 17, accentColor: "#8C6E50" }} />
-                  </label>
-                </div>
-                {open && (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {["morning", "afternoon"].map((period) => {
-                      const win = value?.[period];
-                      const enabled = !!win;
-                      return (
-                        <div key={period} style={{ display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "72px 1fr 1fr auto", gap: 8, alignItems: "center" }}>
-                          <span style={{ gridColumn: compact ? "1 / -1" : undefined, fontSize: 11, color: "#A89A87" }}>{period === "morning" ? "Mañana" : "Tarde"}</span>
-                          <input type="time" disabled={!enabled || saving} value={win?.start || ""} onChange={(e) => updateWindow(key, period, "start", e.target.value)} style={inputStyle} />
-                          <input type="time" disabled={!enabled || saving} value={win?.end || ""} onChange={(e) => updateWindow(key, period, "end", e.target.value)} style={inputStyle} />
-                          <label style={{ display: "inline-flex", alignItems: "center", justifyContent: compact ? "flex-start" : "flex-end", gap: 7, gridColumn: compact ? "1 / -1" : undefined, fontSize: 12, color: "#8C6E50", cursor: saving ? "wait" : "pointer" }}>
-                            <input type="checkbox" checked={enabled} disabled={saving} onChange={(event) => togglePeriod(key, period, event.target.checked)} style={{ width: 16, height: 16, accentColor: "#8C6E50" }} />
-                            Activo
-                          </label>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          style={{ padding: "9px 22px", borderRadius: 999, background: "#8C6E50", color: "#F7F5F0", border: "none", fontSize: 13, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}
-        >
-          {saving ? "Guardando…" : "Guardar horario de citas"}
-        </button>
-      </div>
-    </section>
-  );
 }
 
 function AccessScheduleEditor({ user, onSaved, compact = false }) {

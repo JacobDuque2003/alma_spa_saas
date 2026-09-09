@@ -59,18 +59,6 @@ router.post('/', requirePermission('configuracionServicios'), async (req, res, n
   }
 });
 
-router.patch('/:id/schedule', requirePermission('configuracionHorario'), async (req, res, next) => {
-  try {
-    const service = await serviceService.updateService(req.user, req.params.id, {
-      appointmentSchedule: req.body?.appointmentSchedule ?? null,
-    });
-    if (!service) return res.status(404).json({ error: 'Servicio no encontrado' });
-    res.json(service);
-  } catch (err) {
-    next(err);
-  }
-});
-
 router.patch('/:id', requirePermission('configuracionServicios'), async (req, res, next) => {
   try {
     const service = await serviceService.updateService(req.user, req.params.id, req.body);

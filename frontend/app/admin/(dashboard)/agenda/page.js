@@ -9,7 +9,6 @@ import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useGridTransition } from "@/lib/use-grid-transition";
 import { NewClientModal } from "@/components/new-client-modal";
 import { useToast } from "@/components/toast-provider";
-import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 import { formatEcuadorPhone, phoneSearchText } from "@/lib/phone-format";
 
 const HOURS = [8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19];
@@ -228,7 +227,6 @@ export default function AgendaPage() {
   const [rooms, setRooms] = useState([]);
   const [tenantConfig, setTenantConfig] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(null);
   const [slotGroup, setSlotGroup] = useState(null);
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
@@ -260,10 +258,7 @@ export default function AgendaPage() {
   const filteredAppointments = appointments;
 
   const fetchData = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
-      setLoading(true);
-      setLoadError("");
-    }
+    if (!silent) setLoading(true);
     try {
       let from, to;
       if (effectiveView === "day") {
@@ -282,9 +277,8 @@ export default function AgendaPage() {
       setAppointments(appts);
       setRooms(roomList.filter((r) => r.active));
       setStaffList(Array.isArray(userList) ? userList.filter((u) => u.canAttendAppointments && u.active) : []);
-    } catch (err) {
+    } catch {
       setAppointments([]);
-      if (!silent) setLoadError(err?.message || "No pudimos cargar la agenda.");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -624,9 +618,9 @@ export default function AgendaPage() {
       {/* Grid */}
       <div className={gridClass || undefined} onAnimationEnd={onAnimationEnd}>
         {loading ? (
-          <LoadingState title="Cargando agenda" body="Estamos revisando citas, cabinas y equipo disponible." />
-        ) : loadError ? (
-          <ErrorState title="No pudimos cargar la agenda" body={loadError} onAction={() => fetchData({ silent: false })} />
+          <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
+          </div>
         ) : isMobile ? (
           <MobileCardList
             appointments={filteredAppointments}
@@ -722,7 +716,9 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
 
   if (active.length === 0) {
     return (
-      <EmptyState title="No hay citas para este día" body="La agenda está libre en la fecha seleccionada." />
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40, color: "#A89A87", fontSize: 14 }}>
+        No hay citas para este día
+      </div>
     );
   }
 
@@ -1471,7 +1467,6 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
   const [editIndications, setEditIndications] = useState("");
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
-  const [rescheduleEmptyReason, setRescheduleEmptyReason] = useState("");
 
   useEffect(() => {
     if (!appt) return;
@@ -1485,7 +1480,6 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
   useEffect(() => {
     if (!editing || !appt?.id || !editDate) {
       setRescheduleSlots([]);
-      setRescheduleEmptyReason("");
       return undefined;
     }
     let cancelled = false;
@@ -1497,13 +1491,11 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
         if (cancelled) return;
         const slots = Array.isArray(data?.slots) ? data.slots : [];
         setRescheduleSlots(slots);
-        setRescheduleEmptyReason(slots.length === 0 ? (data?.emptyReason || "") : "");
         setEditSlot((current) => (slots.includes(current) ? current : slots[0] || ""));
       })
       .catch((err) => {
         if (cancelled) return;
         setRescheduleSlots([]);
-        setRescheduleEmptyReason("");
         setEditSlot("");
         toast.error(err?.message || "No se pudieron cargar los horarios disponibles");
       })
@@ -1741,7 +1733,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
             </div>
             {!rescheduleSlotsLoading && rescheduleSlots.length === 0 && (
               <p style={{ margin: 0, fontSize: 12, color: "#A89A87", lineHeight: 1.45 }}>
-                {rescheduleEmptyReason || "No hay espacio con esta cabina y terapeuta ese día. Prueba otra fecha o ajusta la asignación."}
+                No hay espacio con esta cabina y terapeuta ese día. Prueba otra fecha o ajusta la asignación.
               </p>
             )}
             <div>
@@ -1941,7 +1933,6 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [date, setDate] = useState(followUpMode ? "" : defaultDate);
   const [time, setTime] = useState("");
   const [availableSlots, setAvailableSlots] = useState([]);
-  const [availabilityEmptyReason, setAvailabilityEmptyReason] = useState("");
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [dayAppointments, setDayAppointments] = useState([]);
   const [roomId, setRoomId] = useState("");
@@ -2107,7 +2098,6 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   useEffect(() => {
     if (!serviceId || !date) {
       setAvailableSlots([]);
-      setAvailabilityEmptyReason("");
       setTime("");
       return;
     }
@@ -2117,16 +2107,14 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         const raw = Array.isArray(data?.slots) ? data.slots : Array.isArray(data) ? data : [];
         const slots = raw.map((s) => (typeof s === "string" ? s : new Date(s).toISOString()));
         setAvailableSlots(slots);
-        setAvailabilityEmptyReason(slots.length === 0 ? (data?.emptyReason || "") : "");
         setTime((prev) => (slots.includes(prev) ? prev : slots[0] || ""));
       })
       .catch((err) => {
         setAvailableSlots([]);
-        setAvailabilityEmptyReason("");
         toast.error(err?.message || "No se pudieron cargar los horarios disponibles");
       })
       .finally(() => setSlotsLoading(false));
-  }, [serviceId, date, toast]);
+  }, [serviceId, date]);
 
   useEffect(() => {
     if (!date) {
@@ -2384,11 +2372,6 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                   : "Los horarios que se crucen aparecen deshabilitados."}
               </p>
             </div>
-          )}
-          {!slotsLoading && serviceId && date && availableSlots.length === 0 && availabilityEmptyReason && (
-            <p style={{ margin: "-4px 0 0", fontSize: 12, color: "#A06F32", lineHeight: 1.45 }}>
-              {availabilityEmptyReason}
-            </p>
           )}
 
           {/* Room + Staff */}

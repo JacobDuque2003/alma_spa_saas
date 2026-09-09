@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import {
+  Loader2,
   Lock,
   DollarSign,
   Calendar as CalendarIcon,
@@ -16,7 +17,6 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
-import { EmptyState, LoadingState } from "@/components/async-state";
 
 // Metricas del panel — el backend soporta las 7 en VALID_METRICS. Aqui
 // pedimos las que la vista usa. "cancelaciones" fue reemplazada por
@@ -143,7 +143,9 @@ export default function ReportesPage() {
       </header>
 
       {loading ? (
-        <LoadingState title="Calculando reportes" body="Estamos revisando ingresos, ocupación y desempeño del periodo." />
+        <div className="flex justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-bronze" />
+        </div>
       ) : (
         <>
           {/* HERO — Resumen del mes */}
@@ -385,7 +387,9 @@ function SecondaryCard({ title, Icon, children, footerNote, stagger, index }) {
 function Bars({ items, note, emptyText }) {
   if (items.length === 0) {
     return (
-      <EmptyState compact title="Sin datos para graficar" body={emptyText || "No hay movimiento registrado en este periodo."} />
+      <p className="my-8 text-center text-sm text-warm-gray">
+        {emptyText || "Sin datos en este periodo."}
+      </p>
     );
   }
   const maxValue = Math.max(...items.map((i) => Number(i.value) || 0), 1);
@@ -415,7 +419,7 @@ function Bars({ items, note, emptyText }) {
 
 function Rank({ items }) {
   if (items.length === 0) {
-    return <EmptyState compact title="Sin ranking todavía" body="Cuando haya atenciones registradas, aparecerán aquí." />;
+    return <p className="my-8 text-center text-sm text-warm-gray">Sin datos.</p>;
   }
   return (
     <ol className="m-0 flex flex-col p-0">

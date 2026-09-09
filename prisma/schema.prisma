@@ -60,9 +60,6 @@ model User {
   sessionVersion        Int      @default(0)
   deletedAt             DateTime?
   accessSchedule        Json?
-  // Horario clínico para atender citas. null = no restricción adicional
-  // sobre el horario general del spa; día null = no atiende citas ese día.
-  appointmentSchedule   Json?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -114,9 +111,6 @@ model Service {
   parentServiceId   String?
   durationMins      Int      @default(60)
   bufferMins        Int      @default(15)
-  // Horario semanal propio para citas. null = hereda del servicio padre o
-  // del horario general del tenant; día null = cerrado ese día.
-  appointmentSchedule Json?
   colorHex          String   @default("#8C6E50")
   priceUsd          Decimal  @db.Decimal(10, 2)
   offersHomeService Boolean  @default(false)
