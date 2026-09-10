@@ -432,6 +432,10 @@ export default function AgendaPage() {
       roomId: prefill.roomId,
       startsAt: prefill.startsAt,
       endsAt: addMinutesToDate(draftStart, 45).toISOString(),
+      columnLeft: prefill.columnLeft,
+      columnRight: prefill.columnRight,
+      anchorX: prefill.anchorX,
+      anchorY: prefill.anchorY,
       clientName: "",
       staffName: "",
       serviceName: "",
@@ -795,6 +799,7 @@ export default function AgendaPage() {
           followUpMode={!!followUpPrefill}
           canScheduleOutside={canScheduleOutside}
           quickCreatePrefill={quickCreatePrefill}
+          quickPanelFrameSource={quickDraft || quickCreatePrefill}
           onDraftChange={setQuickDraft}
         />
       )}
@@ -1180,6 +1185,12 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     const minutesFromFirstHour = Math.floor(((y / HOUR_HEIGHT) * 60) / 15) * 15;
     const totalMinutes = Math.min((lastHour * 60) + 45, (firstHour * 60) + minutesFromFirstHour);
     const hhmm = hhmmFromTotalMinutes(totalMinutes);
+    const gridRect = event.currentTarget.parentElement.getBoundingClientRect();
+    const columnBoundsByRoomId = {};
+    visibleColumns.forEach((column, index) => {
+      const left = gridRect.left + 56 + index * rect.width;
+      columnBoundsByRoomId[column.id] = { left, right: left + rect.width };
+    });
     onCreateFromSlot({
       date,
       roomId: room.id,
@@ -1191,6 +1202,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       anchorY: event.clientY,
       columnLeft: rect.left,
       columnRight: rect.right,
+      columnBoundsByRoomId,
     });
   }
 
@@ -2088,7 +2100,7 @@ function PremiumSelect({
   );
 }
 
-function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode, canScheduleOutside, quickCreatePrefill, onDraftChange }) {
+function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode, canScheduleOutside, quickCreatePrefill, quickPanelFrameSource, onDraftChange }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -2344,13 +2356,21 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       return;
     }
     const blockMinutes = selectedService ? totalServiceBlockMins(selectedService) : 45;
-    const effectiveRoomId = roomId || quickRoomId;
+    const quickCompatibleRoom = compatibleRooms.find((room) => room.id === quickRoomId && !busyRoomIds.has(room.id))
+      || compatibleRooms.find((room) => room.id === quickRoomId);
+    const automaticRoom = quickCompatibleRoom || freeCompatibleRooms[0] || compatibleRooms[0] || null;
+    const effectiveRoomId = roomId || automaticRoom?.id || quickRoomId;
     const selectedRoom = rooms.find((room) => room.id === effectiveRoomId);
+    const columnBounds = quickCreatePrefill.columnBoundsByRoomId?.[effectiveRoomId] || {};
     onDraftChange({
       date,
       roomId: effectiveRoomId,
       startsAt: start.toISOString(),
       endsAt: addMinutesToDate(start, blockMinutes).toISOString(),
+      columnLeft: columnBounds.left ?? quickCreatePrefill.columnLeft,
+      columnRight: columnBounds.right ?? quickCreatePrefill.columnRight,
+      anchorX: quickCreatePrefill.anchorX,
+      anchorY: quickCreatePrefill.anchorY,
       clientName: selectedClient?.fullName || clientSearch.trim(),
       staffName: selectedStaff?.name || "",
       serviceName: selectedService?.name || "",
@@ -2365,6 +2385,9 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     quickStartsAt,
     roomId,
     rooms,
+    busyRoomIds,
+    compatibleRooms,
+    freeCompatibleRooms,
     selectedClient,
     selectedService,
     selectedStaff,
@@ -2476,7 +2499,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   };
   const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 6 };
   const isQuickCreate = Boolean(quickCreatePrefill && !followUpMode);
-  const quickPanelStyle = isQuickCreate ? quickCreatePanelFrame(quickCreatePrefill) : {};
+  const quickPanelStyle = isQuickCreate ? quickCreatePanelFrame(quickPanelFrameSource || quickCreatePrefill) : {};
 
   return (
     <div
