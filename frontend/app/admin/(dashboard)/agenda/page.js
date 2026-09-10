@@ -1289,23 +1289,13 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   function makeDragPreview(appt, target) {
     const duration = appt.service?.durationMins || 60;
     const height = Math.max((duration / 60) * HOUR_HEIGHT - 8, 42);
-    const roomIndex = visibleColumns.findIndex((room) => room.id === appointmentRoomId(appt));
     const roomWidth = target.columnWidth || 158;
-    const h = getEcuadorHour(appt.startsAt);
-    const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
-    const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT) || 0;
     return {
       id: appt.id,
       clientName: appt.client?.fullName || "Cliente",
       staffName: appt.staff?.name || "Terapeuta por asignar",
       timeLabel: target.timeLabel,
       color: appointmentColor(appt, roomColorMap),
-      origin: {
-        left: 56 + roomIndex * roomWidth + 8,
-        top: HEADER_HEIGHT + topOffset + 4,
-        width: Math.max(roomWidth - 16, 42),
-        height,
-      },
       target: {
         left: target.previewLeft,
         top: target.previewTop,
@@ -1321,56 +1311,6 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     const appt = active.find((item) => item.id === draggingId);
     if (!appt) return;
     setDragState(makeDragPreview(appt, targetFromPointer(event, room)));
-  }
-
-  function renderDragGuide() {
-    if (!dragState?.origin || !dragState?.target) return null;
-    const { origin, target, color } = dragState;
-    const originX = origin.left + origin.width / 2;
-    const originY = origin.top + origin.height / 2;
-    const targetX = target.left + target.width / 2;
-    const targetY = target.top + target.height / 2;
-    const verticalHeight = Math.abs(targetY - originY);
-    const horizontalWidth = Math.abs(targetX - originX);
-    const segmentColor = hexToRgba(color, 0.65);
-    const showVertical = verticalHeight > 2;
-    const showHorizontal = horizontalWidth > 2;
-    return (
-      <>
-        {showVertical && (
-          <span
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: originX - 1,
-              top: Math.min(originY, targetY),
-              width: 2,
-              height: verticalHeight,
-              borderRadius: 999,
-              background: segmentColor,
-              zIndex: 8,
-              pointerEvents: "none",
-            }}
-          />
-        )}
-        {showHorizontal && (
-          <span
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: Math.min(originX, targetX),
-              top: targetY - 1,
-              width: horizontalWidth,
-              height: 2,
-              borderRadius: 999,
-              background: segmentColor,
-              zIndex: 8,
-              pointerEvents: "none",
-            }}
-          />
-        )}
-      </>
-    );
   }
 
   return (
@@ -1612,7 +1552,6 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
             </div>
           );
         })}
-        {renderDragGuide()}
         {dragState?.target && (
           <div
             aria-hidden="true"
