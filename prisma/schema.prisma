@@ -278,6 +278,9 @@ model Appointment {
   endsAt            DateTime
   status            AppointmentStatus   @default(pendiente)
   indications       String?
+  outsideBusinessHours Boolean          @default(false)
+  outsideBusinessHoursReason String?
+  outsideBusinessHoursById String?
   confirmationToken String              @unique @default(cuid())
   priceUsd          Decimal             @db.Decimal(10, 2)
   createdAt         DateTime            @default(now())

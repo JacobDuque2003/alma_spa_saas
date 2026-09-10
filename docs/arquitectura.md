@@ -53,6 +53,10 @@ Regla correcta:
 - La agenda, reserva publica y bot generan todos los cupos que quepan dentro
   del horario abierto, descontando citas existentes de cabina, terapeuta y
   clienta.
+- La agenda interna puede crear una excepcion fuera del horario publico con
+  `outsideBusinessHours=true`, motivo interno y usuario autorizador. Esa
+  excepcion no cambia el horario del local, no abre cupos publicos y no se
+  ofrece por bot ni por el link de reserva.
 
 `User.accessSchedule` regula cuando una cuenta puede usar el panel. No debe
 mostrarse como “horario de citas” ni reemplazar el horario de atencion del

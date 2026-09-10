@@ -1,6 +1,6 @@
 const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
-const { BadRequestError, SlotUnavailableError } = require('../utils/errors');
+const { AppError, BadRequestError, SlotUnavailableError } = require('../utils/errors');
 const clientService = require('./clientService');
 const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
@@ -120,16 +120,67 @@ async function getCompatibleRooms(db, tenantId, service) {
   });
 }
 
-function assertInsideBusinessHours(tenantConfig, startsAt, endsAt, businessHoursOverride) {
+function isInsideBusinessHours(tenantConfig, startsAt, endsAt, businessHoursOverride) {
   const timezone = getTenantTimezone(tenantConfig);
   const startLocalDate = toLocalDateInTimezone(startsAt, timezone);
   const endLocalDate = toLocalDateInTimezone(endsAt, timezone);
-  if (startLocalDate !== endLocalDate) {
-    throw new BadRequestError('La cita está fuera del horario de atención');
+  if (startLocalDate !== endLocalDate) return false;
+  return isRangeInsideBusinessHours(
+    businessHoursOverride || getBusinessHours(tenantConfig),
+    localHHMM(startsAt, timezone),
+    localHHMM(endsAt, timezone)
+  );
+}
+
+function normalizeOutsideReason(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
+function canCreateOutsideBusinessHours(actor) {
+  return actor?.role === 'dueno' || actor?.role === 'superadmin';
+}
+
+function resolveOutsideBusinessHoursOverride(actor, {
+  tenantConfig,
+  startsAt,
+  endsAt,
+  businessHoursOverride,
+  requested,
+  reason,
+  existing = null,
+}) {
+  const timezone = getTenantTimezone(tenantConfig);
+  const sameLocalDay = toLocalDateInTimezone(startsAt, timezone) === toLocalDateInTimezone(endsAt, timezone);
+  if (!sameLocalDay) {
+    throw new BadRequestError('La cita debe empezar y terminar el mismo día del spa. Para horarios especiales, divide la atención en otra reserva.');
   }
-  if (!isRangeInsideBusinessHours(businessHoursOverride || getBusinessHours(tenantConfig), localHHMM(startsAt, timezone), localHHMM(endsAt, timezone))) {
-    throw new BadRequestError('La cita está fuera del horario de atención');
+
+  const inside = isInsideBusinessHours(tenantConfig, startsAt, endsAt, businessHoursOverride);
+  if (inside) {
+    return {
+      outsideBusinessHours: false,
+      outsideBusinessHoursReason: null,
+      outsideBusinessHoursById: null,
+    };
   }
+
+  if (!requested && !existing?.outsideBusinessHours) {
+    throw new BadRequestError('Ese horario queda fuera del horario público del spa. Si Gianella atenderá como excepción interna, activa la opción fuera de horario y escribe el motivo.');
+  }
+  if (!canCreateOutsideBusinessHours(actor)) {
+    throw new AppError('Solo una dueña o superadmin puede crear reservas internas fuera del horario público.', 403);
+  }
+
+  const cleanReason = normalizeOutsideReason(reason || existing?.outsideBusinessHoursReason);
+  if (!cleanReason) {
+    throw new BadRequestError('Escribe el motivo interno para guardar una reserva fuera del horario público.');
+  }
+
+  return {
+    outsideBusinessHours: true,
+    outsideBusinessHoursReason: cleanReason,
+    outsideBusinessHoursById: actor.id || existing?.outsideBusinessHoursById || null,
+  };
 }
 
 function toLocalDateInTimezone(date, timezone) {
@@ -558,29 +609,61 @@ async function createManualAppointment(actor, data) {
   }
 
   let resolvedRoomId = null;
+  let outsideMeta = null;
+  const overrideRequested = data.allowOutsideBusinessHours === true || data.outsideBusinessHours === true;
   if (data.roomId) {
     const room = roomCandidates.find((r) => r.id === data.roomId);
     if (!room) {
       throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
     }
-    assertInsideBusinessHours(tenant?.config, startsAt, endsAt, roomBusinessHours(room, tenant?.config, dateStr));
+    outsideMeta = resolveOutsideBusinessHoursOverride(actor, {
+      tenantConfig: tenant?.config,
+      startsAt,
+      endsAt,
+      businessHoursOverride: roomBusinessHours(room, tenant?.config, dateStr),
+      requested: overrideRequested,
+      reason: data.outsideBusinessHoursReason,
+    });
     if (!isResourceFree(conflicting, 'roomId', room.id, startsAt, endsAt)) {
       throw new SlotUnavailableError('La cabina seleccionada ya está ocupada en ese horario');
     }
     resolvedRoomId = room.id;
   } else {
-    const roomsInsideWindow = roomCandidates.filter((r) => {
-      const hours = roomBusinessHours(r, tenant?.config, dateStr);
-      return isRangeInsideBusinessHours(hours, localHHMM(startsAt, getTenantTimezone(tenant?.config)), localHHMM(endsAt, getTenantTimezone(tenant?.config)));
-    });
-    if (roomsInsideWindow.length === 0) {
+    const roomMatches = roomCandidates
+      .map((r) => {
+        const businessHoursOverride = roomBusinessHours(r, tenant?.config, dateStr);
+        return {
+          room: r,
+          businessHoursOverride,
+          inside: isInsideBusinessHours(tenant?.config, startsAt, endsAt, businessHoursOverride),
+        };
+      })
+      .filter((match) => overrideRequested || match.inside);
+    roomMatches.sort((a, b) => Number(b.inside) - Number(a.inside));
+    if (roomMatches.length === 0) {
       throw new BadRequestError('La cita está fuera del horario de atención');
     }
-    const freeRoom = roomsInsideWindow.find((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
-    if (!freeRoom) {
+    const freeMatch = roomMatches.find(({ room }) => isResourceFree(conflicting, 'roomId', room.id, startsAt, endsAt));
+    if (!freeMatch) {
       throw new SlotUnavailableError();
     }
-    resolvedRoomId = freeRoom.id;
+    resolvedRoomId = freeMatch.room.id;
+    outsideMeta = resolveOutsideBusinessHoursOverride(actor, {
+      tenantConfig: tenant?.config,
+      startsAt,
+      endsAt,
+      businessHoursOverride: freeMatch.businessHoursOverride,
+      requested: overrideRequested,
+      reason: data.outsideBusinessHoursReason,
+    });
+  }
+
+  if (!outsideMeta) {
+    outsideMeta = {
+      outsideBusinessHours: false,
+      outsideBusinessHoursReason: null,
+      outsideBusinessHoursById: null,
+    };
   }
 
   try {
@@ -598,6 +681,7 @@ async function createManualAppointment(actor, data) {
         status: 'confirmado',
         indications: data.indications ? String(data.indications).trim() : null,
         priceUsd: service.priceUsd,
+        ...outsideMeta,
       },
     });
     notifyAgenda(tenantId, 'appointment.created', appointment);
@@ -652,7 +736,15 @@ async function updateAppointment(actor, id, changes) {
     const roomCandidates = await getCompatibleRooms(prisma, target.tenantId, service);
     const room = roomCandidates.find((r) => r.id === roomId);
     if (!room) throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
-    assertInsideBusinessHours(tenant?.config, startsAt, endsAt, roomBusinessHours(room, tenant?.config, dateStr));
+    Object.assign(data, resolveOutsideBusinessHoursOverride(actor, {
+      tenantConfig: tenant?.config,
+      startsAt,
+      endsAt,
+      businessHoursOverride: roomBusinessHours(room, tenant?.config, dateStr),
+      requested: changes.allowOutsideBusinessHours === true || changes.outsideBusinessHours === true,
+      reason: changes.outsideBusinessHoursReason,
+      existing: target,
+    }));
 
     const conflicting = await prisma.appointment.findMany({
       where: {

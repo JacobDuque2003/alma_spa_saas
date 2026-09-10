@@ -254,6 +254,89 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
   assert.equal(result.status, 'confirmado');
 });
 
+test('createManualAppointment permite a dueña crear reserva interna fuera del horario público', async () => {
+  let createArgs = null;
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findMany: async () => [],
+      create: async (args) => {
+        createArgs = args;
+        return { id: 'appt1', ...args.data };
+      },
+    },
+  });
+
+  const result = await appointmentService.createManualAppointment(
+    { id: 'owner1', role: 'dueno', tenantId: 't1' },
+    {
+      clientId: 'c1',
+      serviceId: 'srv1',
+      staffId: 'staff1',
+      startsAt: '2099-08-02T02:00:00.000Z',
+      modality: 'presencial',
+      allowOutsideBusinessHours: true,
+      outsideBusinessHoursReason: 'Gianella atiende personalmente despues del cierre',
+    }
+  );
+
+  assert.equal(result.outsideBusinessHours, true);
+  assert.equal(createArgs.data.outsideBusinessHoursById, 'owner1');
+  assert.match(createArgs.data.outsideBusinessHoursReason, /Gianella atiende/);
+});
+
+test('createManualAppointment rechaza excepción fuera de horario para personal no dueño', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findMany: async () => [],
+      create: async () => {
+        throw new Error('no debe crear una excepción para personal');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { id: 'staff2', role: 'personal', tenantId: 't1' },
+      {
+        clientId: 'c1',
+        serviceId: 'srv1',
+        staffId: 'staff1',
+        startsAt: '2099-08-02T02:00:00.000Z',
+        modality: 'presencial',
+        allowOutsideBusinessHours: true,
+        outsideBusinessHoursReason: 'Atención autorizada fuera de horario',
+      }
+    ),
+    (err) => err.status === 403 && /Solo una dueña/.test(err.message)
+  );
+});
+
+test('createPublicBooking sigue rechazando horarios fuera del horario público', async () => {
+  mockPrisma({
+    client: { upsert: async () => ({ id: 'client1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, priceUsd: 45, offersHomeService: false }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    user: { findMany: async () => [{ id: 'staff1' }] },
+    appointment: { findMany: async () => [] },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createPublicBooking(
+      't1',
+      basePayload({ selections: [{ serviceId: 'srv1', startsAt: '2099-08-02T02:00:00.000Z', modality: 'spa' }] })
+    ),
+    (err) => err.status === 400 && /fuera del horario/.test(err.message)
+  );
+});
+
 test('createManualAppointment distingue fichas diferentes aunque los clientes tengan el mismo nombre', async () => {
   mockPrisma({
     client: { findFirst: async () => ({ id: 'ficha-seleccionada', tenantId: 't1' }) },

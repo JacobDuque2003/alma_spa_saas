@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
+import { useAuth } from "@/lib/auth-context";
 import { Loader2, X, Search } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -97,6 +98,12 @@ function formatTime(iso) {
     hour12: false,
     timeZone: "America/Guayaquil",
   });
+}
+
+function ecuadorDateTimeToIso(dateStr, hhmm) {
+  if (!dateStr || !/^\d{2}:\d{2}$/.test(String(hhmm || ""))) return "";
+  const date = new Date(`${dateStr}T${hhmm}:00-05:00`);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 function formatSearchDate(iso) {
@@ -216,6 +223,7 @@ function formatDayFull(dateStr) {
 }
 
 export default function AgendaPage() {
+  const { user } = useAuth();
   const today = toLocalDate(new Date());
   const searchParams = useSearchParams();
   const preClientId = searchParams.get("clientId");
@@ -256,6 +264,7 @@ export default function AgendaPage() {
 
   const effectiveView = isMobile ? "day" : view;
   const filteredAppointments = appointments;
+  const canScheduleOutside = user?.role === "dueno" || user?.role === "superadmin";
 
   const fetchData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -670,6 +679,7 @@ export default function AgendaPage() {
           phase={detailAnim.phase}
           rooms={rooms}
           staffList={staffList}
+          canScheduleOutside={canScheduleOutside}
           onClose={() => setSelected(null)}
           onUpdated={(updated, options = {}) => {
             const merged = (source) => (source?.id === updated.id ? { ...source, ...updated } : source);
@@ -703,6 +713,7 @@ export default function AgendaPage() {
           preSelectedServiceId={followUpPrefill?.service?.id || null}
           preSelectedStaffId={followUpPrefill?.staff?.id || null}
           followUpMode={!!followUpPrefill}
+          canScheduleOutside={canScheduleOutside}
         />
       )}
     </div>
@@ -1456,7 +1467,7 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
     </div>
   );
 }
-function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, onFollowUp }) {
+function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, onClose, onUpdated, onFollowUp }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1465,6 +1476,9 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
   const [editRoomId, setEditRoomId] = useState("");
   const [editStaffId, setEditStaffId] = useState("");
   const [editIndications, setEditIndications] = useState("");
+  const [editOutsideMode, setEditOutsideMode] = useState(false);
+  const [editManualTime, setEditManualTime] = useState("");
+  const [editOutsideReason, setEditOutsideReason] = useState("");
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
 
@@ -1475,10 +1489,13 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
     setEditRoomId(appt.room?.id || "");
     setEditStaffId(appt.staff?.id || "");
     setEditIndications(appt.indications || "");
+    setEditOutsideMode(Boolean(appt.outsideBusinessHours));
+    setEditManualTime(formatTime(appt.startsAt));
+    setEditOutsideReason(appt.outsideBusinessHoursReason || "");
   }, [appt]);
 
   useEffect(() => {
-    if (!editing || !appt?.id || !editDate) {
+    if (!editing || editOutsideMode || !appt?.id || !editDate) {
       setRescheduleSlots([]);
       return undefined;
     }
@@ -1505,7 +1522,11 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
     return () => {
       cancelled = true;
     };
-  }, [appt?.id, editDate, editRoomId, editStaffId, editing, toast]);
+  }, [appt?.id, editDate, editOutsideMode, editRoomId, editStaffId, editing, toast]);
+
+  useEffect(() => {
+    if (!canScheduleOutside && editOutsideMode) setEditOutsideMode(false);
+  }, [canScheduleOutside, editOutsideMode]);
 
   if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
@@ -1553,13 +1574,22 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
     setSaving(true);
     try {
       const body = {};
-      if (!editSlot) {
-        toast.error("Selecciona un horario disponible");
+      const effectiveEditSlot = editOutsideMode ? ecuadorDateTimeToIso(editDate, editManualTime) : editSlot;
+      if (!effectiveEditSlot) {
+        toast.error(editOutsideMode ? "Escribe la hora interna" : "Selecciona un horario disponible");
         return;
       }
-      if (new Date(editSlot).getTime() !== new Date(appt.startsAt).getTime()) body.startsAt = editSlot;
+      if (editOutsideMode && !editOutsideReason.trim()) {
+        toast.error("Escribe el motivo interno");
+        return;
+      }
+      if (new Date(effectiveEditSlot).getTime() !== new Date(appt.startsAt).getTime()) body.startsAt = effectiveEditSlot;
       if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
       if (editStaffId && editStaffId !== appt.staff?.id) body.staffId = editStaffId;
+      if (editOutsideMode) {
+        body.allowOutsideBusinessHours = true;
+        body.outsideBusinessHoursReason = editOutsideReason.trim();
+      }
       if (Object.keys(body).length === 0) { setEditing(false); return; }
       const updated = await authFetch(`/appointments/${appt.id}`, { method: "PATCH", body });
       const newRoom = rooms.find((r) => r.id === (updated.roomId || editRoomId));
@@ -1609,6 +1639,11 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: statusInfo.bg, border: statusInfo.border !== "transparent" ? `1px solid ${statusInfo.border}` : "none", color: statusInfo.text, fontSize: 12, fontWeight: 500 }}>
           {STATUS_LABELS[appt.status]}
         </span>
+        {appt.outsideBusinessHours && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8, padding: "4px 12px", borderRadius: 999, background: "rgba(160,111,50,0.12)", border: "1px solid rgba(160,111,50,0.28)", color: "#A06F32", fontSize: 12, fontWeight: 700 }}>
+            Fuera de horario público
+          </span>
+        )}
 
         <div style={{ borderTop: "1px solid rgba(168,154,135,0.3)", margin: "18px 0" }} />
 
@@ -1638,6 +1673,14 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
                   <span style={{ color: "#A89A87" }}>Terapeuta</span>
                   <span>{appt.staff.name}</span>
+                </div>
+              )}
+              {appt.outsideBusinessHours && (
+                <div style={{ border: "1px solid rgba(160,111,50,0.25)", background: "rgba(255,248,232,0.78)", borderRadius: 12, padding: 12, color: "#6B5540", lineHeight: 1.45 }}>
+                  <div style={{ color: "#A06F32", fontSize: 12, fontWeight: 700 }}>Excepción interna</div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: "#8C6E50" }}>
+                    {appt.outsideBusinessHoursReason || "Reserva autorizada fuera del horario público."}
+                  </div>
                 </div>
               )}
               {appt.priceUsd != null && (
@@ -1721,17 +1764,53 @@ function AppointmentDetail({ appt, phase, rooms, staffList, onClose, onUpdated, 
                 <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={inputStyle} />
               </div>
               <div>
-                <PremiumSelect
-                  label="Hora disponible"
-                  value={editSlot}
-                  options={rescheduleTimeOptions}
-                  placeholder={rescheduleSlotsLoading ? "Buscando horarios…" : "Seleccionar hora"}
-                  emptyLabel={rescheduleSlotsLoading ? "Buscando horarios…" : "Sin horarios ese día"}
-                  onChange={setEditSlot}
-                />
+                {editOutsideMode ? (
+                  <>
+                    <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Hora interna</label>
+                    <input type="time" value={editManualTime} onChange={(e) => setEditManualTime(e.target.value)} style={inputStyle} />
+                  </>
+                ) : (
+                  <PremiumSelect
+                    label="Hora disponible"
+                    value={editSlot}
+                    options={rescheduleTimeOptions}
+                    placeholder={rescheduleSlotsLoading ? "Buscando horarios…" : "Seleccionar hora"}
+                    emptyLabel={rescheduleSlotsLoading ? "Buscando horarios…" : "Sin horarios ese día"}
+                    onChange={setEditSlot}
+                  />
+                )}
               </div>
             </div>
-            {!rescheduleSlotsLoading && rescheduleSlots.length === 0 && (
+            {canScheduleOutside && (
+              <div style={{ border: "1px solid rgba(140,110,80,0.28)", borderRadius: 12, background: editOutsideMode ? "rgba(201,168,118,0.12)" : "rgba(253,252,250,0.75)", padding: 12 }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#6B5540", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={editOutsideMode}
+                    onChange={(e) => setEditOutsideMode(e.target.checked)}
+                    style={{ marginTop: 2, accentColor: "#8C6E50" }}
+                  />
+                  <span>
+                    Cita interna fuera del horario público
+                    <span style={{ display: "block", marginTop: 3, color: "#A89A87", fontSize: 12, fontWeight: 400, lineHeight: 1.45 }}>
+                      No cambia el horario visible para clientas ni bot.
+                    </span>
+                  </span>
+                </label>
+                {editOutsideMode && (
+                  <div style={{ marginTop: 10 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Motivo interno</label>
+                    <input
+                      value={editOutsideReason}
+                      onChange={(e) => setEditOutsideReason(e.target.value)}
+                      placeholder="Ej. Atención especial autorizada por Gianella"
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {!editOutsideMode && !rescheduleSlotsLoading && rescheduleSlots.length === 0 && (
               <p style={{ margin: 0, fontSize: 12, color: "#A89A87", lineHeight: 1.45 }}>
                 No hay espacio con esta cabina y terapeuta ese día. Prueba otra fecha o ajusta la asignación.
               </p>
@@ -1916,7 +1995,7 @@ function PremiumSelect({
   );
 }
 
-function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode }) {
+function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode, canScheduleOutside }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -1932,6 +2011,9 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [serviceId, setServiceId] = useState(preSelectedServiceId || "");
   const [date, setDate] = useState(followUpMode ? "" : defaultDate);
   const [time, setTime] = useState("");
+  const [outsideMode, setOutsideMode] = useState(false);
+  const [manualTime, setManualTime] = useState("");
+  const [outsideReason, setOutsideReason] = useState("");
   const [availableSlots, setAvailableSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [dayAppointments, setDayAppointments] = useState([]);
@@ -1955,7 +2037,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     },
     [rooms, selectedService]
   );
-  const selectedStart = useMemo(() => (time ? new Date(time) : null), [time]);
+  const manualSlotIso = useMemo(() => (
+    outsideMode ? ecuadorDateTimeToIso(date, manualTime) : ""
+  ), [date, manualTime, outsideMode]);
+  const selectedTime = outsideMode ? manualSlotIso : time;
+  const selectedStart = useMemo(() => (selectedTime ? new Date(selectedTime) : null), [selectedTime]);
   const selectedEnd = useMemo(
     () => (selectedStart && selectedService ? addMinutesToDate(selectedStart, totalServiceBlockMins(selectedService)) : null),
     [selectedStart, selectedService]
@@ -2096,7 +2182,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   }, [selectedService, compatibleRooms]);
 
   useEffect(() => {
-    if (!serviceId || !date) {
+    if (!serviceId || !date || outsideMode) {
       setAvailableSlots([]);
       setTime("");
       return;
@@ -2114,7 +2200,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         toast.error(err?.message || "No se pudieron cargar los horarios disponibles");
       })
       .finally(() => setSlotsLoading(false));
-  }, [serviceId, date]);
+  }, [serviceId, date, outsideMode, toast]);
 
   useEffect(() => {
     if (!date) {
@@ -2139,6 +2225,10 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     if (roomId && busyRoomIds.has(roomId)) setRoomId("");
     if (staffId && busyStaffIds.has(staffId)) setStaffId("");
   }, [busyRoomIds, busyStaffIds, roomId, staffId]);
+
+  useEffect(() => {
+    if (!canScheduleOutside && outsideMode) setOutsideMode(false);
+  }, [canScheduleOutside, outsideMode]);
 
   useEffect(() => {
     // La identidad se compara por el id de la ficha, nunca por el nombre. Si
@@ -2183,7 +2273,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       const clientId = selectedClient?.id;
       if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
-      if (!time) { setValidation("Selecciona un horario disponible"); setSubmitting(false); return; }
+      if (!selectedTime) { setValidation(outsideMode ? "Escribe la hora interna" : "Selecciona un horario disponible"); setSubmitting(false); return; }
+      if (outsideMode && !outsideReason.trim()) { setValidation("Escribe el motivo interno"); setSubmitting(false); return; }
       if (!staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
       if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene cabina compatible activa"); setSubmitting(false); return; }
       const selectedStaff = staff.find((person) => person.id === staffId);
@@ -2212,7 +2303,16 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
 
       await authFetch("/appointments", {
         method: "POST",
-        body: { clientId, serviceId, staffId, roomId: roomId || undefined, startsAt: time, modality: "presencial", indications: indications.trim() || undefined },
+        body: {
+          clientId,
+          serviceId,
+          staffId,
+          roomId: roomId || undefined,
+          startsAt: selectedTime,
+          modality: "presencial",
+          indications: indications.trim() || undefined,
+          ...(outsideMode ? { allowOutsideBusinessHours: true, outsideBusinessHoursReason: outsideReason.trim() } : {}),
+        },
       });
 
       toast.success("Reserva creada");
@@ -2344,18 +2444,61 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               <input id="date" type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
             <div>
-              <PremiumSelect
-                label="Hora"
-                value={time}
-                options={timeOptions}
-                placeholder="Seleccionar hora"
-                emptyLabel={serviceId ? "Sin horarios" : "Elige servicio"}
-                loading={slotsLoading}
-                disabled={!serviceId}
-                onChange={setTime}
-              />
+              {outsideMode ? (
+                <>
+                  <label style={labelStyle} htmlFor="manual-time">Hora interna</label>
+                  <input
+                    id="manual-time"
+                    type="time"
+                    style={inputStyle}
+                    value={manualTime}
+                    onChange={(e) => setManualTime(e.target.value)}
+                  />
+                </>
+              ) : (
+                <PremiumSelect
+                  label="Hora"
+                  value={time}
+                  options={timeOptions}
+                  placeholder="Seleccionar hora"
+                  emptyLabel={serviceId ? "Sin horarios" : "Elige servicio"}
+                  loading={slotsLoading}
+                  disabled={!serviceId}
+                  onChange={setTime}
+                />
+              )}
             </div>
           </div>
+          {canScheduleOutside && (
+            <div style={{ border: "1px solid rgba(140,110,80,0.28)", borderRadius: 12, background: outsideMode ? "rgba(201,168,118,0.12)" : "rgba(253,252,250,0.75)", padding: 12 }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#6B5540", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={outsideMode}
+                  onChange={(e) => setOutsideMode(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: "#8C6E50" }}
+                />
+                <span>
+                  Reserva interna fuera del horario público
+                  <span style={{ display: "block", marginTop: 3, color: "#A89A87", fontSize: 12, fontWeight: 400, lineHeight: 1.45 }}>
+                    Solo se guarda en la agenda interna. El link público y el bot seguirán mostrando el horario normal del spa.
+                  </span>
+                </span>
+              </label>
+              {outsideMode && (
+                <div style={{ marginTop: 10 }}>
+                  <label style={labelStyle} htmlFor="outside-reason">Motivo interno</label>
+                  <input
+                    id="outside-reason"
+                    style={inputStyle}
+                    value={outsideReason}
+                    onChange={(e) => setOutsideReason(e.target.value)}
+                    placeholder="Ej. Gianella atenderá personalmente después del cierre"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {selectedClient && clientDayAppointments.length > 0 && (
             <div style={{ border: "1px solid rgba(201,168,118,0.45)", borderRadius: 12, background: "rgba(255,248,232,0.82)", padding: "10px 12px", color: "#6B5540" }}>
               <p style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>
@@ -2404,7 +2547,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                 options={staffOptions}
                 placeholder="Seleccionar terapeuta"
                 emptyLabel="Sin terapeutas activas"
-                disabled={!time}
+                disabled={!selectedTime}
                 onChange={setStaffId}
               />
             </div>
