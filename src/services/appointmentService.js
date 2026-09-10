@@ -57,18 +57,20 @@ function roomAvailabilityHours(room, tenantConfig, dateStr, includeInternalHours
   return includeInternalHours ? INTERNAL_AGENDA_HOURS : roomBusinessHours(room, tenantConfig, dateStr);
 }
 
-function generateSlotsForService(dateStr, businessHours, timezone, service) {
+function generateSlotsForService(dateStr, businessHours, timezone, service, options = {}) {
   const slots = [];
   const normalized = normalizeBusinessHours(businessHours);
   const blockMins = totalBlockMins(service);
+  const includePastSlots = options.includePastSlots === true;
   for (const win of [normalized.morning, normalized.afternoon]) {
     if (!win) continue;
     const start = minutesFromHHMM(win.start);
     const latest = minutesFromHHMM(win.end) - blockMins;
     for (let m = start; m <= latest; m += SLOT_STEP_MINS) {
       const slot = localTimeToUTC(dateStr, hhmmFromMinutes(m), timezone);
-      // Nunca ofrecemos un horario que ya pasó, incluso si se consulta hoy.
-      if (slot.getTime() > Date.now()) slots.push(slot);
+      // En público nunca ofrecemos horarios pasados; la agenda interna puede
+      // mostrarlos para registrar una cita que recepción recordó tarde.
+      if (includePastSlots || slot.getTime() > Date.now()) slots.push(slot);
     }
   }
   return slots;
@@ -145,6 +147,12 @@ function canCreateOutsideBusinessHours(actor) {
   return actor?.role === 'dueno' || actor?.role === 'superadmin';
 }
 
+function canCreateManualPastAppointment(actor, tenantConfig, startsAt) {
+  if (!actor?.id && !actor?.role) return false;
+  const timezone = getTenantTimezone(tenantConfig);
+  return toLocalDateInTimezone(startsAt, timezone) === toLocalDateInTimezone(new Date(Date.now()), timezone);
+}
+
 function resolveOutsideBusinessHoursOverride(actor, {
   tenantConfig,
   startsAt,
@@ -199,7 +207,7 @@ function toLocalDateInTimezone(date, timezone) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null, includeInternalHours = false }) {
+async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null, includeInternalHours = false, includePastSlots = false }) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
@@ -219,6 +227,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
 
   const tz = getTenantTimezone(tenantConfig);
   const { dayStart, dayEnd } = localDayBoundsUTC(date, tz);
+  const canIncludePastSlots = includePastSlots && date === toLocalDateInTimezone(new Date(Date.now()), tz);
   const orConditions = [{ staffId: { in: staffIds } }];
   if (roomIds.length) orConditions.push({ roomId: { in: roomIds } });
   if (clientId) orConditions.push({ clientId });
@@ -236,7 +245,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
   const slotMap = new Map();
   for (const room of rooms) {
     const businessHours = roomAvailabilityHours(room, tenantConfig, date, includeInternalHours);
-    for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
+    for (const slot of generateSlotsForService(date, businessHours, tz, service, { includePastSlots: canIncludePastSlots })) {
       const blockedEnd = addMinutes(slot, totalBlockMins(service));
       const roomFree = isResourceFree(appointments, 'roomId', room.id, slot, blockedEnd);
       const staffFree = staffIds.some((id) => isResourceFree(appointments, 'staffId', id, slot, blockedEnd));
@@ -582,11 +591,14 @@ async function createManualAppointment(actor, data) {
   }
 
   const startsAt = new Date(data.startsAt);
-  if (Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= Date.now()) {
-    throw new BadRequestError('No se puede reservar una fecha u horario que ya pasó');
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
+  if (Number.isNaN(startsAt.getTime())) {
+    throw new BadRequestError('startsAt debe ser una fecha válida');
+  }
+  if (startsAt.getTime() <= Date.now() && !canCreateManualPastAppointment(actor, tenant?.config, startsAt)) {
+    throw new BadRequestError('No se puede reservar una fecha u horario que ya pasó. En agenda interna solo se permite registrar horarios pasados del mismo día.');
   }
   const endsAt = addMinutes(startsAt, totalBlockMins(service));
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
   const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
   const roomCandidates = await getCompatibleRooms(prisma, tenantId, service);
   if (roomCandidates.length === 0) {

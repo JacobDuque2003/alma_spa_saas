@@ -40,6 +40,7 @@ router.get('/availability', async (req, res, next) => {
       date: req.query.date,
       modality: req.query.modality || 'presencial',
       includeInternalHours: canSeeInternalHours(req.user),
+      includePastSlots: true,
     });
     res.json({ slots });
   } catch (err) {

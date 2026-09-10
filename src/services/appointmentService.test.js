@@ -30,6 +30,16 @@ const basePayload = (overrides = {}) => ({
   ...overrides,
 });
 
+async function withMockedNow(iso, fn) {
+  const originalNow = Date.now;
+  Date.now = () => new Date(iso).getTime();
+  try {
+    return await fn();
+  } finally {
+    Date.now = originalNow;
+  }
+}
+
 test('createPublicBooking rechaza con 400 si serviceId no pertenece al tenant', async () => {
   mockPrisma({
     client: { upsert: async () => ({ id: 'client1' }) },
@@ -217,6 +227,45 @@ test('getAvailability interno ofrece horas extendidas sin cambiar la disponibili
   assert.equal(internalSlots.includes('2099-08-02T01:30:00.000Z'), true);
 });
 
+test('getAvailability interno puede incluir horas pasadas del mismo día sin afectar público', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, offersHomeService: false }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    user: { findMany: async () => [{ id: 'staff1' }] },
+    appointment: { findMany: async () => [] },
+  });
+
+  await withMockedNow('2099-08-01T16:00:00.000Z', async () => {
+    const publicSlots = await appointmentService.getAvailability({
+      tenantId: 't1',
+      tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
+      serviceId: 'srv1',
+      date: '2099-08-01',
+      modality: 'spa',
+    });
+    const internalSlots = await appointmentService.getAvailability({
+      tenantId: 't1',
+      tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
+      serviceId: 'srv1',
+      date: '2099-08-01',
+      modality: 'spa',
+      includePastSlots: true,
+    });
+    const previousDaySlots = await appointmentService.getAvailability({
+      tenantId: 't1',
+      tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
+      serviceId: 'srv1',
+      date: '2099-07-31',
+      modality: 'spa',
+      includePastSlots: true,
+    });
+
+    assert.equal(publicSlots.includes('2099-08-01T14:00:00.000Z'), false);
+    assert.equal(internalSlots.includes('2099-08-01T14:00:00.000Z'), true);
+    assert.deepEqual(previousDaySlots, []);
+  });
+});
+
 test('la query de candidatos de staff filtra explícitamente por canAttendAppointments=true', async () => {
   let capturedWhere = null;
   mockPrisma({
@@ -314,6 +363,69 @@ test('createManualAppointment permite a dueña crear reserva interna fuera del h
   assert.equal(result.outsideBusinessHours, true);
   assert.equal(createArgs.data.outsideBusinessHoursById, 'owner1');
   assert.match(createArgs.data.outsideBusinessHoursReason, /Gianella atiende/);
+});
+
+test('createManualAppointment permite registrar una cita pasada del mismo día en agenda interna', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findMany: async () => [],
+      create: async (args) => ({ id: 'appt1', ...args.data }),
+    },
+  });
+
+  await withMockedNow('2099-08-01T16:00:00.000Z', async () => {
+    const result = await appointmentService.createManualAppointment(
+      { id: 'staff2', role: 'personal', tenantId: 't1' },
+      {
+        clientId: 'c1',
+        serviceId: 'srv1',
+        staffId: 'staff1',
+        roomId: 'room1',
+        startsAt: '2099-08-01T14:00:00.000Z',
+        modality: 'presencial',
+      }
+    );
+
+    assert.equal(result.status, 'confirmado');
+    assert.equal(result.startsAt.toISOString(), '2099-08-01T14:00:00.000Z');
+    assert.equal(result.outsideBusinessHours, false);
+  });
+});
+
+test('createManualAppointment sigue rechazando citas pasadas de días anteriores', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    appointment: {
+      findMany: async () => [],
+      create: async () => {
+        throw new Error('no debe crear una cita pasada de otro día');
+      },
+    },
+  });
+
+  await withMockedNow('2099-08-02T16:00:00.000Z', async () => {
+    await assert.rejects(
+      () => appointmentService.createManualAppointment(
+        { id: 'staff2', role: 'personal', tenantId: 't1' },
+        {
+          clientId: 'c1',
+          serviceId: 'srv1',
+          staffId: 'staff1',
+          roomId: 'room1',
+          startsAt: '2099-08-01T14:00:00.000Z',
+          modality: 'presencial',
+        }
+      ),
+      (err) => err.status === 400 && /mismo día/.test(err.message)
+    );
+  });
 });
 
 test('createManualAppointment rechaza excepción fuera de horario para personal no dueño', async () => {
