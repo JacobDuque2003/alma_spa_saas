@@ -120,13 +120,19 @@ function quickCreatePanelFrame(prefill) {
   if (!prefill || typeof window === "undefined") return {};
   const margin = 12;
   const gap = 12;
-  const preferredWidth = 500;
-  const panelWidth = Math.min(preferredWidth, window.innerWidth - margin * 2);
-  const canOpenRight = prefill.anchorX + gap + panelWidth <= window.innerWidth - margin;
-  const rawLeft = canOpenRight ? prefill.anchorX + gap : prefill.anchorX - panelWidth - gap;
+  const preferredWidth = 460;
+  const columnLeft = Number.isFinite(prefill.columnLeft) ? prefill.columnLeft : prefill.anchorX;
+  const columnRight = Number.isFinite(prefill.columnRight) ? prefill.columnRight : prefill.anchorX;
+  const rightSpace = Math.max(0, window.innerWidth - columnRight - gap - margin);
+  const leftSpace = Math.max(0, columnLeft - gap - margin);
+  const side = rightSpace >= preferredWidth || rightSpace >= leftSpace ? "right" : "left";
+  const sideSpace = side === "right" ? rightSpace : leftSpace;
+  const panelWidth = Math.min(preferredWidth, Math.max(320, sideSpace), window.innerWidth - margin * 2);
+  const rawLeft = side === "right" ? columnRight + gap : columnLeft - panelWidth - gap;
   const left = Math.max(margin, Math.min(window.innerWidth - panelWidth - margin, rawLeft));
-  const maxTop = Math.max(margin, window.innerHeight - 620);
-  const top = Math.max(margin, Math.min(maxTop, prefill.anchorY - 46));
+  const topMargin = 34;
+  const maxTop = Math.max(topMargin, window.innerHeight - 620);
+  const top = Math.max(topMargin, Math.min(maxTop, prefill.anchorY - 58));
   return {
     position: "fixed",
     left,
@@ -1183,6 +1189,8 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       roomColor: roomColorMap[room.id] || room.colorHex || "#8C6E50",
       anchorX: event.clientX,
       anchorY: event.clientY,
+      columnLeft: rect.left,
+      columnRight: rect.right,
     });
   }
 
