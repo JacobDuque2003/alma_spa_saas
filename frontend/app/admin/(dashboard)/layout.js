@@ -57,6 +57,9 @@ function canSeeNavItem(item, user) {
 // Tiempo suficiente para leer el aviso completo sin que quede fijo en pantalla.
 const OUT_OF_SCHEDULE_BANNER_MS = 8000;
 const SIDEBAR_MOTION = "260ms var(--ease-out-quart)";
+const SIDEBAR_EXPANDED_WIDTH = 214;
+const SIDEBAR_COLLAPSED_WIDTH = 74;
+const SIDEBAR_ICON_BUTTON = 46;
 
 const ROLE_LABELS = {
   superadmin: "Técnico",
@@ -265,13 +268,13 @@ function Shell({ children }) {
           title={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
           aria-label={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
           style={{
-            width: sidebarCollapsed ? 46 : "100%",
-            height: sidebarCollapsed ? 42 : undefined,
+            width: sidebarCollapsed ? SIDEBAR_ICON_BUTTON : "100%",
+            height: 42,
             display: "inline-flex",
             alignItems: "center",
-            justifyContent: "center",
-            gap: sidebarCollapsed ? 0 : 8,
-            margin: sidebarCollapsed ? "0 auto 8px" : "0 0 8px",
+            justifyContent: "flex-start",
+            gap: 8,
+            margin: sidebarCollapsed ? "0 0 8px" : "0 0 8px",
             padding: "9px 12px",
             borderRadius: sidebarCollapsed ? 16 : 14,
             border: "1px solid rgba(168,154,135,0.35)",
@@ -282,15 +285,17 @@ function Shell({ children }) {
             fontWeight: 600,
             overflow: "hidden",
             whiteSpace: "nowrap",
-            transition: `width ${SIDEBAR_MOTION}, margin ${SIDEBAR_MOTION}, border-radius ${SIDEBAR_MOTION}, gap ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
+            transition: `width ${SIDEBAR_MOTION}, border-radius ${SIDEBAR_MOTION}`,
           }}
         >
-          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={16} />}
+          <span style={{ width: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={16} />}
+          </span>
           <span
             style={{
               maxWidth: sidebarCollapsed ? 0 : 92,
               opacity: sidebarCollapsed ? 0 : 1,
-              transform: sidebarCollapsed ? "translateX(-6px)" : "translateX(0)",
+              transform: sidebarCollapsed ? "translateX(-10px)" : "translateX(0)",
               overflow: "hidden",
               transition: `max-width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
             }}
@@ -305,11 +310,12 @@ function Shell({ children }) {
           marginTop: "auto",
           display: "flex",
           alignItems: "center",
-          gap: sidebarCollapsed ? 0 : 8,
-          padding: sidebarCollapsed ? "10px 0" : "10px 10px",
+          gap: 8,
+          padding: "10px 10px",
           borderTop: "1px solid rgba(168,154,135,0.35)",
-          justifyContent: sidebarCollapsed ? "center" : "flex-start",
-          transition: `gap ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
+          justifyContent: "flex-start",
+          overflow: "hidden",
+          transition: `padding ${SIDEBAR_MOTION}`,
         }}
       >
         {user && (
@@ -322,7 +328,7 @@ function Shell({ children }) {
                 gap: 10,
                 textDecoration: "none",
                 minWidth: 0,
-                flex: sidebarCollapsed ? "0 0 auto" : 1,
+                flex: 1,
                 overflow: "hidden",
               }}
               title="Mi perfil"
@@ -351,7 +357,7 @@ function Shell({ children }) {
                   flex: 1,
                   maxWidth: sidebarCollapsed ? 0 : 124,
                   opacity: sidebarCollapsed ? 0 : 1,
-                  transform: sidebarCollapsed ? "translateX(-6px)" : "translateX(0)",
+                  transform: sidebarCollapsed ? "translateX(-10px)" : "translateX(0)",
                   overflow: "hidden",
                   transition: `max-width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
                 }}
@@ -495,7 +501,6 @@ function Shell({ children }) {
       <aside
         className="alma-nav-rail flex flex-col"
         style={{
-          width: sidebarCollapsed ? 76 : 214,
           // Animar a la vez width y flex-basis dejaba dos medidas compitiendo
           // entre sí y producía pequeños saltos al abrir/cerrar el menú.
           flex: "0 0 auto",
@@ -504,7 +509,8 @@ function Shell({ children }) {
           minWidth: 0,
           overflow: "hidden",
           boxSizing: "border-box",
-          padding: sidebarCollapsed ? "16px 10px" : "18px 14px 16px",
+          width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH,
+          padding: sidebarCollapsed ? "16px 14px" : "18px 14px 16px",
           transition: `width ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
           willChange: "width",
           transform: "translateZ(0)",
@@ -601,34 +607,43 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
   const baseStyle = {
     display: "flex",
     alignItems: "center",
-    justifyContent: desktopCollapsed ? "center" : "flex-start",
-    gap: desktopCollapsed ? 0 : 10,
-    padding: isMobile ? "14px 16px" : desktopCollapsed ? "12px 0" : "11px 13px",
+    justifyContent: "flex-start",
+    gap: 10,
+    padding: isMobile ? "14px 16px" : desktopCollapsed ? "11px 13px" : "11px 13px",
     borderRadius: active ? 18 : 16,
     fontSize: isMobile ? 15 : 13,
     textDecoration: "none",
-    transition: `background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart), border-radius var(--motion-fast) var(--ease-out-quart), gap ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
+    transition: `background var(--motion-fast) var(--ease-out-quart), color var(--motion-fast) var(--ease-out-quart), border-radius var(--motion-fast) var(--ease-out-quart), padding ${SIDEBAR_MOTION}`,
     minHeight: isMobile ? 44 : 46,
     position: "relative",
     overflow: "hidden",
+    boxSizing: "border-box",
   };
   const labelStyle = isMobile
     ? { flex: 1 }
     : {
-      flex: 1,
+      flex: "0 1 auto",
       minWidth: 0,
       maxWidth: desktopCollapsed ? 0 : 126,
       opacity: desktopCollapsed ? 0 : 1,
-      transform: desktopCollapsed ? "translateX(-6px)" : "translateX(0)",
+      transform: desktopCollapsed ? "translateX(-10px)" : "translateX(0)",
       overflow: "hidden",
       whiteSpace: "nowrap",
       transition: `max-width ${SIDEBAR_MOTION}, opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
     };
+  const iconStyle = {
+    width: 20,
+    height: 20,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: "0 0 20px",
+  };
 
   if (!item.enabled) {
     return (
       <div style={{ ...baseStyle, color: "rgba(168,154,135,0.5)", cursor: "not-allowed" }}>
-        {Icon && <Icon size={18} />}
+        {Icon && <span style={iconStyle}><Icon size={18} /></span>}
         <span style={labelStyle}>{item.label}</span>
       </div>
     );
@@ -647,7 +662,7 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
         }}
         title={desktopCollapsed ? itemTitle : undefined}
       >
-        {Icon && <Icon size={18} strokeWidth={2} />}
+        {Icon && <span style={iconStyle}><Icon size={18} strokeWidth={2} /></span>}
         <span style={labelStyle}>{item.label}</span>
         {badge > 0 && <span className="alma-badge" style={desktopCollapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
       </Link>
@@ -666,7 +681,7 @@ function NavItem({ item, active, isMobile, collapsed = false, badge = 0 }) {
         e.currentTarget.style.background = "transparent";
       }}
     >
-      {Icon && <Icon size={18} strokeWidth={1.8} />}
+      {Icon && <span style={iconStyle}><Icon size={18} strokeWidth={1.8} /></span>}
       <span style={labelStyle}>{item.label}</span>
       {badge > 0 && <span className="alma-badge" style={desktopCollapsed ? { position: "absolute", top: 2, right: 3 } : undefined}>{badge}</span>}
     </Link>
