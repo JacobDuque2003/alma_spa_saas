@@ -13,8 +13,8 @@ const PERMISSION_GROUPS = [
     title: "Agenda",
     description: "Reservas, cabinas y atención diaria",
     items: [
-      ["agenda", "Ver y gestionar agenda", "Crear, mover y revisar reservas"],
-      ["gabinetes", "Ver cabinas", "Estado en tiempo real y reservas por cabina"],
+      ["agenda", "Ver agenda", "Revisar reservas y horarios"],
+      ["agendaCrearMover", "Crear y mover reservas", "Mostrar Nueva reserva, crear desde la agenda y arrastrar citas"],
     ],
   },
   {
@@ -59,6 +59,8 @@ const PERMISSION_GROUPS = [
 ];
 
 const MODULES = PERMISSION_GROUPS.flatMap((group) => group.items);
+const HIDDEN_PERMISSION_KEYS = ["gabinetes"];
+const FORM_PERMISSION_KEYS = [...new Set([...MODULES.map(([key]) => key), ...HIDDEN_PERMISSION_KEYS])];
 const FULL_ACCESS_PERMISSIONS = Object.fromEntries(MODULES.map(([key]) => [key, true]));
 
 function roleLabel(role) {
@@ -190,7 +192,7 @@ function NewUserModal({ phase, onClose, onSaved }) {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("personal");
   const [permissions, setPermissions] = useState(
-    Object.fromEntries(MODULES.map(([k]) => [k, false]))
+    Object.fromEntries(FORM_PERMISSION_KEYS.map((k) => [k, false]))
   );
   const [canAttendAppointments, setCanAttendAppointments] = useState(false);
   // Guardrail AppSec: al crear una cuenta personal se prellena el horario con
@@ -439,7 +441,7 @@ export default function PersonalPage() {
   const selected = useMemo(() => users.find((u) => u.id === selectedId), [users, selectedId]);
 
   useEffect(() => {
-    setDraft(Object.fromEntries(MODULES.map(([k]) => [k, !!selected?.rolePermission?.[k]])));
+    setDraft(Object.fromEntries(FORM_PERMISSION_KEYS.map((k) => [k, !!selected?.rolePermission?.[k]])));
   }, [selected]);
 
   async function updatePermission(key, checked) {

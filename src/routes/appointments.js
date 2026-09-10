@@ -77,7 +77,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requirePermission('agendaCrearMover'), async (req, res, next) => {
   try {
     const appointment = await appointmentService.createManualAppointment(req.user, req.body);
     res.status(201).json(appointment);
@@ -86,7 +86,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:id', requirePermission('agendaCrearMover'), async (req, res, next) => {
   try {
     const appointment = await appointmentService.updateAppointment(req.user, req.params.id, req.body);
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });
@@ -96,7 +96,7 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-router.patch('/:id/status', async (req, res, next) => {
+router.patch('/:id/status', requirePermission('agendaCrearMover'), async (req, res, next) => {
   try {
     const appointment = await appointmentService.updateStatus(req.user, req.params.id, req.body.status);
     if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });

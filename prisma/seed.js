@@ -56,10 +56,11 @@ async function main() {
   });
   await prisma.rolePermission.upsert({
     where: { userId: recepcionista.id },
-    update: { agenda: true, gabinetes: true, clientes: true, crm: true },
+    update: { agenda: true, agendaCrearMover: true, gabinetes: true, clientes: true, crm: true },
     create: {
       userId: recepcionista.id,
       agenda: true,
+      agendaCrearMover: true,
       gabinetes: true,
       clientes: true,
       crm: true,
@@ -79,10 +80,11 @@ async function main() {
   });
   await prisma.rolePermission.upsert({
     where: { userId: terapeuta.id },
-    update: { agenda: true, clientes: true },
+    update: { agenda: true, agendaCrearMover: true, clientes: true },
     create: {
       userId: terapeuta.id,
       agenda: true,
+      agendaCrearMover: true,
       gabinetes: false,
       clientes: true,
       crm: false,

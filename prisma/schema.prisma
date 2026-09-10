@@ -81,6 +81,7 @@ model RolePermission {
   id            String  @id @default(cuid())
   userId        String  @unique
   agenda        Boolean @default(false)
+  agendaCrearMover Boolean @default(false)
   gabinetes     Boolean @default(false)
   clientes      Boolean @default(false)
   crm           Boolean @default(false)

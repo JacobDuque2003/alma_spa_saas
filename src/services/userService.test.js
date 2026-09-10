@@ -514,7 +514,7 @@ test('[SECURITY] happy path: crear personal valido funciona correctamente', asyn
       name: 'Maria Lopez',
       role: 'personal',
       canAttendAppointments: true,
-      permissions: { agenda: true, gabinetes: false, clientes: true, crm: false, reportes: false, configuracion: false },
+      permissions: { agenda: true, agendaCrearMover: true, gabinetes: false, clientes: true, crm: false, reportes: false, configuracion: false },
     }
   );
 
@@ -542,6 +542,7 @@ test('permisos finos de bandeja se normalizan y no se activan por accidente', ()
   });
 
   assert.equal(permissions.crm, true);
+  assert.equal(permissions.agendaCrearMover, false);
   assert.equal(permissions.crmEtiquetasGestionar, true);
   assert.equal(permissions.crmNotasGestionar, true);
   assert.equal(permissions.crmRespuestasRapidasGestionar, false);

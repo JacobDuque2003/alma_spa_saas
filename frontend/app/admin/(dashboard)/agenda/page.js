@@ -260,6 +260,7 @@ function formatDayFull(dateStr) {
 
 export default function AgendaPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const today = toLocalDate(new Date());
   const searchParams = useSearchParams();
   const preClientId = searchParams.get("clientId");
@@ -310,7 +311,9 @@ export default function AgendaPage() {
 
   const effectiveView = isMobile ? "day" : view;
   const filteredAppointments = appointments;
+  const hasFullAccess = user?.role === "dueno" || user?.role === "superadmin";
   const canScheduleOutside = user?.role === "dueno" || user?.role === "superadmin";
+  const canCreateMoveAppointments = hasFullAccess || !!user?.permissions?.agendaCrearMover;
 
   const fetchData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -422,6 +425,7 @@ export default function AgendaPage() {
   }
 
   function openQuickCreate(prefill) {
+    if (!canCreateMoveAppointments) return;
     setSelected(null);
     setSlotGroup(null);
     setFollowUpPrefill(null);
@@ -442,6 +446,43 @@ export default function AgendaPage() {
       colorHex: prefill.roomColor || "#8C6E50",
     } : null);
     setShowNewForm(true);
+  }
+
+  async function moveAppointment(appt, target) {
+    if (!canCreateMoveAppointments || !appt?.id || !target?.startsAt || !target?.roomId) return;
+    const previousAppointments = appointments;
+    const movedRoom = rooms.find((room) => room.id === target.roomId) || appt.room;
+    const nextStart = new Date(target.startsAt);
+    const nextEnd = addMinutesToDate(nextStart, totalServiceBlockMins(appt.service || {}));
+    const optimistic = {
+      ...appt,
+      startsAt: nextStart.toISOString(),
+      endsAt: nextEnd.toISOString(),
+      roomId: target.roomId,
+      room: movedRoom,
+    };
+
+    setAppointments((prev) => prev.map((item) => (item.id === appt.id ? optimistic : item)));
+    setSelected((current) => (current?.id === appt.id ? optimistic : current));
+
+    try {
+      const updated = await authFetch(`/appointments/${appt.id}`, {
+        method: "PATCH",
+        body: {
+          startsAt: target.startsAt,
+          roomId: target.roomId,
+          ...(canScheduleOutside ? { allowOutsideBusinessHours: true, outsideBusinessHoursReason: "Agenda interna ampliada" } : {}),
+        },
+      });
+      const merged = { ...optimistic, ...updated, service: appt.service, client: appt.client, room: movedRoom, staff: appt.staff };
+      setAppointments((prev) => prev.map((item) => (item.id === appt.id ? merged : item)));
+      setSelected((current) => (current?.id === appt.id ? merged : current));
+      toast.success("Reserva movida");
+    } catch (err) {
+      setAppointments(previousAppointments);
+      setSelected((current) => (current?.id === appt.id ? appt : current));
+      toast.error(err?.message || "No se pudo mover la reserva. Revisa que la cabina, la terapeuta y la clienta estén libres en ese horario.");
+    }
   }
 
   function openAgendaResult(appt) {
@@ -607,6 +648,7 @@ export default function AgendaPage() {
             </div>
           </div>
           {isMobile && (
+            canCreateMoveAppointments && (
             <button
               onClick={openManualNewForm}
               style={{
@@ -625,6 +667,7 @@ export default function AgendaPage() {
             >
               +
             </button>
+            )
           )}
         </div>
 
@@ -678,23 +721,25 @@ export default function AgendaPage() {
                 Día
               </button>
             </div>
-            <button
-              onClick={openManualNewForm}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "10px 22px",
-                background: "#8C6E50",
-                color: "#F7F5F0",
-                borderRadius: 999,
-                border: "none",
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
-              + Nueva reserva
-            </button>
+            {canCreateMoveAppointments && (
+              <button
+                onClick={openManualNewForm}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "10px 22px",
+                  background: "#8C6E50",
+                  color: "#F7F5F0",
+                  borderRadius: 999,
+                  border: "none",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                + Nueva reserva
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -733,7 +778,9 @@ export default function AgendaPage() {
             tenantConfig={tenantConfig}
             onSelect={setSelected}
             onSelectGroup={setSlotGroup}
-            onCreateFromSlot={openQuickCreate}
+            onCreateFromSlot={canCreateMoveAppointments ? openQuickCreate : null}
+            onMoveAppointment={moveAppointment}
+            canMoveAppointments={canCreateMoveAppointments}
             draftAppointment={quickDraft}
           />
         )}
@@ -757,6 +804,7 @@ export default function AgendaPage() {
           rooms={rooms}
           staffList={staffList}
           canScheduleOutside={canScheduleOutside}
+          canManageAppointments={canCreateMoveAppointments}
           onClose={() => setSelected(null)}
           onUpdated={(updated, options = {}) => {
             const merged = (source) => (source?.id === updated.id ? { ...source, ...updated } : source);
@@ -1162,8 +1210,9 @@ function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
   return hourInWindow(hour, morning) || hourInWindow(hour, afternoon);
 }
 
-function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, draftAppointment }) {
+function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, onMoveAppointment, canMoveAppointments, draftAppointment }) {
   const HOUR_HEIGHT = 66;
+  const [draggingId, setDraggingId] = useState(null);
   const active = (appointments || [])
     .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
@@ -1178,8 +1227,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   const firstHour = HOURS[0];
   const lastHour = HOURS[HOURS.length - 1];
 
-  function handleColumnClick(event, room) {
-    if (!onCreateFromSlot || room.id === "__sin-cabina") return;
+  function targetFromPointer(event, room) {
     const rect = event.currentTarget.getBoundingClientRect();
     const y = Math.max(0, Math.min(event.clientY - rect.top, rect.height - 1));
     const minutesFromFirstHour = Math.floor(((y / HOUR_HEIGHT) * 60) / 15) * 15;
@@ -1191,7 +1239,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       const left = gridRect.left + 56 + index * rect.width;
       columnBoundsByRoomId[column.id] = { left, right: left + rect.width };
     });
-    onCreateFromSlot({
+    return {
       date,
       roomId: room.id,
       roomName: room.name,
@@ -1203,7 +1251,23 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       columnLeft: rect.left,
       columnRight: rect.right,
       columnBoundsByRoomId,
-    });
+    };
+  }
+
+  function handleColumnClick(event, room) {
+    if (!onCreateFromSlot || room.id === "__sin-cabina") return;
+    onCreateFromSlot(targetFromPointer(event, room));
+  }
+
+  function handleColumnDrop(event, room) {
+    if (!canMoveAppointments || !onMoveAppointment || room.id === "__sin-cabina") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const appointmentId = event.dataTransfer.getData("text/plain");
+    const appt = active.find((item) => item.id === appointmentId);
+    if (!appt) return;
+    setDraggingId(null);
+    onMoveAppointment(appt, targetFromPointer(event, room));
   }
 
   return (
@@ -1290,12 +1354,16 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
             <div
               key={room.id}
               onClick={(event) => handleColumnClick(event, room)}
+              onDragOver={(event) => {
+                if (canMoveAppointments && draggingId && room.id !== "__sin-cabina") event.preventDefault();
+              }}
+              onDrop={(event) => handleColumnDrop(event, room)}
               style={{
                 position: "relative",
                 borderLeft: "1px solid rgba(168,154,135,0.22)",
                 height: HOURS.length * HOUR_HEIGHT,
                 background: date === today ? "rgba(235,205,181,0.07)" : "transparent",
-                cursor: room.id === "__sin-cabina" ? "default" : "crosshair",
+                cursor: room.id === "__sin-cabina" ? "default" : (onCreateFromSlot ? "crosshair" : "default"),
               }}
             >
               {HOURS.map((h, i) => {
@@ -1374,6 +1442,17 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                 return (
                   <button
                     key={appt.id}
+                    draggable={!!canMoveAppointments && !noShow}
+                    onDragStart={(event) => {
+                      if (!canMoveAppointments || noShow) {
+                        event.preventDefault();
+                        return;
+                      }
+                      setDraggingId(appt.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", appt.id);
+                    }}
+                    onDragEnd={() => setDraggingId(null)}
                     onClick={(event) => {
                       event.stopPropagation();
                       onSelect(appt);
@@ -1388,12 +1467,13 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                       padding: "8px 10px",
                       fontSize: 12,
                       overflow: "hidden",
-                      cursor: "pointer",
+                      cursor: canMoveAppointments && !noShow ? "grab" : "pointer",
                       border: noShow ? "1px solid rgba(194,84,80,0.55)" : "1px solid rgba(255,255,255,0.22)",
                       background: noShow ? "rgba(194,84,80,0.12)" : color,
                       color: noShow ? "#B85A56" : "#F7F5F0",
                       textAlign: "left",
-                      zIndex: 1,
+                      zIndex: draggingId === appt.id ? 4 : 1,
+                      opacity: draggingId === appt.id ? 0.62 : 1,
                       boxShadow: "0 8px 18px rgba(64,51,39,0.10)",
                       textDecoration: noShow ? "line-through" : "none",
                       textDecorationColor: "rgba(194,84,80,0.75)",
@@ -1636,7 +1716,7 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
     </div>
   );
 }
-function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, onClose, onUpdated, onFollowUp }) {
+function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, canManageAppointments, onClose, onUpdated, onFollowUp }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1757,7 +1837,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     }
   }
 
-  const canChange = appt.status !== "cancelado" && appt.status !== "no_show";
+  const canChange = canManageAppointments && appt.status !== "cancelado" && appt.status !== "no_show";
   // Follow-up: pensado para citas ya cumplidas donde la clienta necesita
   // volver (ej. tratamiento con seguimiento). Se muestra solo si la cita
   // esta confirmada Y ya termino en el pasado — heuristica de "asistió"

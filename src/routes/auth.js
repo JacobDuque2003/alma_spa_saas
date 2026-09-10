@@ -6,6 +6,7 @@ const prisma = require('../utils/prisma');
 
 const MODULE_PERMISSIONS = [
   'agenda',
+  'agendaCrearMover',
   'gabinetes',
   'clientes',
   'crm',

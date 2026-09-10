@@ -60,7 +60,7 @@ async function main() {
   await prisma.rolePermission.upsert({
     where: { userId: terapeuta2.id },
     update: {},
-    create: { userId: terapeuta2.id, agenda: true, gabinetes: false, clientes: true, crm: true, reportes: false, configuracion: false },
+    create: { userId: terapeuta2.id, agenda: true, agendaCrearMover: true, gabinetes: false, clientes: true, crm: true, reportes: false, configuracion: false },
   });
 
   const service3 = await prisma.service.upsert({

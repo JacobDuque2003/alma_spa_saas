@@ -31,6 +31,7 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
         passwordHash: 'hash-que-no-debe-salir',
         rolePermission: {
           agenda: true,
+          agendaCrearMover: true,
           gabinetes: true,
           clientes: true,
           clientesEditar: false,
@@ -59,6 +60,7 @@ test('GET /auth/me devuelve permisos efectivos para personal y nunca passwordHas
   assert.equal(res.body.email, 'daniela@alma.test');
   assert.deepEqual(res.body.permissions, {
     agenda: true,
+    agendaCrearMover: true,
     gabinetes: true,
     clientes: true,
     clientesEditar: false,
@@ -99,6 +101,7 @@ test('GET /auth/me devuelve todos los permisos efectivos para dueno', async () =
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.permissions, {
     agenda: true,
+    agendaCrearMover: true,
     gabinetes: true,
     clientes: true,
     clientesEditar: true,

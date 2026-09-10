@@ -41,6 +41,7 @@ const ALLOWED_JOB_TITLES = ['cosmetologa', 'terapeuta', 'masajista'];
 
 const PERMISSION_KEYS = [
   'agenda',
+  'agendaCrearMover',
   'gabinetes',
   'clientes',
   'crm',
