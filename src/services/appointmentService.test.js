@@ -189,6 +189,34 @@ test('getAvailability rechaza con 400 si modality=domicilio', async () => {
   );
 });
 
+test('getAvailability interno ofrece horas extendidas sin cambiar la disponibilidad pública', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15, offersHomeService: false }) },
+    room: { findMany: async () => [{ id: 'room1' }] },
+    user: { findMany: async () => [{ id: 'staff1' }] },
+    appointment: { findMany: async () => [] },
+  });
+
+  const publicSlots = await appointmentService.getAvailability({
+    tenantId: 't1',
+    tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } } },
+    serviceId: 'srv1',
+    date: '2099-08-01',
+    modality: 'spa',
+  });
+  const internalSlots = await appointmentService.getAvailability({
+    tenantId: 't1',
+    tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } } },
+    serviceId: 'srv1',
+    date: '2099-08-01',
+    modality: 'spa',
+    includeInternalHours: true,
+  });
+
+  assert.equal(publicSlots.includes('2099-08-02T01:30:00.000Z'), false);
+  assert.equal(internalSlots.includes('2099-08-02T01:30:00.000Z'), true);
+});
+
 test('la query de candidatos de staff filtra explícitamente por canAttendAppointments=true', async () => {
   let capturedWhere = null;
   mockPrisma({
@@ -527,4 +555,42 @@ test('updateAppointment rechaza reprogramar fuera del horario dividido', async (
     ),
     (err) => err.status === 400 && /fuera del horario/.test(err.message)
   );
+});
+
+test('updateAppointment permite a dueña mover una cita a horario interno ampliado', async () => {
+  let updateData = null;
+  mockPrisma({
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'masajes' }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1',
+        tenantId: 't1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        clientId: 'c1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+      }),
+      findMany: async () => [],
+      update: async ({ data }) => {
+        updateData = data;
+        return { id: 'appt1', ...data };
+      },
+    },
+  });
+
+  const result = await appointmentService.updateAppointment(
+    { id: 'owner1', role: 'dueno', tenantId: 't1' },
+    'appt1',
+    {
+      startsAt: '2099-08-02T01:30:00.000Z',
+      allowOutsideBusinessHours: true,
+      outsideBusinessHoursReason: 'Agenda interna ampliada',
+    }
+  );
+
+  assert.equal(result.outsideBusinessHours, true);
+  assert.equal(updateData.outsideBusinessHoursById, 'owner1');
+  assert.match(updateData.outsideBusinessHoursReason, /Agenda interna/);
 });

@@ -10,6 +10,10 @@ const router = express.Router();
 
 router.use(authenticate, requirePermission('agenda'));
 
+function canSeeInternalHours(user) {
+  return user?.role === 'dueno' || user?.role === 'superadmin';
+}
+
 // La agenda y el CRM comparten el canal de eventos por tenant.  Mantenerlo
 // antes de /:id evita que Express interprete "events" como un id de cita.
 router.get('/events', (req, res) => {
@@ -35,6 +39,7 @@ router.get('/availability', async (req, res, next) => {
       serviceId: req.query.serviceId,
       date: req.query.date,
       modality: req.query.modality || 'presencial',
+      includeInternalHours: canSeeInternalHours(req.user),
     });
     res.json({ slots });
   } catch (err) {
@@ -53,6 +58,7 @@ router.get('/:id/reschedule-availability', async (req, res, next) => {
       date: req.query.date,
       roomId: req.query.roomId || undefined,
       staffId: req.query.staffId || undefined,
+      includeInternalHours: canSeeInternalHours(req.user),
     });
     res.json({ slots });
   } catch (err) {

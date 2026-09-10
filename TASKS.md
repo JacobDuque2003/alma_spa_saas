@@ -16,7 +16,7 @@
 - [x] Mantener el horario de acceso de cada trabajadora como control de sesión/panel, no como disponibilidad clínica separada.
 - [x] Permitir editar por servicio y subservicio la duración de sesión (`durationMins`) y pausa (`bufferMins`).
 - [x] Mostrar bloque total por servicio como sesión + pausa, y usar ese bloque para calcular cuántas reservas caben en el día.
-- [x] Permitir reservas internas fuera del horario público solo desde Agenda, solo para dueña/superadmin y con motivo interno; el link público y el bot no muestran esos cupos.
+- [x] Mostrar más horarios disponibles en Agenda para dueña/superadmin mediante disponibilidad interna ampliada; el link público y el bot conservan el horario normal.
 - [ ] Verificación real end-to-end: cambiar duración/pausa de un servicio, comprobar agenda, reserva pública y bot.
 - [ ] Mejorar mensaje vacío cuando una duración muy larga no cabe en el horario abierto del local/cabina.
 

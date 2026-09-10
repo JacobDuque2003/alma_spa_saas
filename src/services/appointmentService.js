@@ -17,6 +17,7 @@ function getBusinessHours(tenantConfig) {
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const SLOT_STEP_MINS = 15;
+const INTERNAL_AGENDA_HOURS = { morning: { start: '08:00', end: '22:00' }, afternoon: null };
 
 function minutesFromHHMM(hhmm) {
   const [h, m] = String(hhmm).split(':').map(Number);
@@ -50,6 +51,10 @@ function roomBusinessHours(room, tenantConfig, dateStr) {
     return special ? normalizeBusinessHours(special) : normalizeBusinessHours(tenantConfig?.businessHours);
   }
   return normalizeBusinessHours(tenantConfig?.businessHours);
+}
+
+function roomAvailabilityHours(room, tenantConfig, dateStr, includeInternalHours = false) {
+  return includeInternalHours ? INTERNAL_AGENDA_HOURS : roomBusinessHours(room, tenantConfig, dateStr);
 }
 
 function generateSlotsForService(dateStr, businessHours, timezone, service) {
@@ -194,7 +199,7 @@ function toLocalDateInTimezone(date, timezone) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null }) {
+async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null, includeInternalHours = false }) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
@@ -230,7 +235,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
 
   const slotMap = new Map();
   for (const room of rooms) {
-    const businessHours = roomBusinessHours(room, tenantConfig, date);
+    const businessHours = roomAvailabilityHours(room, tenantConfig, date, includeInternalHours);
     for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
       const blockedEnd = addMinutes(slot, totalBlockMins(service));
       const roomFree = isResourceFree(appointments, 'roomId', room.id, slot, blockedEnd);
@@ -251,7 +256,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
  * la cita actual de los conflictos y aplica exactamente el mismo bloque del
  * servicio: duración + pausa, horario de la cabina y zona del tenant.
  */
-async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId }) {
+async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId, includeInternalHours = false }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
     throw new BadRequestError('date debe tener formato YYYY-MM-DD');
   }
@@ -301,7 +306,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
   });
 
   const slots = [];
-  const businessHours = roomBusinessHours(room, tenantConfig, date);
+  const businessHours = roomAvailabilityHours(room, tenantConfig, date, includeInternalHours);
   for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
     const endsAt = addMinutes(slot, totalBlockMins(service));
     if (
