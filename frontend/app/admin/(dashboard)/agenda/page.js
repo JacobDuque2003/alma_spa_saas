@@ -1212,7 +1212,9 @@ function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
 
 function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, onMoveAppointment, canMoveAppointments, draftAppointment }) {
   const HOUR_HEIGHT = 66;
+  const HEADER_HEIGHT = 78;
   const [draggingId, setDraggingId] = useState(null);
+  const [dragState, setDragState] = useState(null);
   const active = (appointments || [])
     .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
@@ -1239,6 +1241,8 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       const left = gridRect.left + 56 + index * rect.width;
       columnBoundsByRoomId[column.id] = { left, right: left + rect.width };
     });
+    const columnIndex = visibleColumns.findIndex((column) => column.id === room.id);
+    const topOffset = hourTopOffset(HOURS, Math.floor(totalMinutes / 60), totalMinutes % 60, HOUR_HEIGHT);
     return {
       date,
       roomId: room.id,
@@ -1246,6 +1250,10 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       timeLabel: hhmm,
       startsAt: localDateTimeToIso(date, hhmm),
       roomColor: roomColorMap[room.id] || room.colorHex || "#8C6E50",
+      columnIndex,
+      columnWidth: rect.width,
+      previewLeft: 56 + columnIndex * rect.width + 8,
+      previewTop: HEADER_HEIGHT + (topOffset || 0) + 4,
       anchorX: event.clientX,
       anchorY: event.clientY,
       columnLeft: rect.left,
@@ -1267,7 +1275,102 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     const appt = active.find((item) => item.id === appointmentId);
     if (!appt) return;
     setDraggingId(null);
+    setDragState(null);
     onMoveAppointment(appt, targetFromPointer(event, room));
+  }
+
+  function hideNativeDragGhost(event) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    event.dataTransfer.setDragImage(canvas, 0, 0);
+  }
+
+  function makeDragPreview(appt, target) {
+    const duration = appt.service?.durationMins || 60;
+    const height = Math.max((duration / 60) * HOUR_HEIGHT - 8, 42);
+    const roomIndex = visibleColumns.findIndex((room) => room.id === appointmentRoomId(appt));
+    const roomWidth = target.columnWidth || 158;
+    const h = getEcuadorHour(appt.startsAt);
+    const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
+    const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT) || 0;
+    return {
+      id: appt.id,
+      clientName: appt.client?.fullName || "Cliente",
+      staffName: appt.staff?.name || "Terapeuta por asignar",
+      timeLabel: target.timeLabel,
+      color: appointmentColor(appt, roomColorMap),
+      origin: {
+        left: 56 + roomIndex * roomWidth + 8,
+        top: HEADER_HEIGHT + topOffset + 4,
+        width: Math.max(roomWidth - 16, 42),
+        height,
+      },
+      target: {
+        left: target.previewLeft,
+        top: target.previewTop,
+        width: Math.max(roomWidth - 16, 42),
+        height,
+      },
+    };
+  }
+
+  function handleColumnDragOver(event, room) {
+    if (!canMoveAppointments || !draggingId || room.id === "__sin-cabina") return;
+    event.preventDefault();
+    const appt = active.find((item) => item.id === draggingId);
+    if (!appt) return;
+    setDragState(makeDragPreview(appt, targetFromPointer(event, room)));
+  }
+
+  function renderDragGuide() {
+    if (!dragState?.origin || !dragState?.target) return null;
+    const { origin, target, color } = dragState;
+    const originX = origin.left + origin.width / 2;
+    const originY = origin.top + origin.height / 2;
+    const targetX = target.left + target.width / 2;
+    const targetY = target.top + target.height / 2;
+    const verticalHeight = Math.abs(targetY - originY);
+    const horizontalWidth = Math.abs(targetX - originX);
+    const segmentColor = hexToRgba(color, 0.65);
+    const showVertical = verticalHeight > 2;
+    const showHorizontal = horizontalWidth > 2;
+    return (
+      <>
+        {showVertical && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: originX - 1,
+              top: Math.min(originY, targetY),
+              width: 2,
+              height: verticalHeight,
+              borderRadius: 999,
+              background: segmentColor,
+              zIndex: 8,
+              pointerEvents: "none",
+            }}
+          />
+        )}
+        {showHorizontal && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: Math.min(originX, targetX),
+              top: targetY - 1,
+              width: horizontalWidth,
+              height: 2,
+              borderRadius: 999,
+              background: segmentColor,
+              zIndex: 8,
+              pointerEvents: "none",
+            }}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -1282,6 +1385,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
           overflow: "hidden",
           minWidth,
           width: "100%",
+          position: "relative",
         }}
       >
         <div style={{ borderBottom: "1px solid rgba(168,154,135,0.32)", background: date === today ? "rgba(235,205,181,0.18)" : "rgba(247,245,240,0.75)" }} />
@@ -1354,9 +1458,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
             <div
               key={room.id}
               onClick={(event) => handleColumnClick(event, room)}
-              onDragOver={(event) => {
-                if (canMoveAppointments && draggingId && room.id !== "__sin-cabina") event.preventDefault();
-              }}
+              onDragOver={(event) => handleColumnDragOver(event, room)}
               onDrop={(event) => handleColumnDrop(event, room)}
               style={{
                 position: "relative",
@@ -1448,11 +1550,23 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         event.preventDefault();
                         return;
                       }
+                      event.stopPropagation();
+                      hideNativeDragGhost(event);
                       setDraggingId(appt.id);
                       event.dataTransfer.effectAllowed = "move";
                       event.dataTransfer.setData("text/plain", appt.id);
+                      const originTarget = {
+                        timeLabel: formatTime(appt.startsAt),
+                        columnWidth: event.currentTarget.parentElement?.getBoundingClientRect().width || 158,
+                        previewLeft: 56 + visibleColumns.findIndex((room) => room.id === appointmentRoomId(appt)) * (event.currentTarget.parentElement?.getBoundingClientRect().width || 158) + 8,
+                        previewTop: HEADER_HEIGHT + topOffset + 4,
+                      };
+                      setDragState(makeDragPreview(appt, originTarget));
                     }}
-                    onDragEnd={() => setDraggingId(null)}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDragState(null);
+                    }}
                     onClick={(event) => {
                       event.stopPropagation();
                       onSelect(appt);
@@ -1473,7 +1587,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                       color: noShow ? "#B85A56" : "#F7F5F0",
                       textAlign: "left",
                       zIndex: draggingId === appt.id ? 4 : 1,
-                      opacity: draggingId === appt.id ? 0.62 : 1,
+                      opacity: draggingId === appt.id ? 0.25 : 1,
                       boxShadow: "0 8px 18px rgba(64,51,39,0.10)",
                       textDecoration: noShow ? "line-through" : "none",
                       textDecorationColor: "rgba(194,84,80,0.75)",
@@ -1498,6 +1612,39 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
             </div>
           );
         })}
+        {renderDragGuide()}
+        {dragState?.target && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: dragState.target.left,
+              top: dragState.target.top,
+              width: dragState.target.width,
+              height: dragState.target.height,
+              borderRadius: 10,
+              padding: "8px 10px",
+              fontSize: 12,
+              overflow: "hidden",
+              pointerEvents: "none",
+              border: `2px solid ${hexToRgba(dragState.color, 0.88)}`,
+              background: `linear-gradient(135deg, ${hexToRgba(dragState.color, 0.92)} 0%, ${hexToRgba(dragState.color, 0.72)} 100%)`,
+              color: "#F7F5F0",
+              textAlign: "left",
+              zIndex: 9,
+              boxShadow: "0 14px 32px rgba(64,51,39,0.20)",
+              transition: "box-shadow 120ms ease, border-color 120ms ease",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dragState.clientName}</strong>
+              <span style={{ opacity: 0.78, flexShrink: 0 }}>{dragState.timeLabel}</span>
+            </div>
+            <div style={{ marginTop: 3, opacity: 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {dragState.staffName}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
