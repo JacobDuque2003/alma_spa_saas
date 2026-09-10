@@ -110,6 +110,32 @@ function hhmmFromTotalMinutes(totalMinutes) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function hexToRgba(hex, alpha = 1) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return `rgba(140,110,80,${alpha})`;
+  return `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+}
+
+function quickCreatePanelFrame(prefill) {
+  if (!prefill || typeof window === "undefined") return {};
+  const margin = 12;
+  const gap = 12;
+  const preferredWidth = 500;
+  const panelWidth = Math.min(preferredWidth, window.innerWidth - margin * 2);
+  const canOpenRight = prefill.anchorX + gap + panelWidth <= window.innerWidth - margin;
+  const rawLeft = canOpenRight ? prefill.anchorX + gap : prefill.anchorX - panelWidth - gap;
+  const left = Math.max(margin, Math.min(window.innerWidth - panelWidth - margin, rawLeft));
+  const maxTop = Math.max(margin, window.innerHeight - 620);
+  const top = Math.max(margin, Math.min(maxTop, prefill.anchorY - 46));
+  return {
+    position: "fixed",
+    left,
+    top,
+    width: panelWidth,
+    maxHeight: `calc(100vh - ${top + margin}px)`,
+  };
+}
+
 function formatSearchDate(iso) {
   return new Date(iso).toLocaleDateString("es-EC", {
     weekday: "short",
@@ -248,6 +274,7 @@ export default function AgendaPage() {
   // toca — solo copia sus datos para la nueva.
   const [followUpPrefill, setFollowUpPrefill] = useState(null);
   const [quickCreatePrefill, setQuickCreatePrefill] = useState(null);
+  const [quickDraft, setQuickDraft] = useState(null);
   const [staffList, setStaffList] = useState([]);
   const [navDirection, setNavDirection] = useState(0);
   const [agendaQuery, setAgendaQuery] = useState("");
@@ -266,6 +293,14 @@ export default function AgendaPage() {
   }, [slotGroup]);
   const newFormAnim = useAnimatedMount(showNewForm, 220);
   const { gridClass, onAnimationEnd } = useGridTransition(navDirection, loading);
+
+  useEffect(() => {
+    if (!showNewForm && !newFormAnim.shouldRender) {
+      setFollowUpPrefill(null);
+      setQuickCreatePrefill(null);
+      setQuickDraft(null);
+    }
+  }, [newFormAnim.shouldRender, showNewForm]);
 
   const effectiveView = isMobile ? "day" : view;
   const filteredAppointments = appointments;
@@ -370,14 +405,13 @@ export default function AgendaPage() {
 
   function handleCreated() {
     setShowNewForm(false);
-    setFollowUpPrefill(null);
-    setQuickCreatePrefill(null);
     fetchData();
   }
 
   function openManualNewForm() {
     setFollowUpPrefill(null);
     setQuickCreatePrefill(null);
+    setQuickDraft(null);
     setShowNewForm(true);
   }
 
@@ -386,6 +420,17 @@ export default function AgendaPage() {
     setSlotGroup(null);
     setFollowUpPrefill(null);
     setQuickCreatePrefill(prefill);
+    const draftStart = prefill?.startsAt ? new Date(prefill.startsAt) : null;
+    setQuickDraft(draftStart ? {
+      date: prefill.date,
+      roomId: prefill.roomId,
+      startsAt: prefill.startsAt,
+      endsAt: addMinutesToDate(draftStart, 45).toISOString(),
+      clientName: "",
+      staffName: "",
+      serviceName: "",
+      colorHex: prefill.roomColor || "#8C6E50",
+    } : null);
     setShowNewForm(true);
   }
 
@@ -679,6 +724,7 @@ export default function AgendaPage() {
             onSelect={setSelected}
             onSelectGroup={setSlotGroup}
             onCreateFromSlot={openQuickCreate}
+            draftAppointment={quickDraft}
           />
         )}
       </div>
@@ -715,6 +761,8 @@ export default function AgendaPage() {
             // Cerrar detalle y abrir NewAppointmentForm con datos precargados.
             // La cita original queda intacta — solo copiamos sus datos.
             setSelected(null);
+            setQuickCreatePrefill(null);
+            setQuickDraft(null);
             setFollowUpPrefill(prefill);
             setShowNewForm(true);
           }}
@@ -724,7 +772,7 @@ export default function AgendaPage() {
         <NewAppointmentForm
           defaultDate={selectedDate}
           phase={newFormAnim.phase}
-          onClose={() => { setShowNewForm(false); setFollowUpPrefill(null); setQuickCreatePrefill(null); }}
+          onClose={() => setShowNewForm(false)}
           onCreated={handleCreated}
           preSelectedClient={
             followUpPrefill?.client
@@ -741,6 +789,7 @@ export default function AgendaPage() {
           followUpMode={!!followUpPrefill}
           canScheduleOutside={canScheduleOutside}
           quickCreatePrefill={quickCreatePrefill}
+          onDraftChange={setQuickDraft}
         />
       )}
     </div>
@@ -1102,7 +1151,7 @@ function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
   return hourInWindow(hour, morning) || hourInWindow(hour, afternoon);
 }
 
-function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot }) {
+function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, draftAppointment }) {
   const HOUR_HEIGHT = 66;
   const active = (appointments || [])
     .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
@@ -1131,7 +1180,9 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       roomName: room.name,
       timeLabel: hhmm,
       startsAt: localDateTimeToIso(date, hhmm),
-      panelSide: event.clientX > window.innerWidth / 2 ? "left" : "right",
+      roomColor: roomColorMap[room.id] || room.colorHex || "#8C6E50",
+      anchorX: event.clientX,
+      anchorY: event.clientY,
     });
   }
 
@@ -1214,6 +1265,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
         {visibleColumns.map((room) => {
           const roomAppointments = active.filter((appt) => appointmentRoomId(appt) === room.id);
+          const draft = draftAppointment?.date === date && draftAppointment?.roomId === room.id ? draftAppointment : null;
           return (
             <div
               key={room.id}
@@ -1243,6 +1295,52 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                   />
                 );
               })}
+              {draft?.startsAt && (() => {
+                const h = getEcuadorHour(draft.startsAt);
+                const m = parseInt(getEcuadorMinutes(draft.startsAt), 10) || 0;
+                const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT);
+                if (topOffset == null) return null;
+                const duration = Math.max(30, Math.round((new Date(draft.endsAt) - new Date(draft.startsAt)) / 60000) || 45);
+                const height = (duration / 60) * HOUR_HEIGHT;
+                const color = premiumCabinColor(draft.colorHex || roomColorMap[room.id] || "#8C6E50");
+                return (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      top: topOffset + 4,
+                      left: 8,
+                      right: 8,
+                      height: Math.max(height - 8, 42),
+                      borderRadius: 10,
+                      padding: "8px 10px",
+                      fontSize: 12,
+                      overflow: "hidden",
+                      pointerEvents: "none",
+                      border: `2px dashed ${color}`,
+                      background: `linear-gradient(135deg, ${hexToRgba(color, 0.18)} 0%, rgba(253,252,250,0.92) 100%)`,
+                      color: "#6B5540",
+                      textAlign: "left",
+                      zIndex: 2,
+                      boxShadow: "0 10px 24px rgba(64,51,39,0.12)",
+                      transition: "top 180ms ease, height 180ms ease, background 180ms ease, border-color 180ms ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {draft.clientName || "Nueva reserva"}
+                      </strong>
+                      <span style={{ color, flexShrink: 0, fontWeight: 800 }}>{formatTime(draft.startsAt)}</span>
+                    </div>
+                    <div style={{ marginTop: 3, color: "#8C6E50", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {draft.staffName || "Terapeuta por asignar"}
+                    </div>
+                    <div style={{ marginTop: 3, color: "#A06F32", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
+                      {draft.serviceName || "Selecciona servicio"}
+                    </div>
+                  </div>
+                );
+              })()}
               {roomAppointments.map((appt) => {
                 const h = getEcuadorHour(appt.startsAt);
                 const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
@@ -1982,7 +2080,7 @@ function PremiumSelect({
   );
 }
 
-function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode, canScheduleOutside, quickCreatePrefill }) {
+function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode, canScheduleOutside, quickCreatePrefill, onDraftChange }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -2014,6 +2112,10 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const selectedService = useMemo(
     () => services.find((service) => service.id === serviceId) || null,
     [services, serviceId]
+  );
+  const selectedStaff = useMemo(
+    () => staff.find((person) => person.id === staffId) || null,
+    [staff, staffId]
   );
   const quickRoom = useMemo(
     () => quickRoomId ? rooms.find((room) => room.id === quickRoomId) || null : null,
@@ -2227,6 +2329,41 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   }, [busyRoomIds, busyStaffIds, roomId, staffId]);
 
   useEffect(() => {
+    if (!quickCreatePrefill || !onDraftChange) return;
+    const start = time ? new Date(time) : (quickStartsAt ? new Date(quickStartsAt) : null);
+    if (!start || Number.isNaN(start.getTime())) {
+      onDraftChange(null);
+      return;
+    }
+    const blockMinutes = selectedService ? totalServiceBlockMins(selectedService) : 45;
+    const effectiveRoomId = roomId || quickRoomId;
+    const selectedRoom = rooms.find((room) => room.id === effectiveRoomId);
+    onDraftChange({
+      date,
+      roomId: effectiveRoomId,
+      startsAt: start.toISOString(),
+      endsAt: addMinutesToDate(start, blockMinutes).toISOString(),
+      clientName: selectedClient?.fullName || clientSearch.trim(),
+      staffName: selectedStaff?.name || "",
+      serviceName: selectedService?.name || "",
+      colorHex: selectedService?.colorHex || selectedRoom?.colorHex || quickCreatePrefill.roomColor || "#8C6E50",
+    });
+  }, [
+    clientSearch,
+    date,
+    onDraftChange,
+    quickCreatePrefill,
+    quickRoomId,
+    quickStartsAt,
+    roomId,
+    rooms,
+    selectedClient,
+    selectedService,
+    selectedStaff,
+    time,
+  ]);
+
+  useEffect(() => {
     // La identidad se compara por el id de la ficha, nunca por el nombre. Si
     // el primer horario automático se cruza con esta ficha, obligamos a elegir
     // otro en vez de dejar que el error aparezca al final del formulario.
@@ -2331,25 +2468,27 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   };
   const labelStyle = { display: "block", fontSize: 12, color: "#A89A87", marginBottom: 6 };
   const isQuickCreate = Boolean(quickCreatePrefill && !followUpMode);
-  const panelSide = quickCreatePrefill?.panelSide === "left" ? "left" : "right";
+  const quickPanelStyle = isQuickCreate ? quickCreatePanelFrame(quickCreatePrefill) : {};
 
   return (
     <div
       className={`alma-backdrop alma-anim-${phase}`}
+      onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 50,
-        display: "flex",
+        display: isQuickCreate ? "block" : "flex",
         alignItems: isQuickCreate ? "flex-start" : "center",
-        justifyContent: isQuickCreate ? (panelSide === "left" ? "flex-start" : "flex-end") : "center",
+        justifyContent: "center",
         background: isQuickCreate ? "rgba(58,47,38,0.22)" : "rgba(58,47,38,0.4)",
-        padding: isQuickCreate ? "74px clamp(12px, 2vw, 28px) 18px" : 0,
+        padding: isQuickCreate ? 0 : 0,
       }}
     >
       <div
         className={`alma-card alma-modal alma-anim-${phase}`}
         onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         style={{
           width: "100%",
           maxWidth: isQuickCreate ? 500 : 480,
@@ -2360,6 +2499,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
           boxShadow: "0 24px 64px rgba(107,85,64,0.18)",
           maxHeight: isQuickCreate ? "calc(100vh - 92px)" : "90vh",
           overflowY: "auto",
+          ...quickPanelStyle,
         }}
       >
         <button

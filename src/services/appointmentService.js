@@ -540,7 +540,7 @@ async function listAppointments(actor, query) {
     where,
     orderBy: { startsAt: 'asc' },
     include: {
-      service: { select: { name: true, category: true, durationMins: true, bufferMins: true, colorHex: true } },
+      service: { select: { id: true, name: true, category: true, durationMins: true, bufferMins: true, colorHex: true } },
       client:  { select: { id: true, fullName: true, whatsapp: true, recordNumber: true } },
       room:    { select: { id: true, name: true, sortOrder: true } },
       staff:   { select: { id: true, name: true } },
