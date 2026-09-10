@@ -311,9 +311,9 @@ function Shell({ children }) {
           display: "flex",
           alignItems: "center",
           gap: 8,
-          padding: "10px 10px",
+          padding: sidebarCollapsed ? "10px 0" : "10px 10px",
           borderTop: "1px solid rgba(168,154,135,0.35)",
-          justifyContent: "flex-start",
+          justifyContent: sidebarCollapsed ? "center" : "flex-start",
           overflow: "hidden",
           transition: `padding ${SIDEBAR_MOTION}`,
         }}
@@ -328,8 +328,11 @@ function Shell({ children }) {
                 gap: 10,
                 textDecoration: "none",
                 minWidth: 0,
-                flex: 1,
+                flex: sidebarCollapsed ? "0 0 46px" : 1,
+                width: sidebarCollapsed ? 46 : "auto",
+                justifyContent: sidebarCollapsed ? "center" : "flex-start",
                 overflow: "hidden",
+                transition: `width ${SIDEBAR_MOTION}, flex-basis ${SIDEBAR_MOTION}`,
               }}
               title="Mi perfil"
             >
