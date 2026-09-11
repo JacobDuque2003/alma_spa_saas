@@ -588,7 +588,7 @@ async function listAppointments(actor, query) {
   if (query.from || query.to) {
     where.startsAt = {};
     if (query.from) where.startsAt.gte = new Date(query.from);
-    if (query.to) where.startsAt.lte = new Date(query.to);
+    if (query.to) where.startsAt.lt = new Date(query.to);
   }
   return prisma.appointment.findMany({
     where,

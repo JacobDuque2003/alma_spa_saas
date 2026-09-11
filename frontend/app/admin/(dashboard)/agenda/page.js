@@ -104,6 +104,19 @@ function localDateTimeToIso(dateStr, hhmm) {
   return new Date(`${dateStr}T${hhmm}:00-05:00`).toISOString();
 }
 
+function addDaysToDateStr(dateStr, days) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return toLocalDate(d);
+}
+
+function localDateRangeQuery(dateStr, days = 1) {
+  return {
+    from: localDateTimeToIso(dateStr, "00:00"),
+    to: localDateTimeToIso(addDaysToDateStr(dateStr, days), "00:00"),
+  };
+}
+
 function hhmmFromTotalMinutes(totalMinutes) {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
@@ -398,12 +411,10 @@ export default function AgendaPage() {
     try {
       let from, to;
       if (effectiveView === "day") {
-        from = `${selectedDate}T00:00:00`;
-        to = `${selectedDate}T23:59:59`;
+        ({ from, to } = localDateRangeQuery(selectedDate));
       } else {
         const days = getWeekDays(selectedDate);
-        from = `${days[0]}T00:00:00`;
-        to = `${days[6]}T23:59:59`;
+        ({ from, to } = localDateRangeQuery(days[0], 7));
       }
       const [appts, roomList, userList] = await Promise.all([
         authFetch("/appointments", { query: { from, to } }).catch(() => []),
@@ -478,8 +489,8 @@ export default function AgendaPage() {
         const year = anchor.getFullYear();
         const rows = await authFetch("/appointments", {
           query: {
-            from: `${year - 1}-01-01T00:00:00`,
-            to: `${year + 1}-12-31T23:59:59`,
+            from: localDateTimeToIso(`${year - 1}-01-01`, "00:00"),
+            to: localDateTimeToIso(`${year + 2}-01-01`, "00:00"),
           },
         }).catch(() => []);
         if (!cancelled) {
@@ -2851,7 +2862,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     }
     let cancelled = false;
     setDayAppointments([]);
-    authFetch("/appointments", { query: { from: `${date}T00:00:00`, to: `${date}T23:59:59` } })
+    authFetch("/appointments", { query: localDateRangeQuery(date) })
       .then((rows) => {
         if (!cancelled) setDayAppointments(Array.isArray(rows) ? rows : []);
       })

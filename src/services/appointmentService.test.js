@@ -754,6 +754,30 @@ test('listAppointments permite filtrar historial por clienta sin salir del tenan
   assert.equal(seenArgs.where.clientId, 'client-123');
 });
 
+test('listAppointments usa fin de rango exclusivo para días locales de agenda', async () => {
+  let seenArgs;
+  mockPrisma({
+    appointment: {
+      findMany: async (args) => {
+        seenArgs = args;
+        return [];
+      },
+    },
+  });
+
+  await appointmentService.listAppointments(
+    { role: 'dueno', tenantId: 't1' },
+    {
+      from: '2026-09-11T05:00:00.000Z',
+      to: '2026-09-12T05:00:00.000Z',
+    }
+  );
+
+  assert.equal(seenArgs.where.startsAt.gte.toISOString(), '2026-09-11T05:00:00.000Z');
+  assert.equal(seenArgs.where.startsAt.lt.toISOString(), '2026-09-12T05:00:00.000Z');
+  assert.equal('lte' in seenArgs.where.startsAt, false);
+});
+
 test('listServiceLegend devuelve solo servicios activos del tenant con nombre y color', async () => {
   let seenArgs;
   mockPrisma({
