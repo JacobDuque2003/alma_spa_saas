@@ -102,13 +102,15 @@ test('listClients mantiene el tope defensivo de 1.000 por llamada', async () => 
 });
 
 test('listClients puede paginar de 100 en 100 e incluir el total del directorio', async () => {
-  let findArgs = null;
+  let rawSql = '';
+  let rawValues = [];
   let countArgs = null;
+  prisma.$queryRaw = async (strings, ...values) => {
+    rawSql = Array.from(strings).join('?');
+    rawValues = values;
+    return [{ id: 'c101', tenantId: 't1', recordNumber: '101', fullName: 'Ana Paz', whatsapp: '+593', email: 'ana@alma.test' }];
+  };
   prisma.client = {
-    findMany: async (args) => {
-      findArgs = args;
-      return [{ id: 'c101', tenantId: 't1', recordNumber: '101', fullName: 'Ana Paz', whatsapp: '+593', email: 'ana@alma.test' }];
-    },
     count: async (args) => {
       countArgs = args;
       return 1241;
@@ -119,9 +121,11 @@ test('listClients puede paginar de 100 en 100 e incluir el total del directorio'
     { role: 'dueno', tenantId: 't1' },
     { active: 'all', limit: 100, offset: 100, total: 'true', sortKey: 'recordNumber', sortDirection: 'asc' },
   );
-  assert.equal(findArgs.skip, 100);
-  assert.equal(findArgs.take, 100);
-  assert.deepEqual(findArgs.orderBy[0], { recordNumber: 'asc' });
+  assert.match(rawSql, /regexp_replace\("recordNumber", '\[\^0-9\]'/);
+  assert.match(rawSql, /OFFSET \?/);
+  assert.match(rawSql, /LIMIT \?/);
+  assert.equal(rawValues.at(-2), 100);
+  assert.equal(rawValues.at(-1), 100);
   assert.equal(countArgs.where.tenantId, 't1');
   assert.equal(result.total, 1241);
   assert.equal(result.offset, 100);

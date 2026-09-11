@@ -1,3 +1,4 @@
+const { Prisma } = require('@prisma/client');
 const prisma = require('../utils/prisma');
 const { assertTenantScope } = require('../utils/tenantScope');
 const { normalizePhone, isValidE164 } = require('../utils/phone');
@@ -95,7 +96,7 @@ function parseBirthdayOrThrow(value) {
   return dt;
 }
 
-async function listClients(actor, query = {}) {
+function buildClientListWhere(actor, query = {}) {
   const activeQuery = String(query.active ?? 'true').toLowerCase();
   const where = {};
   if (activeQuery === 'false') where.active = false;
@@ -127,6 +128,77 @@ async function listClients(actor, query = {}) {
     }
   }
 
+  return where;
+}
+
+function buildClientListWhereSql(actor, query = {}) {
+  const where = buildClientListWhere(actor, query);
+  const clauses = [];
+  if (where.tenantId) clauses.push(Prisma.sql`"tenantId" = ${where.tenantId}`);
+  if (where.active === true || where.active === false) clauses.push(Prisma.sql`"active" = ${where.active}`);
+
+  const q = String(query.q || '').trim();
+  if (q) {
+    const contains = `%${q}%`;
+    const phoneDigits = q.replace(/[^0-9]/g, '').replace(/^0+/, '');
+    const searchClauses = [
+      Prisma.sql`"fullName" ILIKE ${contains}`,
+      Prisma.sql`"recordNumber" ILIKE ${contains}`,
+      Prisma.sql`"whatsapp" LIKE ${contains}`,
+      Prisma.sql`"email" ILIKE ${contains}`,
+      Prisma.sql`"cedula" LIKE ${contains}`,
+    ];
+    if (phoneDigits.length >= 7) {
+      searchClauses.push(Prisma.sql`"whatsapp" LIKE ${`%${phoneDigits}`}`);
+    }
+    clauses.push(Prisma.sql`(${Prisma.join(searchClauses, ' OR ')})`);
+  }
+
+  return clauses.length ? Prisma.sql`WHERE ${Prisma.join(clauses, ' AND ')}` : Prisma.empty;
+}
+
+async function listClientsByRecordNumber(actor, query, { limit, offset, sortDirection, withTotal }) {
+  const where = buildClientListWhere(actor, query);
+  const whereSql = buildClientListWhereSql(actor, query);
+  const direction = sortDirection === 'desc' ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+  const emptyDirection = sortDirection === 'desc' ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+
+  const [clients, total] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT
+        "id", "tenantId", "recordNumber", "fullName", "whatsapp", "email",
+        "address", "cedula", "birthday", "birthdayYearKnown", "active",
+        "createdAt", "updatedAt"
+      FROM "Client"
+      ${whereSql}
+      ORDER BY
+        CASE WHEN "recordNumber" IS NULL OR btrim("recordNumber") = '' THEN 0 ELSE 1 END ${emptyDirection},
+        NULLIF(regexp_replace("recordNumber", '[^0-9]', '', 'g'), '')::numeric ${direction} NULLS LAST,
+        "recordNumber" ${direction} NULLS LAST,
+        "fullName" ASC,
+        "createdAt" DESC,
+        "id" ASC
+      OFFSET ${offset}
+      LIMIT ${limit}
+    `,
+    withTotal ? prisma.client.count({ where }) : Promise.resolve(null),
+  ]);
+
+  const rows = clients.map(toClientSafeDto);
+  if (withTotal) {
+    return {
+      rows,
+      total,
+      limit,
+      offset,
+      hasMore: offset + rows.length < total,
+    };
+  }
+  return rows;
+}
+
+async function listClients(actor, query = {}) {
+  const where = buildClientListWhere(actor, query);
   const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 1000);
   const offset = Math.max(Number(query.offset) || 0, 0);
   const withTotal = String(query.total ?? query.withTotal ?? '').toLowerCase() === 'true';
@@ -135,9 +207,15 @@ async function listClients(actor, query = {}) {
   const orderField = ['recordNumber', 'fullName', 'whatsapp', 'email', 'birthday', 'active', 'createdAt'].includes(sortKey)
     ? sortKey
     : 'fullName';
+
+  if (orderField === 'recordNumber' && typeof prisma.$queryRaw === 'function') {
+    return listClientsByRecordNumber(actor, query, { limit, offset, sortDirection, withTotal });
+  }
+
   const orderBy = [{ [orderField]: sortDirection }];
   if (orderField !== 'fullName') orderBy.push({ fullName: 'asc' });
   if (orderField !== 'createdAt') orderBy.push({ createdAt: 'desc' });
+  orderBy.push({ id: 'asc' });
 
   const [clients, total] = await Promise.all([
     prisma.client.findMany({

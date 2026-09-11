@@ -505,10 +505,6 @@ export default function ClientesPage() {
   }, [clientActiveQuery, clientPage, query, sortDirection, sortKey, user?.tenantId]);
 
   useEffect(() => {
-    setClientPage(1);
-  }, [clientActiveQuery, query, sortDirection, sortKey, view]);
-
-  useEffect(() => {
     if (view === "cumples") return undefined;
     const t = setTimeout(() => fetchClients(), 250);
     return () => clearTimeout(t);
@@ -646,7 +642,8 @@ export default function ClientesPage() {
       if (statusFilter === "deshabilitadas") return client.active === false;
       return true;
     });
-    return sortClients(filtered, view === "cumples" && sortKey === "birthday" ? "birthday" : sortKey, sortDirection);
+    if (view !== "cumples") return filtered;
+    return sortClients(filtered, sortKey === "birthday" ? "birthday" : sortKey, sortDirection);
   }, [birthdayList, clients, sortDirection, sortKey, statusFilter, view]);
   const currentCount = visibleClients.length;
   const directoryTotal = view === "cumples" ? currentCount : clientTotal;
@@ -664,6 +661,7 @@ export default function ClientesPage() {
   }, [clientPage, clientTotal, totalPages, view]);
 
   function changeSort(key) {
+    setClientPage(1);
     setSortKey((current) => {
       if (current === key) {
         setSortDirection((dir) => (dir === "asc" ? "desc" : "asc"));
@@ -675,6 +673,7 @@ export default function ClientesPage() {
   }
 
   function cycleStatusFilter() {
+    setClientPage(1);
     setStatusFilter((current) => {
       if (current === "todas") return "activas";
       if (current === "activas") return "deshabilitadas";
@@ -865,14 +864,17 @@ export default function ClientesPage() {
                 }}
                 placeholder="Busca por nombre, ficha, teléfono, correo o cédula..."
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setClientPage(1);
+                  setQuery(e.target.value);
+                }}
               />
             </div>
             <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 2, justifyContent: isMobile ? "flex-start" : "flex-end" }}>
-              <ClientFilterButton active={view === "todas"} onClick={() => setView("todas")}>
+              <ClientFilterButton active={view === "todas"} onClick={() => { setClientPage(1); setView("todas"); }}>
                 Todas
               </ClientFilterButton>
-              <ClientFilterButton active={view === "cumples"} onClick={() => setView("cumples")}>
+              <ClientFilterButton active={view === "cumples"} onClick={() => { setClientPage(1); setView("cumples"); }}>
                 Cumpleaños
               </ClientFilterButton>
               <ClientFilterButton active={statusFilter !== "todas"} onClick={cycleStatusFilter}>
