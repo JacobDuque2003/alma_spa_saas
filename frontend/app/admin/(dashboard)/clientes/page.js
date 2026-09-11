@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authFetch } from "@/lib/auth-client";
-import { Loader2, Search, X, ArrowLeft, Pencil, Trash2, Download, Upload, ArrowUpDown, Copy } from "lucide-react";
+import { Loader2, Search, X, ArrowLeft, Pencil, Trash2, Download, Upload, ArrowUpDown, Copy, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
@@ -19,16 +19,18 @@ import { formatEcuadorPhone } from "@/lib/phone-format";
 // la base de datos y se invalida en cuanto se crea, edita, importa o cambia
 // el estado de una clienta.
 const CLIENT_DIRECTORY_CACHE_TTL_MS = 30_000;
-const CLIENT_DIRECTORY_PAGE_SIZE = 100;
+const CLIENT_DIRECTORY_PAGE_SIZE = 15;
 const clientDirectoryCache = new Map();
 
-function directoryCacheKey(tenantId, query, active, sortKey, sortDirection) {
+function directoryCacheKey(tenantId, query, active, sortKey, sortDirection, pageSize, offset) {
   return [
     tenantId || "current",
     String(query || "").trim().toLocaleLowerCase("es-EC"),
     active || "all",
     sortKey || "fullName",
     sortDirection || "asc",
+    pageSize,
+    offset,
   ].join(":");
 }
 
@@ -157,6 +159,52 @@ function SortButton({ label, sortKey, activeKey, direction, onSort }) {
     >
       {label}
       <ArrowUpDown size={12} style={{ opacity: active ? 1 : 0.55, transform: active && direction === "desc" ? "rotate(180deg)" : "none" }} />
+    </button>
+  );
+}
+
+function pageNumbers(currentPage, totalPages) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const pages = new Set([1, totalPages, currentPage, currentPage - 1, currentPage + 1]);
+  if (currentPage <= 3) [2, 3, 4].forEach((page) => pages.add(page));
+  if (currentPage >= totalPages - 2) [totalPages - 3, totalPages - 2, totalPages - 1].forEach((page) => pages.add(page));
+
+  const sorted = [...pages].filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+  const result = [];
+  sorted.forEach((page, index) => {
+    if (index > 0 && page - sorted[index - 1] > 1) result.push("gap");
+    result.push(page);
+  });
+  return result;
+}
+
+function PaginationButton({ active = false, disabled = false, onClick, children, label }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        minWidth: 34,
+        height: 34,
+        padding: "0 11px",
+        borderRadius: 10,
+        border: active ? "1px solid rgba(140,110,80,0)" : "1px solid rgba(168,154,135,0.35)",
+        background: active ? "#8C6E50" : "#FDFCFA",
+        color: active ? "#F7F5F0" : "#6B5540",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.42 : 1,
+        boxShadow: active ? "0 10px 22px rgba(107,85,64,0.14)" : "none",
+      }}
+    >
+      {children}
     </button>
   );
 }
@@ -391,7 +439,7 @@ export default function ClientesPage() {
   const [birthdayList, setBirthdayList] = useState([]);
   const [birthdayLoading, setBirthdayLoading] = useState(false);
   const [clientTotal, setClientTotal] = useState(0);
-  const [loadingMoreClients, setLoadingMoreClients] = useState(false);
+  const [clientPage, setClientPage] = useState(1);
   const [clientLoadError, setClientLoadError] = useState("");
   const [detail, setDetail] = useState(null);
   const [intake, setIntake] = useState(null);
@@ -417,18 +465,18 @@ export default function ClientesPage() {
   const canExportClients = hasClientPermission(user, "clientesExportar");
   const clientActiveQuery = statusFilter === "activas" ? "true" : statusFilter === "deshabilitadas" ? "false" : "all";
 
-  const fetchClients = useCallback(async ({ force = false, append = false, offset = 0 } = {}) => {
-    const cacheKey = directoryCacheKey(user?.tenantId, query, clientActiveQuery, sortKey, sortDirection);
+  const fetchClients = useCallback(async ({ force = false } = {}) => {
+    const offset = (clientPage - 1) * CLIENT_DIRECTORY_PAGE_SIZE;
+    const cacheKey = directoryCacheKey(user?.tenantId, query, clientActiveQuery, sortKey, sortDirection, CLIENT_DIRECTORY_PAGE_SIZE, offset);
     const cached = clientDirectoryCache.get(cacheKey);
-    if (!append && !force && cached && Date.now() - cached.savedAt < CLIENT_DIRECTORY_CACHE_TTL_MS) {
+    if (!force && cached && Date.now() - cached.savedAt < CLIENT_DIRECTORY_CACHE_TTL_MS) {
       setClients(cached.rows);
       setClientTotal(cached.total);
       setClientLoadError("");
       setLoading(false);
       return;
     }
-    if (append) setLoadingMoreClients(true);
-    else setLoading(true);
+    setLoading(true);
     setClientLoadError("");
     try {
       const data = await authFetch("/clients", {
@@ -444,29 +492,21 @@ export default function ClientesPage() {
       });
       const rows = Array.isArray(data?.rows) ? data.rows : Array.isArray(data) ? data : [];
       const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : rows.length;
-      if (append) {
-        setClients((prev) => {
-          const seen = new Set(prev.map((client) => client.id));
-          return [...prev, ...rows.filter((client) => !seen.has(client.id))];
-        });
-      } else {
-        clientDirectoryCache.set(cacheKey, { rows, total, savedAt: Date.now() });
-        setClients(rows);
-      }
+      clientDirectoryCache.set(cacheKey, { rows, total, savedAt: Date.now() });
+      setClients(rows);
       setClientTotal(total);
     } catch (err) {
-      if (append) {
-        setClientLoadError("");
-      } else {
-        setClientLoadError(err.message || "No se pudo cargar clientes.");
-        setClients([]);
-        setClientTotal(0);
-      }
+      setClientLoadError(err.message || "No se pudo cargar clientes.");
+      setClients([]);
+      setClientTotal(0);
     } finally {
-      if (append) setLoadingMoreClients(false);
-      else setLoading(false);
+      setLoading(false);
     }
-  }, [clientActiveQuery, query, sortDirection, sortKey, user?.tenantId]);
+  }, [clientActiveQuery, clientPage, query, sortDirection, sortKey, user?.tenantId]);
+
+  useEffect(() => {
+    setClientPage(1);
+  }, [clientActiveQuery, query, sortDirection, sortKey, view]);
 
   useEffect(() => {
     if (view === "cumples") return undefined;
@@ -610,9 +650,18 @@ export default function ClientesPage() {
   }, [birthdayList, clients, sortDirection, sortKey, statusFilter, view]);
   const currentCount = visibleClients.length;
   const directoryTotal = view === "cumples" ? currentCount : clientTotal;
-  const hasMoreClients = view !== "cumples" && clients.length < clientTotal;
+  const totalPages = view === "cumples" ? 1 : Math.max(1, Math.ceil(clientTotal / CLIENT_DIRECTORY_PAGE_SIZE));
+  const directoryPageStart = view === "cumples" || currentCount === 0 ? 0 : ((clientPage - 1) * CLIENT_DIRECTORY_PAGE_SIZE) + 1;
+  const directoryPageEnd = view === "cumples" ? currentCount : currentCount === 0 ? 0 : Math.min(clientTotal, directoryPageStart + currentCount - 1);
+  const paginationItems = view === "cumples" ? [] : pageNumbers(clientPage, totalPages);
   const listLoading = view === "cumples" ? birthdayLoading : loading;
   const statusFilterLabel = statusFilter === "activas" ? "Activas" : statusFilter === "deshabilitadas" ? "Deshabilitadas" : "Todas";
+
+  useEffect(() => {
+    if (view !== "cumples" && clientTotal > 0 && clientPage > totalPages) {
+      setClientPage(totalPages);
+    }
+  }, [clientPage, clientTotal, totalPages, view]);
 
   function changeSort(key) {
     setSortKey((current) => {
@@ -702,6 +751,7 @@ export default function ClientesPage() {
             setShowNewClient(false);
             invalidateClientDirectoryCache();
             setClientTotal((total) => total + 1);
+            setClientPage(1);
             setClients((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
             openClientDetail(created.id);
           }}
@@ -711,7 +761,7 @@ export default function ClientesPage() {
         <ClientImportModal
           phase={importClientsAnim.phase}
           onClose={() => setShowImportClients(false)}
-          onImported={() => { invalidateClientDirectoryCache(); fetchClients({ force: true }); }}
+          onImported={() => { invalidateClientDirectoryCache(); setClientPage(1); fetchClients({ force: true }); }}
         />
       )}
       {/* Sidebar list */}
@@ -734,7 +784,7 @@ export default function ClientesPage() {
               </h1>
               <span style={{ display: "block", marginTop: 4, fontSize: 13, color: "#A89A87" }}>
                 {directoryTotal} {directoryTotal === 1 ? "clienta" : "clientas"} en total
-                {view !== "cumples" && directoryTotal > currentCount ? ` · mostrando ${currentCount}` : ""}
+                {view !== "cumples" && directoryTotal > 0 ? ` · mostrando ${directoryPageStart}-${directoryPageEnd}` : ""}
               </span>
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
@@ -879,36 +929,55 @@ export default function ClientesPage() {
                   onCopyEmail={handleCopyEmail}
                 />
               ))}
-              {hasMoreClients && (
-                <button
-                  type="button"
-                  disabled={loadingMoreClients}
-                  onClick={() => fetchClients({ append: true, offset: clients.length })}
-                  style={{
-                    alignSelf: "center",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    margin: "12px 0 18px",
-                    padding: "10px 18px",
-                    borderRadius: 999,
-                    border: "1px solid rgba(140,110,80,0.38)",
-                    background: "#FDFCFA",
-                    color: "#8C6E50",
-                    fontSize: 13,
-                    fontWeight: 800,
-                    cursor: loadingMoreClients ? "wait" : "pointer",
-                    opacity: loadingMoreClients ? 0.65 : 1,
-                  }}
-                >
-                  {loadingMoreClients && <Loader2 size={14} className="animate-spin" />}
-                  Cargar 100 más
-                </button>
-              )}
             </>
           )}
           </div>
+          {view !== "cumples" && directoryTotal > CLIENT_DIRECTORY_PAGE_SIZE && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: isMobile ? "10px 2px 0" : "12px 4px 0",
+                borderTop: "1px solid rgba(168,154,135,0.20)",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 12, color: "#A89A87", fontWeight: 700 }}>
+                Página {clientPage} de {totalPages} · {CLIENT_DIRECTORY_PAGE_SIZE} por página
+              </span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto", paddingBottom: 2 }}>
+                <PaginationButton
+                  label="Página anterior"
+                  disabled={clientPage <= 1 || loading}
+                  onClick={() => setClientPage((page) => Math.max(1, page - 1))}
+                >
+                  <ChevronLeft size={15} />
+                </PaginationButton>
+                {paginationItems.map((item, index) => item === "gap" ? (
+                  <span key={`gap-${index}`} style={{ width: 18, textAlign: "center", color: "#A89A87", fontWeight: 800 }}>...</span>
+                ) : (
+                  <PaginationButton
+                    key={item}
+                    active={item === clientPage}
+                    disabled={loading}
+                    label={`Página ${item}`}
+                    onClick={() => setClientPage(item)}
+                  >
+                    {item}
+                  </PaginationButton>
+                ))}
+                <PaginationButton
+                  label="Página siguiente"
+                  disabled={clientPage >= totalPages || loading}
+                  onClick={() => setClientPage((page) => Math.min(totalPages, page + 1))}
+                >
+                  <ChevronRight size={15} />
+                </PaginationButton>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       )}
