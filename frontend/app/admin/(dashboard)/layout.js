@@ -570,7 +570,7 @@ function Shell({ children }) {
                 position: "absolute",
                 width: 46,
                 height: 46,
-                borderRadius: 18,
+                borderRadius: "50%",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -592,6 +592,7 @@ function Shell({ children }) {
                 style={{
                   width: 28,
                   height: 28,
+                  borderRadius: "50%",
                   objectFit: "contain",
                   display: "block",
                 }}
