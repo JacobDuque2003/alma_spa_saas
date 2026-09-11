@@ -178,6 +178,13 @@ function totalServiceBlockMins(service) {
   return Number(service?.durationMins || 60) + Number(service?.bufferMins ?? 15);
 }
 
+function appointmentBlockMins(appt) {
+  const start = new Date(appt?.startsAt);
+  const end = new Date(appt?.endsAt);
+  const minutes = Math.round((end - start) / 60000);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : totalServiceBlockMins(appt?.service || {});
+}
+
 function overlapsRange(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
 }
@@ -188,6 +195,7 @@ function getResourceId(item, key) {
   if (key === "roomId") return item.room?.id || null;
   if (key === "staffId") return item.staff?.id || null;
   if (key === "clientId") return item.client?.id || null;
+  if (key === "serviceId") return item.service?.id || null;
   return null;
 }
 
@@ -256,6 +264,33 @@ function formatDayFull(dateStr) {
     year: "numeric",
     timeZone: "America/Guayaquil",
   });
+}
+
+function roomCapacity(room) {
+  const n = Number(room?.capacity || 1);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
+function roomSlotMatchesGroup(appt, serviceId, start) {
+  return getResourceId(appt, "serviceId") === serviceId
+    && new Date(appt.startsAt).getTime() === start.getTime();
+}
+
+function roomSlotUsage(appointments, roomId, start, end) {
+  if (!roomId || !start || !end) return [];
+  return appointments.filter((appt) => {
+    if (!OPEN_APPOINTMENT_STATUSES.has(appt.status)) return false;
+    if (getResourceId(appt, "roomId") !== roomId) return false;
+    return overlapsRange(new Date(appt.startsAt), new Date(appt.endsAt), start, end);
+  });
+}
+
+function canUseRoomSlot(appointments, room, serviceId, start, end) {
+  if (!room?.id || !serviceId || !start || !end) return false;
+  const usage = roomSlotUsage(appointments, room.id, start, end);
+  if (usage.length === 0) return true;
+  return usage.length < roomCapacity(room)
+    && usage.every((appt) => roomSlotMatchesGroup(appt, serviceId, start));
 }
 
 function firstDayOfMonth(dateStr) {
@@ -1187,6 +1222,28 @@ function visibleScheduleEntries(items) {
   });
 }
 
+function cabinAppointmentGroupKey(appt) {
+  return [
+    appointmentRoomId(appt),
+    getResourceId(appt, "serviceId") || "__sin-servicio",
+    new Date(appt.startsAt).toISOString(),
+  ].join("|");
+}
+
+function groupCabinScheduleEntries(items) {
+  const groups = new Map();
+  for (const appt of items) {
+    const key = cabinAppointmentGroupKey(appt);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(appt);
+  }
+  return Array.from(groups.entries()).flatMap(([key, group]) => {
+    const appointments = group.sort((a, b) => (a.client?.fullName || "").localeCompare(b.client?.fullName || ""));
+    if (appointments.length > 1) return [{ type: "cabinGroup", key, appointments }];
+    return [{ type: "appointment", key: appointments[0].id, appointment: appointments[0] }];
+  });
+}
+
 function lanePosition(lane, inset = 3) {
   if (!lane || lane.total <= 1) return { left: inset, right: inset };
   const width = 100 / lane.total;
@@ -1504,7 +1561,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   }
 
   function makeDragPreview(appt, target) {
-    const duration = appt.service?.durationMins || 60;
+    const duration = appointmentBlockMins(appt);
     const height = Math.max((duration / 60) * HOUR_HEIGHT - 8, 42);
     const roomWidth = target.columnWidth || 158;
     return {
@@ -1609,11 +1666,12 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
         </div>
 
         {visibleColumns.map((room) => {
-          const roomAppointments = active.filter((appt) => appointmentRoomId(appt) === room.id);
+          const roomEntries = groupCabinScheduleEntries(active.filter((appt) => appointmentRoomId(appt) === room.id));
           const draft = draftAppointment?.date === date && draftAppointment?.roomId === room.id ? draftAppointment : null;
           return (
             <div
               key={room.id}
+              data-agenda-room-column="true"
               onClick={(event) => handleColumnClick(event, room)}
               onDragOver={(event) => handleColumnDragOver(event, room)}
               onDrop={(event) => handleColumnDrop(event, room)}
@@ -1688,82 +1746,123 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                   </div>
                 );
               })()}
-              {roomAppointments.map((appt) => {
-                const h = getEcuadorHour(appt.startsAt);
-                const m = parseInt(getEcuadorMinutes(appt.startsAt), 10) || 0;
+              {roomEntries.map((entry) => {
+                const groupAppointments = entry.type === "cabinGroup" ? entry.appointments : [entry.appointment];
+                const first = groupAppointments[0];
+                const h = getEcuadorHour(first.startsAt);
+                const m = parseInt(getEcuadorMinutes(first.startsAt), 10) || 0;
                 const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT);
                 if (topOffset == null) return null;
-                const duration = appt.service?.durationMins || 60;
-                const height = (duration / 60) * HOUR_HEIGHT;
-                const color = appointmentColor(appt, roomColorMap);
-                const noShow = appt.status === "no_show";
+                const height = (appointmentBlockMins(first) / 60) * HOUR_HEIGHT;
+                const color = appointmentColor(first, roomColorMap);
+                const isGroup = groupAppointments.length > 1;
+                const groupHeight = Math.max(height - 8, isGroup ? 50 : 42);
+
+                const renderPiece = (appt, index, compact = false) => {
+                  const noShow = appt.status === "no_show";
+                  return (
+                    <button
+                      key={appt.id}
+                      className={isGroup ? "alma-cabin-group-piece" : undefined}
+                      draggable={!!canMoveAppointments && !noShow}
+                      onDragStart={(event) => {
+                        if (!canMoveAppointments || noShow) {
+                          event.preventDefault();
+                          return;
+                        }
+                        event.stopPropagation();
+                        hideNativeDragGhost(event);
+                        setDraggingId(appt.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", appt.id);
+                        const columnEl = event.currentTarget.closest("[data-agenda-room-column]");
+                        const columnWidth = columnEl?.getBoundingClientRect().width || 158;
+                        const originTarget = {
+                          timeLabel: formatTime(appt.startsAt),
+                          columnWidth,
+                          previewLeft: 56 + visibleColumns.findIndex((column) => column.id === appointmentRoomId(appt)) * columnWidth + 8,
+                          previewTop: HEADER_HEIGHT + topOffset + 4,
+                        };
+                        setDragState(makeDragPreview(appt, originTarget));
+                      }}
+                      onDragEnd={() => {
+                        setDraggingId(null);
+                        setDragState(null);
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(appt);
+                      }}
+                      style={{
+                        position: isGroup ? "relative" : "absolute",
+                        top: isGroup ? undefined : topOffset + 4,
+                        left: isGroup ? undefined : 8,
+                        right: isGroup ? undefined : 8,
+                        height: isGroup ? "100%" : Math.max(height - 8, 42),
+                        minWidth: 0,
+                        borderRadius: isGroup ? 8 : 10,
+                        padding: compact ? "6px 7px" : "8px 10px",
+                        fontSize: compact ? 11 : 12,
+                        overflow: "hidden",
+                        cursor: canMoveAppointments && !noShow ? "grab" : "pointer",
+                        border: noShow ? "1px solid rgba(194,84,80,0.55)" : "1px solid rgba(255,255,255,0.22)",
+                        background: noShow
+                          ? "rgba(194,84,80,0.12)"
+                          : isGroup ? hexToRgba(color, 0.88 - Math.min(index, 3) * 0.08) : color,
+                        color: noShow ? "#B85A56" : "#F7F5F0",
+                        textAlign: "left",
+                        zIndex: draggingId === appt.id ? 4 : 1,
+                        opacity: draggingId === appt.id ? 0.25 : 1,
+                        boxShadow: isGroup ? "0 5px 12px rgba(64,51,39,0.12)" : "0 8px 18px rgba(64,51,39,0.10)",
+                        textDecoration: noShow ? "line-through" : "none",
+                        textDecorationColor: "rgba(194,84,80,0.75)",
+                        textDecorationThickness: 1.5,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
+                        <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.client?.fullName || "Cliente"}</strong>
+                        {!isGroup && <span style={{ opacity: noShow ? 0.9 : 0.72, flexShrink: 0 }}>{formatTime(appt.startsAt)}</span>}
+                      </div>
+                      <div style={{ marginTop: compact ? 1 : 3, opacity: noShow ? 0.85 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {appt.staff?.name || "Terapeuta por asignar"}
+                      </div>
+                      {!isGroup && appt.indications && (
+                        <div style={{ marginTop: 3, opacity: noShow ? 0.75 : 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
+                          {appt.indications}
+                        </div>
+                      )}
+                    </button>
+                  );
+                };
+
+                if (!isGroup) return renderPiece(first);
 
                 return (
-                  <button
-                    key={appt.id}
-                    draggable={!!canMoveAppointments && !noShow}
-                    onDragStart={(event) => {
-                      if (!canMoveAppointments || noShow) {
-                        event.preventDefault();
-                        return;
-                      }
-                      event.stopPropagation();
-                      hideNativeDragGhost(event);
-                      setDraggingId(appt.id);
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", appt.id);
-                      const originTarget = {
-                        timeLabel: formatTime(appt.startsAt),
-                        columnWidth: event.currentTarget.parentElement?.getBoundingClientRect().width || 158,
-                        previewLeft: 56 + visibleColumns.findIndex((room) => room.id === appointmentRoomId(appt)) * (event.currentTarget.parentElement?.getBoundingClientRect().width || 158) + 8,
-                        previewTop: HEADER_HEIGHT + topOffset + 4,
-                      };
-                      setDragState(makeDragPreview(appt, originTarget));
-                    }}
-                    onDragEnd={() => {
-                      setDraggingId(null);
-                      setDragState(null);
-                    }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelect(appt);
-                    }}
+                  <div
+                    key={entry.key}
+                    className="alma-cabin-group"
                     style={{
                       position: "absolute",
                       top: topOffset + 4,
                       left: 8,
                       right: 8,
-                      height: Math.max(height - 8, 42),
-                      borderRadius: 10,
-                      padding: "8px 10px",
-                      fontSize: 12,
-                      overflow: "hidden",
-                      cursor: canMoveAppointments && !noShow ? "grab" : "pointer",
-                      border: noShow ? "1px solid rgba(194,84,80,0.55)" : "1px solid rgba(255,255,255,0.22)",
-                      background: noShow ? "rgba(194,84,80,0.12)" : color,
-                      color: noShow ? "#B85A56" : "#F7F5F0",
-                      textAlign: "left",
-                      zIndex: draggingId === appt.id ? 4 : 1,
-                      opacity: draggingId === appt.id ? 0.25 : 1,
-                      boxShadow: "0 8px 18px rgba(64,51,39,0.10)",
-                      textDecoration: noShow ? "line-through" : "none",
-                      textDecorationColor: "rgba(194,84,80,0.75)",
-                      textDecorationThickness: 1.5,
+                      height: groupHeight,
+                      borderRadius: 12,
+                      padding: 4,
+                      display: "grid",
+                      gridTemplateColumns: groupAppointments.length === 2 ? "1fr 1fr" : "repeat(2, minmax(0, 1fr))",
+                      gap: 4,
+                      border: `1px solid ${hexToRgba(color, 0.42)}`,
+                      background: `linear-gradient(135deg, ${hexToRgba(color, 0.28)}, rgba(253,252,250,0.72))`,
+                      boxShadow: "0 12px 28px rgba(64,51,39,0.13)",
+                      zIndex: 2,
+                      overflow: "visible",
                     }}
+                    title={`${groupAppointments.length} reservas · ${first.service?.name || "Servicio"} · ${formatTime(first.startsAt)}`}
+                    onClick={(event) => event.stopPropagation()}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                      <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.client?.fullName || "Cliente"}</strong>
-                      <span style={{ opacity: noShow ? 0.9 : 0.72, flexShrink: 0 }}>{formatTime(appt.startsAt)}</span>
-                    </div>
-                    <div style={{ marginTop: 3, opacity: noShow ? 0.85 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {appt.staff?.name || "Terapeuta por asignar"}
-                    </div>
-                    {appt.indications && (
-                      <div style={{ marginTop: 3, opacity: noShow ? 0.75 : 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
-                        {appt.indications}
-                      </div>
-                    )}
-                  </button>
+                    {groupAppointments.slice(0, 4).map((appt, index) => renderPiece(appt, index, groupAppointments.length > 2))}
+                  </div>
                 );
               })}
             </div>
@@ -2550,13 +2649,13 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     [selectedStart, selectedService]
   );
   const busyRoomIds = useMemo(() => {
-    if (!selectedStart || !selectedEnd) return new Set();
+    if (!selectedStart || !selectedEnd || !selectedService) return new Set();
     return new Set(
       compatibleRooms
-        .filter((room) => isResourceBusy(dayAppointments, "roomId", room.id, selectedStart, selectedEnd))
+        .filter((room) => !canUseRoomSlot(dayAppointments, room, selectedService.id, selectedStart, selectedEnd))
         .map((room) => room.id)
     );
-  }, [compatibleRooms, dayAppointments, selectedEnd, selectedStart]);
+  }, [compatibleRooms, dayAppointments, selectedEnd, selectedService, selectedStart]);
   const busyStaffIds = useMemo(() => {
     if (!selectedStart || !selectedEnd) return new Set();
     return new Set(
@@ -2641,16 +2740,20 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       },
       ...compatibleRooms.map((room) => {
         const busy = busyRoomIds.has(room.id);
+        const used = selectedStart && selectedEnd ? roomSlotUsage(dayAppointments, room.id, selectedStart, selectedEnd).length : 0;
+        const capacity = roomCapacity(room);
         return {
           value: room.id,
           label: cabinDisplayName(room.name),
-          caption: busy ? "Ocupada en este horario" : "Libre en este horario",
+          caption: busy
+            ? "Sin puestos disponibles para este servicio"
+            : used > 0 ? `${used}/${capacity} puestos ocupados` : `${capacity} puesto${capacity === 1 ? "" : "s"} disponible${capacity === 1 ? "" : "s"}`,
           disabled: busy,
           color: premiumCabinColor(room.colorHex || "#8C6E50"),
         };
       }),
     ];
-  }, [busyRoomIds, compatibleRooms, freeCompatibleRooms.length, selectedService]);
+  }, [busyRoomIds, compatibleRooms, dayAppointments, freeCompatibleRooms.length, selectedEnd, selectedService, selectedStart]);
   const staffOptions = useMemo(
     () => staff.map((person) => {
       const busy = busyStaffIds.has(person.id);
@@ -2831,12 +2934,12 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         return;
       }
       if (roomId && busyRoomIds.has(roomId)) {
-        toast.error(`${selectedRoom?.name || "La cabina seleccionada"} ya está ocupada en ese horario`);
+        toast.error(`${selectedRoom?.name || "La cabina seleccionada"} ya no tiene puestos disponibles para ese servicio a esa hora`);
         setSubmitting(false);
         return;
       }
       if (!roomId && freeCompatibleRooms.length === 0) {
-        toast.error("No hay cabinas libres para ese servicio en ese horario");
+        toast.error("No hay puestos disponibles para ese servicio en ese horario");
         setSubmitting(false);
         return;
       }

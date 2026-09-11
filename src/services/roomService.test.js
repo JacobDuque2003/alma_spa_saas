@@ -56,6 +56,31 @@ test('createRoom acepta colorHex válido para la cabina', async () => {
   assert.equal(createArgs.data.colorHex, '#8E24AA');
 });
 
+test('createRoom guarda capacidad de puestos de la cabina', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', active: true }) },
+    room: { create: async (args) => ({ id: 'room1', ...args.data }) },
+  });
+
+  const result = await roomService.createRoom(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Cabina doble', specialty: 'masajes', capacity: 2 }
+  );
+
+  assert.equal(result.capacity, 2);
+});
+
+test('updateRoom rechaza capacidad fuera de rango', async () => {
+  mockPrisma({
+    room: { findUnique: async () => ({ id: 'room1', tenantId: 't1', specialty: 'masajes' }) },
+  });
+
+  await assert.rejects(
+    () => roomService.updateRoom({ role: 'dueno', tenantId: 't1' }, 'room1', { capacity: 0 }),
+    (err) => err.status === 400 && /capacity/.test(err.message)
+  );
+});
+
 test('updateRoom rechaza colorHex inválido', async () => {
   mockPrisma({
     room: { findUnique: async () => ({ id: 'room1', tenantId: 't1', specialty: 'masajes' }) },

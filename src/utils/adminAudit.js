@@ -5,7 +5,7 @@ const SUMMARY_WHITELIST = {
   // (con action='update') sin filtrar material sensible.
   user: ['name', 'email', 'role', 'active', 'canAttendAppointments', 'isProtected', 'jobTitle', 'passwordChanged'],
   service: ['name', 'category', 'durationMins', 'bufferMins', 'colorHex', 'priceUsd', 'offersHomeService', 'active', 'description'],
-  room: ['name', 'specialty', 'sortOrder', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
+  room: ['name', 'specialty', 'sortOrder', 'capacity', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
   category: ['name', 'active'],
   auth: [],
 };

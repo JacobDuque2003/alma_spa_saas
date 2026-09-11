@@ -330,6 +330,26 @@
     pointer-events: none;
   }
 
+  .alma-cabin-group-piece {
+    transition:
+      transform var(--motion-fast) var(--ease-spring),
+      box-shadow var(--motion-fast) var(--ease-out-quart),
+      filter var(--motion-fast) var(--ease-out-quart);
+  }
+
+  .alma-cabin-group:hover .alma-cabin-group-piece,
+  .alma-cabin-group:focus-within .alma-cabin-group-piece {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(64, 51, 39, 0.18);
+    filter: saturate(1.04);
+  }
+
+  .alma-cabin-group .alma-cabin-group-piece:hover,
+  .alma-cabin-group .alma-cabin-group-piece:focus-visible {
+    transform: translateY(-5px);
+    z-index: 3;
+  }
+
   /* Toast — cumpleaños diario */
   .alma-toast {
     opacity: 0;

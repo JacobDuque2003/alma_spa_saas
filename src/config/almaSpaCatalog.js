@@ -2,9 +2,9 @@ const CABINS = [
   { sortOrder: 1, name: 'Cabina 1 - TIENDA', specialty: 'tienda', colorHex: '#D81B60' },
   { sortOrder: 2, name: 'Cabina 2 - FACIAL', specialty: 'facial', colorHex: '#8E24AA' },
   { sortOrder: 3, name: 'Cabina 3 - LASER', specialty: 'laser', colorHex: '#0B8043' },
-  { sortOrder: 4, name: 'Cabina 4 - CORPORAL', specialty: 'corporal', colorHex: '#F4511E' },
-  { sortOrder: 5, name: 'Cabina 5 - BA\u00d1O DE CAJ\u00d3N', specialty: 'ba\u00f1o de caj\u00f3n', colorHex: '#795548' },
-  { sortOrder: 6, name: 'Cabina 6 - CERAGEM', specialty: 'ceragem', colorHex: '#9E9D24' },
+  { sortOrder: 4, name: 'Cabina 4 - CORPORAL', specialty: 'corporal', colorHex: '#F4511E', capacity: 2 },
+  { sortOrder: 5, name: 'Cabina 5 - BA\u00d1O DE CAJ\u00d3N', specialty: 'ba\u00f1o de caj\u00f3n', colorHex: '#795548', capacity: 2 },
+  { sortOrder: 6, name: 'Cabina 6 - CERAGEM', specialty: 'ceragem', colorHex: '#9E9D24', capacity: 4 },
   {
     sortOrder: 7,
     name: 'Cabina 7 - TERAPIAS',

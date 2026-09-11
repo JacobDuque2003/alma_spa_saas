@@ -161,6 +161,7 @@ model Room {
   name      String
   specialty String
   sortOrder Int        @default(0)
+  capacity  Int        @default(1)
   colorHex  String     @default("#8C6E50")
   opensAt   String     @default("09:00")
   closesAt  String     @default("20:00")
@@ -297,7 +298,7 @@ model Appointment {
   @@index([tenantId])
   @@index([tenantId, startsAt])
   @@index([tenantId, status, startsAt])
-  @@unique([roomId, startsAt])
+  @@index([roomId, startsAt])
   @@unique([staffId, startsAt])
 }
 

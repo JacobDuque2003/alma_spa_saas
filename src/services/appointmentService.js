@@ -100,6 +100,28 @@ function isResourceFree(appointments, resourceKey, resourceId, start, end) {
   return !appointments.some((a) => a[resourceKey] === resourceId && overlaps(a.startsAt, a.endsAt, start, end));
 }
 
+function roomCapacity(room) {
+  const n = Number(room?.capacity || 1);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
+function sameStart(aStartsAt, startsAt) {
+  return new Date(aStartsAt).getTime() === startsAt.getTime();
+}
+
+function canShareRoomAppointment(appt, serviceId, startsAt) {
+  return appt.serviceId === serviceId && sameStart(appt.startsAt, startsAt);
+}
+
+function isRoomSlotAvailable(appointments, room, serviceId, start, end) {
+  const roomId = room?.id || room;
+  if (!roomId) return false;
+  const clashes = appointments.filter((a) => a.roomId === roomId && overlaps(a.startsAt, a.endsAt, start, end));
+  if (clashes.length === 0) return true;
+  return clashes.length < roomCapacity(room)
+    && clashes.every((appt) => canShareRoomAppointment(appt, serviceId, start));
+}
+
 function notifyAgenda(tenantId, event, appointment) {
   if (!tenantId || !appointment?.id) return;
   // Solo se envía la referencia necesaria: el panel vuelve a pedir la cita
@@ -247,7 +269,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
     const businessHours = roomAvailabilityHours(room, tenantConfig, date, includeInternalHours);
     for (const slot of generateSlotsForService(date, businessHours, tz, service, { includePastSlots: canIncludePastSlots })) {
       const blockedEnd = addMinutes(slot, totalBlockMins(service));
-      const roomFree = isResourceFree(appointments, 'roomId', room.id, slot, blockedEnd);
+      const roomFree = isRoomSlotAvailable(appointments, room, service.id, slot, blockedEnd);
       const staffFree = staffIds.some((id) => isResourceFree(appointments, 'staffId', id, slot, blockedEnd));
       const clientFree = !clientId || isResourceFree(appointments, 'clientId', clientId, slot, blockedEnd);
       if (roomFree && staffFree && clientFree) slotMap.set(slot.toISOString(), slot);
@@ -319,7 +341,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
   for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
     const endsAt = addMinutes(slot, totalBlockMins(service));
     if (
-      isResourceFree(appointments, 'roomId', room.id, slot, endsAt)
+      isRoomSlotAvailable(appointments, room, service.id, slot, endsAt)
       && isResourceFree(appointments, 'staffId', staff.id, slot, endsAt)
       && isResourceFree(appointments, 'clientId', appointment.clientId, slot, endsAt)
     ) {
@@ -381,7 +403,7 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
   if (roomsInsideWindow.length === 0) {
     throw new BadRequestError('La cita está fuera del horario de atención');
   }
-  const freeRooms = roomsInsideWindow.filter((r) => isResourceFree(conflicting, 'roomId', r.id, startsAt, endsAt));
+  const freeRooms = roomsInsideWindow.filter((r) => isRoomSlotAvailable(conflicting, r, service.id, startsAt, endsAt));
   const freeStaff = staffCandidates.filter((s) => isResourceFree(conflicting, 'staffId', s.id, startsAt, endsAt));
 
   if (!isResourceFree(conflicting, 'clientId', clientId, startsAt, endsAt)) {
@@ -542,7 +564,7 @@ async function listAppointments(actor, query) {
     include: {
       service: { select: { id: true, name: true, category: true, durationMins: true, bufferMins: true, colorHex: true } },
       client:  { select: { id: true, fullName: true, whatsapp: true, recordNumber: true } },
-      room:    { select: { id: true, name: true, sortOrder: true } },
+      room:    { select: { id: true, name: true, sortOrder: true, capacity: true } },
       staff:   { select: { id: true, name: true } },
     },
   });
@@ -655,8 +677,8 @@ async function createManualAppointment(actor, data) {
       requested: overrideRequested,
       reason: data.outsideBusinessHoursReason,
     });
-    if (!isResourceFree(conflicting, 'roomId', room.id, startsAt, endsAt)) {
-      throw new SlotUnavailableError('La cabina seleccionada ya está ocupada en ese horario');
+    if (!isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)) {
+      throw new SlotUnavailableError('La cabina seleccionada ya no tiene puestos disponibles para ese servicio a esa hora');
     }
     resolvedRoomId = room.id;
   } else {
@@ -674,7 +696,7 @@ async function createManualAppointment(actor, data) {
     if (roomMatches.length === 0) {
       throw new BadRequestError('La cita está fuera del horario de atención');
     }
-    const freeMatch = roomMatches.find(({ room }) => isResourceFree(conflicting, 'roomId', room.id, startsAt, endsAt));
+    const freeMatch = roomMatches.find(({ room }) => isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt));
     if (!freeMatch) {
       throw new SlotUnavailableError();
     }
@@ -790,8 +812,8 @@ async function updateAppointment(actor, id, changes) {
     if (!isResourceFree(conflicting, 'staffId', staffId, startsAt, endsAt)) {
       throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
     }
-    if (!isResourceFree(conflicting, 'roomId', roomId, startsAt, endsAt)) {
-      throw new SlotUnavailableError('La cabina seleccionada ya está ocupada en ese horario');
+    if (!isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)) {
+      throw new SlotUnavailableError('La cabina seleccionada ya no tiene puestos disponibles para ese servicio a esa hora');
     }
     if (!isResourceFree(conflicting, 'clientId', target.clientId, startsAt, endsAt)) {
       throw new SlotUnavailableError('La persona ya tiene una cita que se cruza con ese horario');

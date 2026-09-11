@@ -331,6 +331,63 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
   assert.equal(result.status, 'confirmado');
 });
 
+test('createManualAppointment permite compartir cabina con cupo si es el mismo servicio y hora', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c2', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1', capacity: 2 }] },
+    appointment: {
+      findMany: async () => [{
+        clientId: 'c1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff2',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }],
+      create: async (args) => ({ id: 'appt2', ...args.data }),
+    },
+  });
+
+  const result = await appointmentService.createManualAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    { clientId: 'c2', serviceId: 'srv1', staffId: 'staff1', roomId: 'room1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
+  );
+
+  assert.equal(result.roomId, 'room1');
+});
+
+test('createManualAppointment no comparte cabina si el servicio o la hora no coinciden', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c2', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1', capacity: 2 }] },
+    appointment: {
+      findMany: async () => [{
+        clientId: 'c1',
+        serviceId: 'srv-distinto',
+        roomId: 'room1',
+        staffId: 'staff2',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }],
+      create: async () => {
+        throw new Error('no debe crear con servicio distinto en la misma cabina');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      { clientId: 'c2', serviceId: 'srv1', staffId: 'staff1', roomId: 'room1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
+    ),
+    (err) => err.status === 409 && /puestos disponibles/.test(err.message)
+  );
+});
+
 test('createManualAppointment permite a dueña crear reserva interna fuera del horario público', async () => {
   let createArgs = null;
   mockPrisma({

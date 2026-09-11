@@ -16,6 +16,15 @@ function normalizeColor(value) {
   return value.toUpperCase();
 }
 
+function normalizeCapacity(value) {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 12) {
+    throw new BadRequestError('capacity debe ser un entero entre 1 y 12');
+  }
+  return n;
+}
+
 async function assertSpecialtyMatchesActiveCategory(tenantId, specialty) {
   const match = await prisma.service.findFirst({
     where: { tenantId, category: specialty, active: true },
@@ -84,6 +93,7 @@ async function createRoom(actor, data) {
         name: data.name,
         specialty: data.specialty,
         sortOrder: Number.isInteger(Number(data.sortOrder)) ? Number(data.sortOrder) : 0,
+        capacity: normalizeCapacity(data.capacity) || 1,
         colorHex: normalizeColor(data.colorHex) || '#8C6E50',
         opensAt: data.opensAt || '09:00',
         closesAt: data.closesAt || '20:00',
@@ -116,6 +126,7 @@ async function updateRoom(actor, id, changes) {
     if (!Number.isInteger(n) || n < 0 || n > 999) throw new BadRequestError('sortOrder debe ser un entero entre 0 y 999');
     data.sortOrder = n;
   }
+  if (changes.capacity !== undefined) data.capacity = normalizeCapacity(changes.capacity);
   if (changes.specialty !== undefined) {
     await assertSpecialtyMatchesActiveCategory(target.tenantId, changes.specialty);
     data.specialty = changes.specialty;

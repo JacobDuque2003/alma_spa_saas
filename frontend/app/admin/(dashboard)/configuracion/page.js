@@ -178,6 +178,7 @@ function friendlyConfigError(message, fallback) {
     return "Faltan datos: escribe el nombre y elige la especialidad de la cabina.";
   }
   if (/sortOrder debe ser un entero entre 0 y 999/.test(text)) return "El orden de la cabina debe estar entre 0 y 999.";
+  if (/capacity debe ser un entero entre 1 y 12/.test(text)) return "Los puestos de la cabina deben estar entre 1 y 12.";
   if (/opensAt debe tener formato HH:MM/.test(text)) return "La hora de apertura no tiene un formato válido (ejemplo: 09:00).";
   if (/closesAt debe tener formato HH:MM/.test(text)) return "La hora de cierre no tiene un formato válido (ejemplo: 20:00).";
 
@@ -805,6 +806,18 @@ export default function ConfiguracionPage() {
     updateService(service, { [field]: next });
   }
 
+  async function updateRoomCapacity(room, value) {
+    const next = Number(value);
+    if (!Number.isInteger(next) || next < 1 || next > 12 || next === Number(room.capacity || 1)) return;
+    try {
+      const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: { capacity: next } });
+      setRooms((prev) => prev.map((item) => (item.id === room.id ? { ...item, ...updated } : item)));
+      toast.info("Puestos de cabina guardados.");
+    } catch (err) {
+      toast.error(friendlyConfigError(err.message, "No se pudo guardar la capacidad de la cabina."));
+    }
+  }
+
   async function deleteService(service) {
     if (!service || deletingService) return;
     setDeletingService(true);
@@ -974,6 +987,37 @@ export default function ConfiguracionPage() {
                   <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Define cuándo el spa acepta reservas en la agenda y en el link público.</p>
                 </div>
                 <BusinessHoursPanel canEdit={canModifySchedule} />
+              </div>
+
+              <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
+                <div style={{ marginBottom: 16 }}>
+                  <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Puestos por cabina</h3>
+                  <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Permite agrupar reservas del mismo servicio a la misma hora.</p>
+                </div>
+                <div style={{ display: "grid", gap: 9 }}>
+                  {rooms.filter((room) => room.active !== false).map((room) => (
+                    <div key={room.id} style={{ display: "grid", gridTemplateColumns: "1fr 74px", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: "1px solid rgba(168,154,135,0.22)" }}>
+                      <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ width: 9, height: 9, borderRadius: "50%", background: room.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)", flexShrink: 0 }} />
+                        <span style={{ color: "#6B5540", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{room.name}</span>
+                      </div>
+                      <label style={{ display: "grid", gap: 3 }}>
+                        <span style={{ fontSize: 10, color: "#A89A87" }}>Puestos</span>
+                        <input
+                          type="number"
+                          disabled={!canModifyServices}
+                          min="1"
+                          max="12"
+                          step="1"
+                          defaultValue={room.capacity || 1}
+                          onBlur={(e) => updateRoomCapacity(room, e.target.value)}
+                          style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none" }}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {!canModifyServices && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#A89A87" }}>Tienes acceso de consulta. La dueña puede habilitarte el permiso “Modificar servicios”.</p>}
               </div>
 
               <div
