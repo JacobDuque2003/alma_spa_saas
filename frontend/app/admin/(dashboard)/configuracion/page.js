@@ -1182,6 +1182,20 @@ export default function ConfiguracionPage() {
               <div style={{ display: "grid", gap: 12 }}>
                 {serviceGroups.map(({ service, children }) => {
                   const collapsed = collapsedServiceIds.has(service.id);
+                  if (children.length === 0) {
+                    return (
+                      <ServiceListRow
+                        key={service.id}
+                        service={service}
+                        isMobile={isMobile}
+                        canModifyServices={canModifyServices}
+                        onEdit={setEditServiceTarget}
+                        onMedia={setMediaTarget}
+                        onDelete={setDeleteServiceTarget}
+                        onToggle={(svc, active) => updateService(svc, { active })}
+                      />
+                    );
+                  }
                   return (
                     <div key={service.id} style={{ display: "grid", gap: 8, padding: 8, borderRadius: 18, border: "1px solid rgba(168,154,135,0.22)", background: "rgba(247,245,240,0.34)" }}>
                       <ServiceListRow
@@ -1193,31 +1207,29 @@ export default function ConfiguracionPage() {
                         onDelete={setDeleteServiceTarget}
                         onToggle={(svc, active) => updateService(svc, { active })}
                       />
-                      {children.length > 0 && (
-                        <div style={{ display: "grid", gap: 8, paddingLeft: isMobile ? 0 : 20 }}>
-                          <button
-                            type="button"
-                            onClick={() => toggleServiceChildren(service.id)}
-                            style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "fit-content", padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.32)", background: "#FDFCFA", color: "#8C6E50", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
-                          >
-                            <ChevronDown size={13} style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform var(--motion-fast) var(--ease-in-out-quart)" }} />
-                            {children.length} subservicio{children.length === 1 ? "" : "s"}
-                          </button>
-                          {!collapsed && children.map((child) => (
-                            <ServiceListRow
-                              key={child.id}
-                              service={child}
-                              isSubservice
-                              isMobile={isMobile}
-                              canModifyServices={canModifyServices}
-                              onEdit={setEditServiceTarget}
-                              onMedia={setMediaTarget}
-                              onDelete={setDeleteServiceTarget}
-                              onToggle={(svc, active) => updateService(svc, { active })}
-                            />
-                          ))}
-                        </div>
-                      )}
+                      <div style={{ display: "grid", gap: 8, paddingLeft: isMobile ? 0 : 20 }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleServiceChildren(service.id)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "fit-content", padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.32)", background: "#FDFCFA", color: "#8C6E50", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          <ChevronDown size={13} style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform var(--motion-fast) var(--ease-in-out-quart)" }} />
+                          {children.length} subservicio{children.length === 1 ? "" : "s"}
+                        </button>
+                        {!collapsed && children.map((child) => (
+                          <ServiceListRow
+                            key={child.id}
+                            service={child}
+                            isSubservice
+                            isMobile={isMobile}
+                            canModifyServices={canModifyServices}
+                            onEdit={setEditServiceTarget}
+                            onMedia={setMediaTarget}
+                            onDelete={setDeleteServiceTarget}
+                            onToggle={(svc, active) => updateService(svc, { active })}
+                          />
+                        ))}
+                      </div>
                     </div>
                   );
                 })}
