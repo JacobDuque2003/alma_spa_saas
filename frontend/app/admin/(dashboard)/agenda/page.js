@@ -977,18 +977,19 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
     <aside
       className="alma-hover-scroll"
       style={{
-        flex: "0 0 clamp(236px, 15vw, 268px)",
-        minWidth: 236,
+        flex: "0 0 clamp(276px, 17vw, 312px)",
+        minWidth: 276,
         borderLeft: "1px solid rgba(168,154,135,0.26)",
-        background: "rgba(247,245,240,0.72)",
+        background: "linear-gradient(180deg, rgba(253,252,250,0.78), rgba(247,245,240,0.9))",
         overflowY: "auto",
         overflowX: "hidden",
-        padding: "18px 14px 24px",
+        padding: "18px 18px 24px",
         boxShadow: "-12px 0 30px rgba(107,85,64,0.04)",
         overscrollBehavior: "contain",
+        boxSizing: "border-box",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
+      <div style={{ width: "min(100%, 232px)", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <h2 className="font-heading" style={{ margin: 0, color: "#6B5540", fontSize: 20, lineHeight: 1.1, fontWeight: 700 }}>
           {monthLabel(monthDate)}
         </h2>
@@ -1044,7 +1045,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
           gridTemplateColumns: "repeat(7, 1fr)",
           gap: 4,
           marginBottom: 22,
-          width: "min(100%, 224px)",
+          width: "min(100%, 232px)",
           marginLeft: "auto",
           marginRight: "auto",
         }}
@@ -1087,7 +1088,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
         })}
       </div>
 
-      <div style={{ borderTop: "1px solid rgba(168,154,135,0.24)", paddingTop: 18, width: "min(100%, 224px)", margin: "0 auto" }}>
+      <div style={{ borderTop: "1px solid rgba(168,154,135,0.24)", paddingTop: 18, width: "min(100%, 232px)", margin: "0 auto" }}>
         <h3 className="font-heading" style={{ margin: "0 0 12px", color: "#6B5540", fontSize: 20, lineHeight: 1.1, fontWeight: 700 }}>
           Servicios
         </h3>
