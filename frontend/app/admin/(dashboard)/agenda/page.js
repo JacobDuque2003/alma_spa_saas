@@ -199,15 +199,6 @@ function getResourceId(item, key) {
   return null;
 }
 
-function isResourceBusy(appointments, resourceKey, resourceId, start, end) {
-  if (!resourceId || !start || !end) return false;
-  return appointments.some((appt) => {
-    if (!OPEN_APPOINTMENT_STATUSES.has(appt.status)) return false;
-    if (getResourceId(appt, resourceKey) !== resourceId) return false;
-    return overlapsRange(new Date(appt.startsAt), new Date(appt.endsAt), start, end);
-  });
-}
-
 function getEcuadorHour(iso) {
   const parts = new Date(iso).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -276,6 +267,12 @@ function roomSlotMatchesGroup(appt, serviceId, start) {
     && new Date(appt.startsAt).getTime() === start.getTime();
 }
 
+function staffSlotMatchesGroup(appt, serviceId, roomId, start) {
+  return getResourceId(appt, "serviceId") === serviceId
+    && getResourceId(appt, "roomId") === roomId
+    && new Date(appt.startsAt).getTime() === start.getTime();
+}
+
 function roomSlotUsage(appointments, roomId, start, end) {
   if (!roomId || !start || !end) return [];
   return appointments.filter((appt) => {
@@ -291,6 +288,17 @@ function canUseRoomSlot(appointments, room, serviceId, start, end) {
   if (usage.length === 0) return true;
   return usage.length < roomCapacity(room)
     && usage.every((appt) => roomSlotMatchesGroup(appt, serviceId, start));
+}
+
+function canUseStaffSlot(appointments, staffId, serviceId, roomId, start, end) {
+  if (!staffId || !serviceId || !roomId || !start || !end) return false;
+  const usage = appointments.filter((appt) => {
+    if (!OPEN_APPOINTMENT_STATUSES.has(appt.status)) return false;
+    if (getResourceId(appt, "staffId") !== staffId) return false;
+    return overlapsRange(new Date(appt.startsAt), new Date(appt.endsAt), start, end);
+  });
+  if (usage.length === 0) return true;
+  return usage.every((appt) => staffSlotMatchesGroup(appt, serviceId, roomId, start));
 }
 
 function firstDayOfMonth(dateStr) {
@@ -832,7 +840,7 @@ export default function AgendaPage() {
         )}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", gap: isMobile ? 0 : 8 }}>
         {/* Grid */}
         <div
           className={gridClass || undefined}
@@ -967,15 +975,17 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
 
   return (
     <aside
+      className="alma-hover-scroll"
       style={{
-        flex: "0 0 244px",
-        minWidth: 244,
+        flex: "0 0 clamp(236px, 15vw, 268px)",
+        minWidth: 236,
         borderLeft: "1px solid rgba(168,154,135,0.26)",
         background: "rgba(247,245,240,0.72)",
         overflowY: "auto",
         overflowX: "hidden",
-        padding: "18px 18px 24px",
+        padding: "18px 14px 24px",
         boxShadow: "-12px 0 30px rgba(107,85,64,0.04)",
+        overscrollBehavior: "contain",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
@@ -1034,6 +1044,9 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
           gridTemplateColumns: "repeat(7, 1fr)",
           gap: 4,
           marginBottom: 22,
+          width: "min(100%, 224px)",
+          marginLeft: "auto",
+          marginRight: "auto",
         }}
       >
         {DAY_NAMES.map((day) => (
@@ -1074,7 +1087,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
         })}
       </div>
 
-      <div style={{ borderTop: "1px solid rgba(168,154,135,0.24)", paddingTop: 18 }}>
+      <div style={{ borderTop: "1px solid rgba(168,154,135,0.24)", paddingTop: 18, width: "min(100%, 224px)", margin: "0 auto" }}>
         <h3 className="font-heading" style={{ margin: "0 0 12px", color: "#6B5540", fontSize: 20, lineHeight: 1.1, fontWeight: 700 }}>
           Servicios
         </h3>
@@ -1499,7 +1512,8 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     .map((appt) => appt.room);
   const columns = [...configuredRooms, ...fallbackRooms];
   const visibleColumns = columns.length ? columns : [{ id: "__sin-cabina", name: "Sin cabinas", specialty: "configuración" }];
-  const minWidth = visibleColumns.length > 7 ? 0 : Math.max(720, 56 + visibleColumns.length * 168);
+  const columnWidth = visibleColumns.length > 8 ? 156 : 168;
+  const minWidth = Math.max(760, 56 + visibleColumns.length * columnWidth);
   const firstHour = HOURS[0];
   const lastHour = HOURS[HOURS.length - 1];
 
@@ -1588,11 +1602,20 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   }
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "0 clamp(12px, 2vw, 32px) 28px", maxWidth: "100%" }}>
+    <div
+      className="alma-hover-scroll alma-agenda-grid-scroll"
+      style={{
+        flex: 1,
+        overflow: "auto",
+        padding: "0 clamp(6px, 1vw, 18px) 24px",
+        maxWidth: "100%",
+        overscrollBehavior: "contain",
+      }}
+    >
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(${visibleColumns.length > 7 ? 128 : 158}px, 1fr))`,
+          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(${columnWidth}px, 1fr))`,
           border: "1px solid rgba(168,154,135,0.4)",
           borderRadius: 12,
           background: "#F7F5F0",
@@ -2657,13 +2680,23 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     );
   }, [compatibleRooms, dayAppointments, selectedEnd, selectedService, selectedStart]);
   const busyStaffIds = useMemo(() => {
-    if (!selectedStart || !selectedEnd) return new Set();
+    if (!selectedStart || !selectedEnd || !selectedService) return new Set();
+    const staffRoomCandidates = roomId
+      ? compatibleRooms.filter((room) => room.id === roomId)
+      : compatibleRooms.filter((room) => canUseRoomSlot(dayAppointments, room, selectedService.id, selectedStart, selectedEnd));
     return new Set(
       staff
-        .filter((person) => isResourceBusy(dayAppointments, "staffId", person.id, selectedStart, selectedEnd))
+        .filter((person) => !staffRoomCandidates.some((room) => canUseStaffSlot(
+          dayAppointments,
+          person.id,
+          selectedService.id,
+          room.id,
+          selectedStart,
+          selectedEnd
+        )))
         .map((person) => person.id)
     );
-  }, [dayAppointments, selectedEnd, selectedStart, staff]);
+  }, [compatibleRooms, dayAppointments, roomId, selectedEnd, selectedService, selectedStart, staff]);
   const freeCompatibleRooms = useMemo(
     () => compatibleRooms.filter((room) => !busyRoomIds.has(room.id)),
     [busyRoomIds, compatibleRooms]

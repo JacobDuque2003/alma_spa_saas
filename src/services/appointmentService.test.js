@@ -358,6 +358,64 @@ test('createManualAppointment permite compartir cabina con cupo si es el mismo s
   assert.equal(result.roomId, 'room1');
 });
 
+test('createManualAppointment permite compartir terapeuta en el mismo grupo de cabina', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c2', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1', capacity: 2 }] },
+    appointment: {
+      findMany: async () => [{
+        clientId: 'c1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }],
+      create: async (args) => ({ id: 'appt2', ...args.data }),
+    },
+  });
+
+  const result = await appointmentService.createManualAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    { clientId: 'c2', serviceId: 'srv1', staffId: 'staff1', roomId: 'room1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
+  );
+
+  assert.equal(result.staffId, 'staff1');
+  assert.equal(result.roomId, 'room1');
+});
+
+test('createManualAppointment no comparte terapeuta si no es el mismo grupo de cabina', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c2', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, priceUsd: 30, offersHomeService: false }) },
+    user: { findFirst: async () => ({ id: 'staff1' }) },
+    room: { findMany: async () => [{ id: 'room1', capacity: 2 }, { id: 'room2', capacity: 2 }] },
+    appointment: {
+      findMany: async () => [{
+        clientId: 'c1',
+        serviceId: 'srv1',
+        roomId: 'room2',
+        staffId: 'staff1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }],
+      create: async () => {
+        throw new Error('no debe crear si la terapeuta está cruzada en otra cabina');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.createManualAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      { clientId: 'c2', serviceId: 'srv1', staffId: 'staff1', roomId: 'room1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'presencial' }
+    ),
+    (err) => err.status === 409 && /terapeuta/.test(err.message)
+  );
+});
+
 test('createManualAppointment no comparte cabina si el servicio o la hora no coinciden', async () => {
   mockPrisma({
     client: { findFirst: async () => ({ id: 'c2', tenantId: 't1' }) },
@@ -742,6 +800,47 @@ test('updateAppointment rechaza reprogramar fuera del horario dividido', async (
     ),
     (err) => err.status === 400 && /fuera del horario/.test(err.message)
   );
+});
+
+test('updateAppointment permite mover a un grupo con la misma terapeuta si hay puesto disponible', async () => {
+  let updateData = null;
+  mockPrisma({
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'masajes', capacity: 2 }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1',
+        tenantId: 't1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        clientId: 'c2',
+        startsAt: new Date('2099-08-01T16:00:00.000Z'),
+      }),
+      findMany: async () => [{
+        id: 'other',
+        clientId: 'c1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }],
+      update: async ({ data }) => {
+        updateData = data;
+        return { id: 'appt1', ...data };
+      },
+    },
+  });
+
+  const result = await appointmentService.updateAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    'appt1',
+    { startsAt: '2099-08-01T14:00:00.000Z' }
+  );
+
+  assert.equal(result.endsAt.toISOString(), '2099-08-01T15:15:00.000Z');
+  assert.equal(updateData.startsAt.toISOString(), '2099-08-01T14:00:00.000Z');
 });
 
 test('updateAppointment permite a dueña mover una cita a horario interno ampliado', async () => {

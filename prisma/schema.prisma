@@ -299,7 +299,7 @@ model Appointment {
   @@index([tenantId, startsAt])
   @@index([tenantId, status, startsAt])
   @@index([roomId, startsAt])
-  @@unique([staffId, startsAt])
+  @@index([staffId, startsAt])
 }
 
 model TreatmentHistory {

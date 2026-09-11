@@ -113,6 +113,12 @@ function canShareRoomAppointment(appt, serviceId, startsAt) {
   return appt.serviceId === serviceId && sameStart(appt.startsAt, startsAt);
 }
 
+function canShareGroupedAppointment(appt, { serviceId, roomId, startsAt }) {
+  return appt.serviceId === serviceId
+    && appt.roomId === roomId
+    && sameStart(appt.startsAt, startsAt);
+}
+
 function isRoomSlotAvailable(appointments, room, serviceId, start, end) {
   const roomId = room?.id || room;
   if (!roomId) return false;
@@ -120,6 +126,13 @@ function isRoomSlotAvailable(appointments, room, serviceId, start, end) {
   if (clashes.length === 0) return true;
   return clashes.length < roomCapacity(room)
     && clashes.every((appt) => canShareRoomAppointment(appt, serviceId, start));
+}
+
+function isStaffSlotAvailable(appointments, staffId, { serviceId, roomId, startsAt, endsAt }) {
+  if (!staffId || !serviceId || !roomId) return false;
+  const clashes = appointments.filter((a) => a.staffId === staffId && overlaps(a.startsAt, a.endsAt, startsAt, endsAt));
+  if (clashes.length === 0) return true;
+  return clashes.every((appt) => canShareGroupedAppointment(appt, { serviceId, roomId, startsAt }));
 }
 
 function notifyAgenda(tenantId, event, appointment) {
@@ -270,7 +283,12 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
     for (const slot of generateSlotsForService(date, businessHours, tz, service, { includePastSlots: canIncludePastSlots })) {
       const blockedEnd = addMinutes(slot, totalBlockMins(service));
       const roomFree = isRoomSlotAvailable(appointments, room, service.id, slot, blockedEnd);
-      const staffFree = staffIds.some((id) => isResourceFree(appointments, 'staffId', id, slot, blockedEnd));
+      const staffFree = staffIds.some((id) => isStaffSlotAvailable(appointments, id, {
+        serviceId: service.id,
+        roomId: room.id,
+        startsAt: slot,
+        endsAt: blockedEnd,
+      }));
       const clientFree = !clientId || isResourceFree(appointments, 'clientId', clientId, slot, blockedEnd);
       if (roomFree && staffFree && clientFree) slotMap.set(slot.toISOString(), slot);
     }
@@ -342,7 +360,12 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
     const endsAt = addMinutes(slot, totalBlockMins(service));
     if (
       isRoomSlotAvailable(appointments, room, service.id, slot, endsAt)
-      && isResourceFree(appointments, 'staffId', staff.id, slot, endsAt)
+      && isStaffSlotAvailable(appointments, staff.id, {
+        serviceId: service.id,
+        roomId: room.id,
+        startsAt: slot,
+        endsAt,
+      })
       && isResourceFree(appointments, 'clientId', appointment.clientId, slot, endsAt)
     ) {
       slots.push(slot.toISOString());
@@ -354,9 +377,8 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
 /**
  * Resuelve roomId/staffId (auto-asignación) e inserta el Appointment dentro
  * de la transacción del caller. Prueba combinaciones candidatas en orden
- * determinístico; si el insert choca contra los @@unique de Appointment
- * (P2002 — otra transacción concurrente ganó ese room/staff+horario),
- * reintenta con la siguiente combinación.
+ * determinístico; si el insert choca contra una restricción concurrente de
+ * Appointment, reintenta con la siguiente combinación.
  */
 async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientId, serviceId, startsAt, modality, status }) {
   if (isHomeModality(modality)) {
@@ -403,41 +425,51 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
   if (roomsInsideWindow.length === 0) {
     throw new BadRequestError('La cita está fuera del horario de atención');
   }
-  const freeRooms = roomsInsideWindow.filter((r) => isRoomSlotAvailable(conflicting, r, service.id, startsAt, endsAt));
-  const freeStaff = staffCandidates.filter((s) => isResourceFree(conflicting, 'staffId', s.id, startsAt, endsAt));
-
   if (!isResourceFree(conflicting, 'clientId', clientId, startsAt, endsAt)) {
     throw new SlotUnavailableError('La persona ya tiene una cita que se cruza con ese horario');
   }
 
-  if (freeRooms.length === 0 || freeStaff.length === 0) {
+  const availablePairs = [];
+  for (const room of roomsInsideWindow) {
+    if (!isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)) continue;
+    for (const staff of staffCandidates) {
+      if (isStaffSlotAvailable(conflicting, staff.id, {
+        serviceId: service.id,
+        roomId: room.id,
+        startsAt,
+        endsAt,
+      })) {
+        availablePairs.push({ room, staff });
+      }
+    }
+  }
+
+  if (availablePairs.length === 0) {
     throw new SlotUnavailableError();
   }
 
-  for (const room of freeRooms) {
-    for (const staff of freeStaff) {
-      try {
-        return await tx.appointment.create({
-          data: {
-            tenantId,
-            clientId,
-            serviceId,
-            modality: mod,
-            roomId: room.id,
-            homeAddress: null,
-            staffId: staff.id,
-            startsAt,
-            endsAt,
-            priceUsd: service.priceUsd,
-            ...(status ? { status } : {}),
-          },
-        });
-      } catch (err) {
-        if (err.code === 'P2002') {
-          continue; // otra transacción ganó esta combinación — probar la siguiente
-        }
-        throw err;
+  for (const { room, staff } of availablePairs) {
+    try {
+      return await tx.appointment.create({
+        data: {
+          tenantId,
+          clientId,
+          serviceId,
+          modality: mod,
+          roomId: room.id,
+          homeAddress: null,
+          staffId: staff.id,
+          startsAt,
+          endsAt,
+          priceUsd: service.priceUsd,
+          ...(status ? { status } : {}),
+        },
+      });
+    } catch (err) {
+      if (err.code === 'P2002') {
+        continue; // otra transacción ganó esta combinación — probar la siguiente
       }
+      throw err;
     }
   }
   throw new SlotUnavailableError();
@@ -654,9 +686,6 @@ async function createManualAppointment(actor, data) {
       ],
     },
   });
-  if (!isResourceFree(conflicting, 'staffId', staff.id, startsAt, endsAt)) {
-    throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
-  }
   if (!isResourceFree(conflicting, 'clientId', data.clientId, startsAt, endsAt)) {
     throw new SlotUnavailableError('La persona ya tiene una cita que se cruza con ese horario');
   }
@@ -680,6 +709,14 @@ async function createManualAppointment(actor, data) {
     if (!isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)) {
       throw new SlotUnavailableError('La cabina seleccionada ya no tiene puestos disponibles para ese servicio a esa hora');
     }
+    if (!isStaffSlotAvailable(conflicting, staff.id, {
+      serviceId: service.id,
+      roomId: room.id,
+      startsAt,
+      endsAt,
+    })) {
+      throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
+    }
     resolvedRoomId = room.id;
   } else {
     const roomMatches = roomCandidates
@@ -696,7 +733,15 @@ async function createManualAppointment(actor, data) {
     if (roomMatches.length === 0) {
       throw new BadRequestError('La cita está fuera del horario de atención');
     }
-    const freeMatch = roomMatches.find(({ room }) => isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt));
+    const freeMatch = roomMatches.find(({ room }) => (
+      isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)
+      && isStaffSlotAvailable(conflicting, staff.id, {
+        serviceId: service.id,
+        roomId: room.id,
+        startsAt,
+        endsAt,
+      })
+    ));
     if (!freeMatch) {
       throw new SlotUnavailableError();
     }
@@ -809,7 +854,12 @@ async function updateAppointment(actor, id, changes) {
         OR: [{ roomId }, { staffId }, { clientId: target.clientId }],
       },
     });
-    if (!isResourceFree(conflicting, 'staffId', staffId, startsAt, endsAt)) {
+    if (!isStaffSlotAvailable(conflicting, staffId, {
+      serviceId: service.id,
+      roomId,
+      startsAt,
+      endsAt,
+    })) {
       throw new SlotUnavailableError('La terapeuta seleccionada ya está ocupada en ese horario');
     }
     if (!isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)) {

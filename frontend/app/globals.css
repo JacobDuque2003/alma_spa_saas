@@ -330,6 +330,37 @@
     pointer-events: none;
   }
 
+  .alma-hover-scroll {
+    scrollbar-width: none;
+    scrollbar-color: rgba(140, 110, 80, 0.58) transparent;
+  }
+
+  .alma-hover-scroll:hover,
+  .alma-hover-scroll:focus-within {
+    scrollbar-width: thin;
+  }
+
+  .alma-hover-scroll::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .alma-hover-scroll:hover::-webkit-scrollbar,
+  .alma-hover-scroll:focus-within::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .alma-hover-scroll::-webkit-scrollbar-thumb {
+    background: rgba(140, 110, 80, 0.58);
+    border-radius: 999px;
+    border: 2px solid rgba(247, 245, 240, 0.92);
+  }
+
+  .alma-hover-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
   .alma-cabin-group-piece {
     transition:
       transform var(--motion-fast) var(--ease-spring),
