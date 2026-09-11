@@ -258,6 +258,39 @@ function formatDayFull(dateStr) {
   });
 }
 
+function firstDayOfMonth(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(1);
+  return toLocalDate(d);
+}
+
+function monthLabel(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("es-EC", {
+    month: "long",
+    year: "numeric",
+    timeZone: "America/Guayaquil",
+  });
+}
+
+function shiftMonth(dateStr, amount) {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(1);
+  d.setMonth(d.getMonth() + amount);
+  return toLocalDate(d);
+}
+
+function calendarMonthDays(monthDateStr) {
+  const first = new Date(firstDayOfMonth(monthDateStr) + "T12:00:00");
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + index);
+    return toLocalDate(d);
+  });
+}
+
 export default function AgendaPage() {
   const { user } = useAuth();
   const toast = useToast();
@@ -270,6 +303,7 @@ export default function AgendaPage() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [appointments, setAppointments] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [agendaServices, setAgendaServices] = useState([]);
   const [tenantConfig, setTenantConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -287,6 +321,7 @@ export default function AgendaPage() {
   const [agendaQuery, setAgendaQuery] = useState("");
   const [agendaResults, setAgendaResults] = useState([]);
   const [agendaSearching, setAgendaSearching] = useState(false);
+  const [sideCalendarMonth, setSideCalendarMonth] = useState(firstDayOfMonth(today));
 
   const detailAnim = useAnimatedMount(!!selected, 220);
   const slotGroupAnim = useAnimatedMount(!!slotGroup, 220);
@@ -343,8 +378,20 @@ export default function AgendaPage() {
   }, [selectedDate, effectiveView]);
 
   useEffect(() => {
+    let cancelled = false;
+    authFetch("/appointments/service-legend")
+      .then((rows) => { if (!cancelled) setAgendaServices(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (!cancelled) setAgendaServices([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    setSideCalendarMonth(firstDayOfMonth(selectedDate));
+  }, [selectedDate]);
 
   // Cambios originados por Almita, la reserva pública u otro miembro del
   // equipo llegan por este stream. La agenda vuelve a pedir únicamente el
@@ -491,6 +538,12 @@ export default function AgendaPage() {
     setView("day");
     setSelected(appt);
     setAgendaResults([]);
+  }
+
+  function selectDateFromSideCalendar(dateStr) {
+    setNavDirection(dateStr > selectedDate ? 1 : -1);
+    setSelectedDate(dateStr);
+    setView("day");
   }
 
   const roomColorMap = {};
@@ -744,44 +797,60 @@ export default function AgendaPage() {
         )}
       </div>
 
-      {/* Grid */}
-      <div className={gridClass || undefined} onAnimationEnd={onAnimationEnd}>
-        {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
-          </div>
-        ) : isMobile ? (
-          <MobileCardList
-            appointments={filteredAppointments}
-            date={selectedDate}
-            roomColorMap={roomColorMap}
-            rooms={rooms}
-            onSelect={setSelected}
-            onSelectGroup={setSlotGroup}
-          />
-        ) : effectiveView === "week" ? (
-          <WeekGrid
-            appointments={filteredAppointments}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        {/* Grid */}
+        <div
+          className={gridClass || undefined}
+          onAnimationEnd={onAnimationEnd}
+          style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+        >
+          {loading ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
+              <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#8C6E50" }} />
+            </div>
+          ) : isMobile ? (
+            <MobileCardList
+              appointments={filteredAppointments}
+              date={selectedDate}
+              roomColorMap={roomColorMap}
+              rooms={rooms}
+              onSelect={setSelected}
+              onSelectGroup={setSlotGroup}
+            />
+          ) : effectiveView === "week" ? (
+            <WeekGrid
+              appointments={filteredAppointments}
+              selectedDate={selectedDate}
+              today={today}
+              roomColorMap={roomColorMap}
+              onSelect={setSelected}
+              onSelectGroup={setSlotGroup}
+            />
+          ) : (
+            <CabinDayGrid
+              appointments={filteredAppointments}
+              rooms={rooms}
+              date={selectedDate}
+              today={today}
+              roomColorMap={roomColorMap}
+              tenantConfig={tenantConfig}
+              onSelect={setSelected}
+              onSelectGroup={setSlotGroup}
+              onCreateFromSlot={canCreateMoveAppointments ? openQuickCreate : null}
+              onMoveAppointment={moveAppointment}
+              canMoveAppointments={canCreateMoveAppointments}
+              draftAppointment={quickDraft}
+            />
+          )}
+        </div>
+
+        {!isMobile && (
+          <AgendaSidePanel
             selectedDate={selectedDate}
-            today={today}
-            roomColorMap={roomColorMap}
-            onSelect={setSelected}
-            onSelectGroup={setSlotGroup}
-          />
-        ) : (
-          <CabinDayGrid
-            appointments={filteredAppointments}
-            rooms={rooms}
-            date={selectedDate}
-            today={today}
-            roomColorMap={roomColorMap}
-            tenantConfig={tenantConfig}
-            onSelect={setSelected}
-            onSelectGroup={setSlotGroup}
-            onCreateFromSlot={canCreateMoveAppointments ? openQuickCreate : null}
-            onMoveAppointment={moveAppointment}
-            canMoveAppointments={canCreateMoveAppointments}
-            draftAppointment={quickDraft}
+            monthDate={sideCalendarMonth}
+            services={agendaServices}
+            onSelectDate={selectDateFromSideCalendar}
+            onMonthChange={setSideCalendarMonth}
           />
         )}
       </div>
@@ -852,6 +921,154 @@ export default function AgendaPage() {
         />
       )}
     </div>
+  );
+}
+
+function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMonthChange }) {
+  const days = calendarMonthDays(monthDate);
+  const activeMonth = new Date(monthDate + "T12:00:00").getMonth();
+  const selectedMonth = new Date(selectedDate + "T12:00:00").getMonth();
+  const today = toLocalDate(new Date());
+
+  return (
+    <aside
+      style={{
+        flex: "0 0 244px",
+        minWidth: 244,
+        borderLeft: "1px solid rgba(168,154,135,0.26)",
+        background: "rgba(247,245,240,0.72)",
+        overflowY: "auto",
+        overflowX: "hidden",
+        padding: "18px 18px 24px",
+        boxShadow: "-12px 0 30px rgba(107,85,64,0.04)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
+        <h2 className="font-heading" style={{ margin: 0, color: "#6B5540", fontSize: 20, lineHeight: 1.1, fontWeight: 700 }}>
+          {monthLabel(monthDate)}
+        </h2>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => onMonthChange(shiftMonth(monthDate, -1))}
+            aria-label="Mes anterior"
+            title="Mes anterior"
+            style={{
+              width: 30,
+              height: 30,
+              border: "none",
+              borderRadius: "50%",
+              background: "transparent",
+              color: "#6B5540",
+              cursor: "pointer",
+              fontSize: 22,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={() => onMonthChange(shiftMonth(monthDate, 1))}
+            aria-label="Mes siguiente"
+            title="Mes siguiente"
+            style={{
+              width: 30,
+              height: 30,
+              border: "none",
+              borderRadius: "50%",
+              background: "rgba(168,154,135,0.12)",
+              color: "#6B5540",
+              cursor: "pointer",
+              fontSize: 22,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, 1fr)",
+          gap: 4,
+          marginBottom: 22,
+        }}
+      >
+        {DAY_NAMES.map((day) => (
+          <div key={day} style={{ color: "#8C6E50", fontSize: 10, fontWeight: 800, textAlign: "center", paddingBottom: 4 }}>
+            {day.charAt(0)}
+          </div>
+        ))}
+        {days.map((day) => {
+          const date = new Date(day + "T12:00:00");
+          const isOutside = date.getMonth() !== activeMonth;
+          const isSelected = day === selectedDate;
+          const isToday = day === today;
+          const isSelectedOutsideMonth = isSelected && date.getMonth() !== selectedMonth;
+          return (
+            <button
+              key={day}
+              type="button"
+              onClick={() => onSelectDate(day)}
+              style={{
+                width: 28,
+                height: 28,
+                justifySelf: "center",
+                borderRadius: "50%",
+                border: isToday && !isSelected ? "1px solid rgba(140,110,80,0.45)" : "1px solid transparent",
+                background: isSelected ? "#8C6E50" : "transparent",
+                color: isSelected ? "#F7F5F0" : isOutside ? "#C9BFB0" : "#6B5540",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: isSelected || isToday ? 800 : 500,
+                boxShadow: isSelected ? "0 8px 18px rgba(107,85,64,0.18)" : "none",
+                outline: isSelectedOutsideMonth ? "2px solid rgba(201,168,118,0.35)" : "none",
+                outlineOffset: 1,
+              }}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ borderTop: "1px solid rgba(168,154,135,0.24)", paddingTop: 18 }}>
+        <h3 className="font-heading" style={{ margin: "0 0 12px", color: "#6B5540", fontSize: 20, lineHeight: 1.1, fontWeight: 700 }}>
+          Servicios
+        </h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          {(services || []).length ? (
+            services.map((service) => (
+              <div key={service.id} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: "50%",
+                    background: service.colorHex || "#8C6E50",
+                    boxShadow: `0 0 0 3px ${hexToRgba(service.colorHex || "#8C6E50", 0.12)}`,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ color: "#6B5540", fontSize: 13, lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {service.name}
+                </span>
+              </div>
+            ))
+          ) : (
+            <span style={{ color: "#A89A87", fontSize: 13 }}>Sin servicios activos</span>
+          )}
+        </div>
+      </div>
+    </aside>
   );
 }
 

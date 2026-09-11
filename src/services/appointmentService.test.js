@@ -639,6 +639,24 @@ test('listAppointments permite filtrar historial por clienta sin salir del tenan
   assert.equal(seenArgs.where.clientId, 'client-123');
 });
 
+test('listServiceLegend devuelve solo servicios activos del tenant con nombre y color', async () => {
+  let seenArgs;
+  mockPrisma({
+    service: {
+      findMany: async (args) => {
+        seenArgs = args;
+        return [{ id: 'srv1', name: 'Masaje', colorHex: '#8C6E50' }];
+      },
+    },
+  });
+
+  const result = await appointmentService.listServiceLegend({ role: 'personal', tenantId: 't1' });
+
+  assert.deepEqual(result, [{ id: 'srv1', name: 'Masaje', colorHex: '#8C6E50' }]);
+  assert.deepEqual(seenArgs.where, { active: true, tenantId: 't1' });
+  assert.deepEqual(seenArgs.select, { id: true, name: true, colorHex: true });
+});
+
 test('updateAppointment rechaza reprogramar fuera del horario dividido', async () => {
   mockPrisma({
     service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },

@@ -548,6 +548,20 @@ async function listAppointments(actor, query) {
   });
 }
 
+async function listServiceLegend(actor, query = {}) {
+  const where = { active: true };
+  if (actor.role === 'superadmin') {
+    if (query.tenantId) where.tenantId = query.tenantId;
+  } else {
+    where.tenantId = actor.tenantId;
+  }
+  return prisma.service.findMany({
+    where,
+    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, colorHex: true },
+  });
+}
+
 async function getAppointment(actor, id) {
   const appointment = await prisma.appointment.findUnique({ where: { id } });
   if (!appointment) return null;
@@ -819,6 +833,7 @@ module.exports = {
   cancelBookingByToken,
   confirmBookingByToken,
   listAppointments,
+  listServiceLegend,
   getAppointment,
   createManualAppointment,
   updateAppointment,

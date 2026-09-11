@@ -48,6 +48,15 @@ router.get('/availability', async (req, res, next) => {
   }
 });
 
+router.get('/service-legend', async (req, res, next) => {
+  try {
+    const services = await appointmentService.listServiceLegend(req.user, req.query);
+    res.json(services);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id/reschedule-availability', async (req, res, next) => {
   try {
     const tenantId = resolveTenantId(req.user);
