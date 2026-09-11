@@ -88,7 +88,7 @@ test('listClients active=all lista activas y deshabilitadas sin filtrar ClientIn
   assert.equal('allergiesEnc' in argsSeen.select, false);
 });
 
-test('listClients permite cargar las fichas históricas completas hasta 1.000', async () => {
+test('listClients mantiene el tope defensivo de 1.000 por llamada', async () => {
   let argsSeen = null;
   prisma.client = {
     findMany: async (args) => {
@@ -99,6 +99,34 @@ test('listClients permite cargar las fichas históricas completas hasta 1.000', 
 
   await clientService.listClients({ role: 'dueno', tenantId: 't1' }, { active: 'all', limit: 5000 });
   assert.equal(argsSeen.take, 1000);
+});
+
+test('listClients puede paginar de 100 en 100 e incluir el total del directorio', async () => {
+  let findArgs = null;
+  let countArgs = null;
+  prisma.client = {
+    findMany: async (args) => {
+      findArgs = args;
+      return [{ id: 'c101', tenantId: 't1', recordNumber: '101', fullName: 'Ana Paz', whatsapp: '+593', email: 'ana@alma.test' }];
+    },
+    count: async (args) => {
+      countArgs = args;
+      return 1241;
+    },
+  };
+
+  const result = await clientService.listClients(
+    { role: 'dueno', tenantId: 't1' },
+    { active: 'all', limit: 100, offset: 100, total: 'true', sortKey: 'recordNumber', sortDirection: 'asc' },
+  );
+  assert.equal(findArgs.skip, 100);
+  assert.equal(findArgs.take, 100);
+  assert.deepEqual(findArgs.orderBy[0], { recordNumber: 'asc' });
+  assert.equal(countArgs.where.tenantId, 't1');
+  assert.equal(result.total, 1241);
+  assert.equal(result.offset, 100);
+  assert.equal(result.hasMore, true);
+  assert.equal(result.rows[0].recordNumber, '101');
 });
 
 test('listUpcomingBirthdays conserva la ficha de cada clienta', async () => {

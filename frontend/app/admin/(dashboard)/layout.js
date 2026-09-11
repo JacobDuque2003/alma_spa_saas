@@ -47,12 +47,18 @@ const NAV_ITEMS = [
 ];
 
 const UPCOMING_BIRTHDAY_DAYS = 8;
+const BIRTHDAY_BADGE_CACHE_TTL_MS = 5 * 60_000;
+const birthdayBadgeCache = { key: "", savedAt: 0, rows: [] };
 
 function canSeeNavItem(item, user) {
   if (!user) return false;
   if (item.roles && !item.roles.includes(user.role)) return false;
   if (item.permission && !user.permissions?.[item.permission]) return false;
   return true;
+}
+
+function birthdayBadgeCacheKey(user) {
+  return `${user?.tenantId || "current"}:${user?.id || user?.email || "user"}`;
 }
 
 // Tiempo suficiente para leer el aviso completo sin que quede fijo en pantalla.
@@ -191,13 +197,25 @@ function Shell({ children }) {
   // Cumpleaños próximos (8 días): alimenta el badge en Clientes y el toast diario.
   // 403 (personal sin permiso 'clientes') se ignora silenciosamente.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !canSeeNavItem(NAV_ITEMS.find((item) => item.href === "/admin/clientes"), user)) return;
+    const cacheKey = birthdayBadgeCacheKey(user);
+    if (birthdayBadgeCache.key === cacheKey && Date.now() - birthdayBadgeCache.savedAt < BIRTHDAY_BADGE_CACHE_TTL_MS) {
+      setUpcomingBirthdays(birthdayBadgeCache.rows);
+      return;
+    }
     let cancelled = false;
     authFetch("/clients/birthdays", { query: { days: UPCOMING_BIRTHDAY_DAYS } })
-      .then((rows) => { if (!cancelled) setUpcomingBirthdays(Array.isArray(rows) ? rows : []); })
+      .then((rows) => {
+        if (cancelled) return;
+        const safeRows = Array.isArray(rows) ? rows : [];
+        birthdayBadgeCache.key = cacheKey;
+        birthdayBadgeCache.rows = safeRows;
+        birthdayBadgeCache.savedAt = Date.now();
+        setUpcomingBirthdays(safeRows);
+      })
       .catch(() => { /* sin permiso o error transitorio */ });
     return () => { cancelled = true; };
-  }, [user, pathname]);
+  }, [user]);
 
   const navItems = useMemo(() => NAV_ITEMS.filter((item) => canSeeNavItem(item, user)), [user]);
 

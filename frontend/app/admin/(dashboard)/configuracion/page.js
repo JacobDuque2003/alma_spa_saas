@@ -130,6 +130,14 @@ const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid
 
 const cardPaddingDesktop = { padding: 28 };
 const cardPaddingMobile = { padding: 18 };
+const CONFIG_DATA_CACHE_TTL_MS = 60_000;
+const configDataCache = { savedAt: 0, services: null, rooms: null };
+
+function saveConfigDataCache({ services, rooms }) {
+  if (services) configDataCache.services = services;
+  if (rooms) configDataCache.rooms = rooms;
+  configDataCache.savedAt = Date.now();
+}
 
 // Traducción de los mensajes técnicos del backend a lenguaje de dueña de spa.
 // El backend sigue devolviendo su texto original (útil para tests y otros
@@ -460,10 +468,10 @@ function ServiceMediaModal({ service, phase, onClose, onSaved }) {
             <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
               {newImagePreview ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={newImagePreview} alt="Vista previa" className="h-full w-full object-cover" />
+                <img src={newImagePreview} alt="Vista previa" className="h-full w-full object-cover" decoding="async" />
               ) : showExistingImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={imageUrl(service)} alt={service.name} className="h-full w-full object-cover" />
+                <img src={imageUrl(service)} alt={service.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
               ) : (
                 <ImageOff size={20} className="text-muted-foreground" />
               )}
@@ -767,13 +775,21 @@ export default function ConfiguracionPage() {
     ? Math.round(activeServices.reduce((sum, s) => sum + Number(s.durationMins || 60) + Number(s.bufferMins ?? 15), 0) / activeServices.length)
     : 0;
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async ({ force = false } = {}) => {
+    if (!force && configDataCache.services && configDataCache.rooms && Date.now() - configDataCache.savedAt < CONFIG_DATA_CACHE_TTL_MS) {
+      setServices(configDataCache.services);
+      setRooms(configDataCache.rooms);
+      setLoadError("");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setLoadError("");
     try {
       const [s, r] = await Promise.all([authFetch("/services"), authFetch("/rooms")]);
       setServices(s);
       setRooms(r);
+      saveConfigDataCache({ services: s, rooms: r });
     } catch (err) {
       const friendly = friendlyConfigError(err.message, "No se pudo cargar la configuración. Recarga la página.");
       setLoadError(friendly);
@@ -790,7 +806,11 @@ export default function ConfiguracionPage() {
   async function updateService(service, changes) {
     try {
       const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
-      setServices((prev) => prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s)));
+      setServices((prev) => {
+        const next = prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s));
+        saveConfigDataCache({ services: next });
+        return next;
+      });
       if (changes.active === true) toast.success("Servicio activado.");
       else if (changes.active === false) toast.warning("Servicio desactivado.");
       else toast.info("Cambios guardados.");
@@ -811,7 +831,11 @@ export default function ConfiguracionPage() {
     if (!Number.isInteger(next) || next < 1 || next > 12 || next === Number(room.capacity || 1)) return;
     try {
       const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: { capacity: next } });
-      setRooms((prev) => prev.map((item) => (item.id === room.id ? { ...item, ...updated } : item)));
+      setRooms((prev) => {
+        const nextRooms = prev.map((item) => (item.id === room.id ? { ...item, ...updated } : item));
+        saveConfigDataCache({ rooms: nextRooms });
+        return nextRooms;
+      });
       toast.info("Puestos de cabina guardados.");
     } catch (err) {
       toast.error(friendlyConfigError(err.message, "No se pudo guardar la capacidad de la cabina."));
@@ -823,7 +847,11 @@ export default function ConfiguracionPage() {
     setDeletingService(true);
     try {
       await authFetch(`/services/${service.id}`, { method: "DELETE" });
-      setServices((prev) => prev.filter((s) => s.id !== service.id));
+      setServices((prev) => {
+        const next = prev.filter((s) => s.id !== service.id);
+        saveConfigDataCache({ services: next });
+        return next;
+      });
       toast.warning(`Servicio "${service.name}" quitado de la oferta.`);
       setDeleteServiceTarget(null);
     } catch (err) {
@@ -868,7 +896,7 @@ export default function ConfiguracionPage() {
                         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted flex items-center justify-center">
                           {s.imageMimeType ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={imageUrl(s)} alt={s.name} className="h-full w-full object-cover" />
+                            <img src={imageUrl(s)} alt={s.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
                           ) : (
                             <ImageOff size={14} className="text-muted-foreground" />
                           )}
@@ -1060,7 +1088,14 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {canModifyServices && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} services={services} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => { setShowServiceForm(false); setServices((prev) => [...prev, created]); }} />}
+      {canModifyServices && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} services={services} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => {
+        setShowServiceForm(false);
+        setServices((prev) => {
+          const next = [...prev, created];
+          saveConfigDataCache({ services: next });
+          return next;
+        });
+      }} />}
       {deleteServiceAnim.shouldRender && deleteServiceTarget && (
         <DeleteServiceModal
           service={deleteServiceTarget}
@@ -1077,7 +1112,11 @@ export default function ConfiguracionPage() {
           onClose={() => setMediaTarget(null)}
           onSaved={(updated) => {
             setMediaTarget(null);
-            setServices((prev) => prev.map((svc) => (svc.id === updated.id ? { ...svc, ...updated } : svc)));
+            setServices((prev) => {
+              const next = prev.map((svc) => (svc.id === updated.id ? { ...svc, ...updated } : svc));
+              saveConfigDataCache({ services: next });
+              return next;
+            });
           }}
         />
       )}

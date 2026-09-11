@@ -19,10 +19,17 @@ import { formatEcuadorPhone } from "@/lib/phone-format";
 // la base de datos y se invalida en cuanto se crea, edita, importa o cambia
 // el estado de una clienta.
 const CLIENT_DIRECTORY_CACHE_TTL_MS = 30_000;
+const CLIENT_DIRECTORY_PAGE_SIZE = 100;
 const clientDirectoryCache = new Map();
 
-function directoryCacheKey(tenantId, query) {
-  return `${tenantId || "current"}:${String(query || "").trim().toLocaleLowerCase("es-EC")}`;
+function directoryCacheKey(tenantId, query, active, sortKey, sortDirection) {
+  return [
+    tenantId || "current",
+    String(query || "").trim().toLocaleLowerCase("es-EC"),
+    active || "all",
+    sortKey || "fullName",
+    sortDirection || "asc",
+  ].join(":");
 }
 
 function invalidateClientDirectoryCache() {
@@ -383,11 +390,15 @@ export default function ClientesPage() {
   const [statusFilter, setStatusFilter] = useState("todas");
   const [birthdayList, setBirthdayList] = useState([]);
   const [birthdayLoading, setBirthdayLoading] = useState(false);
+  const [clientTotal, setClientTotal] = useState(0);
+  const [loadingMoreClients, setLoadingMoreClients] = useState(false);
+  const [clientLoadError, setClientLoadError] = useState("");
   const [detail, setDetail] = useState(null);
   const [intake, setIntake] = useState(null);
   const [treatments, setTreatments] = useState([]);
   const [clientAppointments, setClientAppointments] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailSectionsLoaded, setDetailSectionsLoaded] = useState({ summary: false, intake: false, timeline: false });
   const isMobile = useIsMobile();
   const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(Boolean(preselectedId));
@@ -404,32 +415,64 @@ export default function ClientesPage() {
   // reportes/configuracion, para que el toggle en Equipo controle exactamente
   // la accion que promete.
   const canExportClients = hasClientPermission(user, "clientesExportar");
+  const clientActiveQuery = statusFilter === "activas" ? "true" : statusFilter === "deshabilitadas" ? "false" : "all";
 
-  const fetchClients = useCallback(async ({ force = false } = {}) => {
-    const cacheKey = directoryCacheKey(user?.tenantId, query);
+  const fetchClients = useCallback(async ({ force = false, append = false, offset = 0 } = {}) => {
+    const cacheKey = directoryCacheKey(user?.tenantId, query, clientActiveQuery, sortKey, sortDirection);
     const cached = clientDirectoryCache.get(cacheKey);
-    if (!force && cached && Date.now() - cached.savedAt < CLIENT_DIRECTORY_CACHE_TTL_MS) {
+    if (!append && !force && cached && Date.now() - cached.savedAt < CLIENT_DIRECTORY_CACHE_TTL_MS) {
       setClients(cached.rows);
+      setClientTotal(cached.total);
+      setClientLoadError("");
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (append) setLoadingMoreClients(true);
+    else setLoading(true);
+    setClientLoadError("");
     try {
-      const data = await authFetch("/clients", { query: { active: "all", limit: 1000, ...(query ? { q: query } : {}) } });
-      const rows = Array.isArray(data) ? data : [];
-      clientDirectoryCache.set(cacheKey, { rows, savedAt: Date.now() });
-      setClients(rows);
-    } catch {
-      setClients([]);
+      const data = await authFetch("/clients", {
+        query: {
+          active: clientActiveQuery,
+          limit: CLIENT_DIRECTORY_PAGE_SIZE,
+          offset,
+          total: "true",
+          sortKey,
+          sortDirection,
+          ...(query ? { q: query } : {}),
+        },
+      });
+      const rows = Array.isArray(data?.rows) ? data.rows : Array.isArray(data) ? data : [];
+      const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : rows.length;
+      if (append) {
+        setClients((prev) => {
+          const seen = new Set(prev.map((client) => client.id));
+          return [...prev, ...rows.filter((client) => !seen.has(client.id))];
+        });
+      } else {
+        clientDirectoryCache.set(cacheKey, { rows, total, savedAt: Date.now() });
+        setClients(rows);
+      }
+      setClientTotal(total);
+    } catch (err) {
+      if (append) {
+        setClientLoadError("");
+      } else {
+        setClientLoadError(err.message || "No se pudo cargar clientes.");
+        setClients([]);
+        setClientTotal(0);
+      }
     } finally {
-      setLoading(false);
+      if (append) setLoadingMoreClients(false);
+      else setLoading(false);
     }
-  }, [query, user?.tenantId]);
+  }, [clientActiveQuery, query, sortDirection, sortKey, user?.tenantId]);
 
   useEffect(() => {
-    const t = setTimeout(fetchClients, 250);
+    if (view === "cumples") return undefined;
+    const t = setTimeout(() => fetchClients(), 250);
     return () => clearTimeout(t);
-  }, [fetchClients]);
+  }, [fetchClients, view]);
 
   const fetchBirthdays = useCallback(async () => {
     setBirthdayLoading(true);
@@ -447,20 +490,25 @@ export default function ClientesPage() {
     if (view === "cumples") fetchBirthdays();
   }, [view, fetchBirthdays]);
 
+  useEffect(() => {
+    setDetail(null);
+    setIntake(null);
+    setTreatments([]);
+    setClientAppointments([]);
+    setDetailSectionsLoaded({ summary: false, intake: false, timeline: false });
+  }, [selectedId]);
+
   const fetchDetail = useCallback(async () => {
     if (!selectedId) return;
     setDetailLoading(true);
     try {
-      const [clientData, intakeData, treatmentsData, appointmentData] = await Promise.all([
+      const [clientData, appointmentData] = await Promise.all([
         authFetch(`/clients/${selectedId}`),
-        authFetch(`/clients/${selectedId}/intake`).catch((err) => (err.status === 404 ? null : Promise.reject(err))),
-        authFetch(`/clients/${selectedId}/treatments`).catch(() => []),
         authFetch("/appointments", { query: { clientId: selectedId } }).catch(() => []),
       ]);
       setDetail(clientData);
-      setIntake(intakeData);
-      setTreatments(Array.isArray(treatmentsData) ? treatmentsData : []);
       setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
+      setDetailSectionsLoaded((prev) => ({ ...prev, summary: true }));
     } catch {
       setDetail(null);
     } finally {
@@ -469,6 +517,41 @@ export default function ClientesPage() {
   }, [selectedId]);
 
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
+
+  const fetchIntake = useCallback(async ({ force = false } = {}) => {
+    if (!selectedId || (!force && detailSectionsLoaded.intake)) return;
+    try {
+      const intakeData = await authFetch(`/clients/${selectedId}/intake`).catch((err) => (err.status === 404 ? null : Promise.reject(err)));
+      setIntake(intakeData);
+      setDetailSectionsLoaded((prev) => ({ ...prev, intake: true }));
+    } catch {
+      setIntake(null);
+      setDetailSectionsLoaded((prev) => ({ ...prev, intake: true }));
+    }
+  }, [detailSectionsLoaded.intake, selectedId]);
+
+  const fetchTimeline = useCallback(async ({ force = false } = {}) => {
+    if (!selectedId || (!force && detailSectionsLoaded.timeline)) return;
+    try {
+      const [treatmentsData, appointmentData] = await Promise.all([
+        authFetch(`/clients/${selectedId}/treatments`).catch(() => []),
+        authFetch("/appointments", { query: { clientId: selectedId } }).catch(() => []),
+      ]);
+      setTreatments(Array.isArray(treatmentsData) ? treatmentsData : []);
+      setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
+      setDetailSectionsLoaded((prev) => ({ ...prev, timeline: true }));
+    } catch {
+      setTreatments([]);
+      setClientAppointments([]);
+      setDetailSectionsLoaded((prev) => ({ ...prev, timeline: true }));
+    }
+  }, [detailSectionsLoaded.timeline, selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (activeTab === "anamnesis") fetchIntake();
+    if (activeTab === "historial") fetchTimeline();
+  }, [activeTab, fetchIntake, fetchTimeline, selectedId]);
 
   const [showEditClient, setShowEditClient] = useState(false);
   const [showDeleteClient, setShowDeleteClient] = useState(false);
@@ -526,6 +609,8 @@ export default function ClientesPage() {
     return sortClients(filtered, view === "cumples" && sortKey === "birthday" ? "birthday" : sortKey, sortDirection);
   }, [birthdayList, clients, sortDirection, sortKey, statusFilter, view]);
   const currentCount = visibleClients.length;
+  const directoryTotal = view === "cumples" ? currentCount : clientTotal;
+  const hasMoreClients = view !== "cumples" && clients.length < clientTotal;
   const listLoading = view === "cumples" ? birthdayLoading : loading;
   const statusFilterLabel = statusFilter === "activas" ? "Activas" : statusFilter === "deshabilitadas" ? "Deshabilitadas" : "Todas";
 
@@ -616,6 +701,7 @@ export default function ClientesPage() {
           onSaved={(created) => {
             setShowNewClient(false);
             invalidateClientDirectoryCache();
+            setClientTotal((total) => total + 1);
             setClients((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
             openClientDetail(created.id);
           }}
@@ -647,7 +733,8 @@ export default function ClientesPage() {
                 Clientes
               </h1>
               <span style={{ display: "block", marginTop: 4, fontSize: 13, color: "#A89A87" }}>
-                {currentCount} {currentCount === 1 ? "clienta" : "clientas"}
+                {directoryTotal} {directoryTotal === 1 ? "clienta" : "clientas"} en total
+                {view !== "cumples" && directoryTotal > currentCount ? ` · mostrando ${currentCount}` : ""}
               </span>
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
@@ -726,7 +813,7 @@ export default function ClientesPage() {
                   color: "#6B5540",
                   width: "100%",
                 }}
-                placeholder="Busca por nombre o ficha..."
+                placeholder="Busca por nombre, ficha, teléfono, correo o cédula..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -771,22 +858,55 @@ export default function ClientesPage() {
             <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
               <Loader2 size={20} className="animate-spin" style={{ color: "#A89A87" }} />
             </div>
+          ) : clientLoadError ? (
+            <p style={{ textAlign: "center", padding: "40px 12px", fontSize: 13, color: "#C25450" }}>
+              {clientLoadError}
+            </p>
           ) : visibleClients.length === 0 ? (
             <p style={{ textAlign: "center", padding: "40px 12px", fontSize: 13, color: "#A89A87" }}>
               {view === "cumples" ? "Sin cumpleaños en los próximos 8 días." : "Sin resultados."}
             </p>
           ) : (
-            visibleClients.map((client) => (
-              <ClientDirectoryRow
-                key={client.id}
-                client={client}
-                view={view}
-                selected={client.id === selectedId}
-                isMobile={isMobile}
-                onSelect={() => openClientDetail(client.id)}
-                onCopyEmail={handleCopyEmail}
-              />
-            ))
+            <>
+              {visibleClients.map((client) => (
+                <ClientDirectoryRow
+                  key={client.id}
+                  client={client}
+                  view={view}
+                  selected={client.id === selectedId}
+                  isMobile={isMobile}
+                  onSelect={() => openClientDetail(client.id)}
+                  onCopyEmail={handleCopyEmail}
+                />
+              ))}
+              {hasMoreClients && (
+                <button
+                  type="button"
+                  disabled={loadingMoreClients}
+                  onClick={() => fetchClients({ append: true, offset: clients.length })}
+                  style={{
+                    alignSelf: "center",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    margin: "12px 0 18px",
+                    padding: "10px 18px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(140,110,80,0.38)",
+                    background: "#FDFCFA",
+                    color: "#8C6E50",
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: loadingMoreClients ? "wait" : "pointer",
+                    opacity: loadingMoreClients ? 0.65 : 1,
+                  }}
+                >
+                  {loadingMoreClients && <Loader2 size={14} className="animate-spin" />}
+                  Cargar 100 más
+                </button>
+              )}
+            </>
           )}
           </div>
         </div>
@@ -844,6 +964,7 @@ export default function ClientesPage() {
                   setActionClient(null);
                   setDetail(null);
                   setSelectedId(null);
+                  setClientTotal((total) => Math.max(total - 1, 0));
                   invalidateClientDirectoryCache();
                   fetchClients({ force: true });
                 }}
@@ -855,7 +976,7 @@ export default function ClientesPage() {
                 intake={intake}
                 phase={editIntakeAnim.phase}
                 onClose={() => setShowEditIntake(false)}
-                onSaved={() => { setShowEditIntake(false); fetchDetail(); }}
+                onSaved={() => { setShowEditIntake(false); fetchIntake({ force: true }); }}
               />
             )}
             {/* Header */}
@@ -997,7 +1118,7 @@ export default function ClientesPage() {
             <div style={{ flex: 1, minHeight: 0 }}>
               {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} appointments={clientAppointments} canEdit={canEditClients} onEdit={() => setShowEditClient(true)} onCopyEmail={handleCopyEmail} />}
               {activeTab === "anamnesis" && <IntakeCard intake={intake} canEdit={canEditIntake} onEdit={() => setShowEditIntake(true)} />}
-              {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} canEdit={canEditHistory} onSaved={fetchDetail} />}
+              {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} canEdit={canEditHistory} onSaved={() => fetchTimeline({ force: true })} />}
             </div>
           </>
         ) : (

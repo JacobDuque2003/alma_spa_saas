@@ -127,17 +127,39 @@ async function listClients(actor, query = {}) {
     }
   }
 
-  // El directorio debe poder mostrar todas las fichas históricas de Alma Spa.
-  // El archivo inicial tiene 961 filas, por lo que 1.000 mantiene la vista
-  // completa sin convertir este endpoint administrativo en una consulta sin tope.
   const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 1000);
-  const clients = await prisma.client.findMany({
-    where,
-    select: CLIENT_SAFE_SELECT,
-    orderBy: [{ fullName: 'asc' }, { createdAt: 'desc' }],
-    take: limit,
-  });
-  return clients.map(toClientSafeDto);
+  const offset = Math.max(Number(query.offset) || 0, 0);
+  const withTotal = String(query.total ?? query.withTotal ?? '').toLowerCase() === 'true';
+  const sortDirection = String(query.sortDirection || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+  const sortKey = String(query.sortKey || 'fullName');
+  const orderField = ['recordNumber', 'fullName', 'whatsapp', 'email', 'birthday', 'active', 'createdAt'].includes(sortKey)
+    ? sortKey
+    : 'fullName';
+  const orderBy = [{ [orderField]: sortDirection }];
+  if (orderField !== 'fullName') orderBy.push({ fullName: 'asc' });
+  if (orderField !== 'createdAt') orderBy.push({ createdAt: 'desc' });
+
+  const [clients, total] = await Promise.all([
+    prisma.client.findMany({
+      where,
+      select: CLIENT_SAFE_SELECT,
+      orderBy,
+      skip: offset,
+      take: limit,
+    }),
+    withTotal ? prisma.client.count({ where }) : Promise.resolve(null),
+  ]);
+  const rows = clients.map(toClientSafeDto);
+  if (withTotal) {
+    return {
+      rows,
+      total,
+      limit,
+      offset,
+      hasMore: offset + rows.length < total,
+    };
+  }
+  return rows;
 }
 
 async function exportClients(actor, query = {}) {
