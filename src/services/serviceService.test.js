@@ -101,6 +101,20 @@ test('createService rechaza duraciones fuera del rango permitido', async () => {
   );
 });
 
+test('createService rechaza precios invalidos antes de persistir', async () => {
+  let createCalled = false;
+  mockPrisma({ service: { create: async () => { createCalled = true; return {}; } } });
+
+  await assert.rejects(
+    () => serviceService.createService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      { name: 'Facial', category: 'faciales', priceUsd: 'abc' }
+    ),
+    (err) => err.status === 400 && /priceUsd/.test(err.message)
+  );
+  assert.equal(createCalled, false);
+});
+
 test('updateService permite modificar duración de sesión y pausa por servicio', async () => {
   let updateData = null;
   mockPrisma({
@@ -122,6 +136,26 @@ test('updateService permite modificar duración de sesión y pausa por servicio'
   assert.deepEqual(updateData, { durationMins: 90, bufferMins: 10 });
   assert.equal(result.durationMins, 90);
   assert.equal(result.bufferMins, 10);
+});
+
+test('updateService rechaza precios negativos antes de persistir', async () => {
+  let updateCalled = false;
+  mockPrisma({
+    service: {
+      findUnique: async () => ({ id: 'srv1', tenantId: 't1', category: 'masajes', active: true, priceUsd: 30 }),
+      update: async () => { updateCalled = true; return {}; },
+    },
+  });
+
+  await assert.rejects(
+    () => serviceService.updateService(
+      { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+      'srv1',
+      { priceUsd: -1 }
+    ),
+    (err) => err.status === 400 && /priceUsd/.test(err.message)
+  );
+  assert.equal(updateCalled, false);
 });
 
 test('createService guarda offersHomeService del body (bug real encontrado en verificación de Fase 3a: no se leía)', async () => {

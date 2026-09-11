@@ -28,6 +28,9 @@ function validateWorkDays(wd) {
   }
   // Deduplicate and sort for consistency
   const unique = [...new Set(wd)].sort((a, b) => a - b);
+  if (unique.length === 0) {
+    throw new BadRequestError('workDays debe tener al menos un día laborable');
+  }
   return unique;
 }
 

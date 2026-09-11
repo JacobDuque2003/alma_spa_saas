@@ -134,8 +134,8 @@ const CONFIG_DATA_CACHE_TTL_MS = 60_000;
 const configDataCache = { savedAt: 0, services: null, rooms: null };
 
 function saveConfigDataCache({ services, rooms }) {
-  if (services) configDataCache.services = services;
-  if (rooms) configDataCache.rooms = rooms;
+  if (services !== undefined) configDataCache.services = services;
+  if (rooms !== undefined) configDataCache.rooms = rooms;
   configDataCache.savedAt = Date.now();
 }
 
@@ -172,6 +172,7 @@ function friendlyConfigError(message, fallback) {
   // Validaciones de servicio (duración, pausa, color, cabinas).
   if (/durationMins.*15 y 480/.test(text)) return "La duración debe estar entre 15 y 480 minutos.";
   if (/bufferMins.*0 y 90/.test(text)) return "La pausa entre citas debe estar entre 0 y 90 minutos.";
+  if (/priceUsd.*mayor o igual a 0/.test(text)) return "El precio debe ser un número mayor o igual a 0.";
   if (/colorHex.*hexadecimal/.test(text)) return "El color no está en un formato válido. Elígelo del selector de color.";
   if (/roomIds debe ser una lista de cabinas/.test(text)) return "Selecciona al menos una cabina para el servicio.";
   if (/cabinas no pertenecen al tenant o están inactivas/.test(text)) {
@@ -200,6 +201,7 @@ function friendlyConfigError(message, fallback) {
 
   // "name es requerido" en categorías.
   if (/^name es requerido$/.test(text)) return "El nombre es obligatorio.";
+  if (/workDays debe tener al menos un día laborable/.test(text)) return "Elige al menos un día laborable.";
 
   // Cualquier otro texto: lo devolvemos tal cual si trae contenido útil, o
   // el fallback si viene vacío.
@@ -254,8 +256,23 @@ function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim() || (!selectedParent && selectedRoomIds.length === 0) || priceUsd === "" || Number(priceUsd) < 0 || !Number(durationMins)) {
+    const price = Number(priceUsd);
+    const duration = Number(durationMins);
+    const buffer = bufferMins === "" ? 15 : Number(bufferMins);
+    if (!name.trim() || (!selectedParent && selectedRoomIds.length === 0) || priceUsd === "") {
       setValidation("Faltan datos: nombre, precio, duración y al menos una cabina.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setValidation("El precio debe ser un número mayor o igual a 0.");
+      return;
+    }
+    if (!Number.isInteger(duration) || duration < 15 || duration > 480) {
+      setValidation("La duración debe estar entre 15 y 480 minutos.");
+      return;
+    }
+    if (!Number.isInteger(buffer) || buffer < 0 || buffer > 90) {
+      setValidation("La pausa debe estar entre 0 y 90 minutos.");
       return;
     }
     setValidation(null);
@@ -267,9 +284,9 @@ function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
         body: {
           name: name.trim(),
           category: primaryArea,
-          priceUsd: Number(priceUsd),
-          durationMins: Number(durationMins),
-          bufferMins: Number(bufferMins || 15),
+          priceUsd: price,
+          durationMins: duration,
+          bufferMins: buffer,
           colorHex: selectedParent?.colorHex || colorHex,
           description: description.trim() || undefined,
           roomIds: selectedParent ? undefined : selectedRoomIds,
@@ -564,6 +581,7 @@ const DAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 function BusinessHoursPanel({ onRefresh, canEdit = true }) {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
   // Nueva estructura: dos franjas independientes con toggle "franja abierta/cerrada".
   // El backend puede devolver el shape viejo {start,end}; el efecto de carga
@@ -579,8 +597,11 @@ function BusinessHoursPanel({ onRefresh, canEdit = true }) {
   const [saved, setSaved] = useState(false);
   const toast = useToast();
 
-  useEffect(() => {
-    authFetch("/tenant/config").then((cfg) => {
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const cfg = await authFetch("/tenant/config");
       const bh = cfg?.businessHours;
       if (bh) {
         // Shape nuevo: {morning, afternoon}
@@ -608,8 +629,16 @@ function BusinessHoursPanel({ onRefresh, canEdit = true }) {
         }
       }
       if (Array.isArray(cfg?.workDays)) setWorkDays(cfg.workDays);
-    }).catch(() => {}).finally(() => setLoading(false));
+    } catch (err) {
+      setLoadError(friendlyConfigError(err.message, "No se pudo cargar el horario actual."));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
 
   function toggleDay(d) {
     setWorkDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort());
@@ -632,6 +661,10 @@ function BusinessHoursPanel({ onRefresh, canEdit = true }) {
     }
     if (morningOpen && afternoonOpen && morningEnd > afternoonStart) {
       setValidationMsg("La mañana debe cerrar antes de que abra la tarde.");
+      return;
+    }
+    if (!workDays.length) {
+      setValidationMsg("Elige al menos un día laborable.");
       return;
     }
     setValidationMsg(null);
@@ -657,6 +690,16 @@ function BusinessHoursPanel({ onRefresh, canEdit = true }) {
   }
 
   if (loading) return <div style={{ padding: 20, textAlign: "center" }}><Loader2 size={16} className="animate-spin" style={{ color: "#A89A87" }} /></div>;
+  if (loadError) {
+    return (
+      <div style={{ display: "grid", gap: 12, padding: 14, borderRadius: 12, border: "1px solid rgba(194,84,80,0.24)", background: "rgba(194,84,80,0.07)" }}>
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: "#A84F4A" }}>{loadError}</p>
+        <button type="button" onClick={loadConfig} style={{ ...pillSecondary, flex: "initial", width: "fit-content", padding: "8px 18px" }}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -820,10 +863,28 @@ export default function ConfiguracionPage() {
   }
 
   function updateServiceNumber(service, field, value) {
+    const config = field === "bufferMins"
+      ? { min: 0, max: 90, fallback: 15, label: "La pausa" }
+      : { min: 15, max: 480, fallback: 60, label: "La duración" };
     const next = Number(value);
-    if (!Number.isFinite(next)) return;
-    if (next === Number(service[field] ?? (field === "bufferMins" ? 15 : 60))) return;
+    if (!Number.isInteger(next) || next < config.min || next > config.max) {
+      toast.warning(`${config.label} debe estar entre ${config.min} y ${config.max} minutos.`);
+      return false;
+    }
+    if (next === Number(service[field] ?? config.fallback)) return true;
     updateService(service, { [field]: next });
+    return true;
+  }
+
+  function updateServicePrice(service, value) {
+    const next = Number(value);
+    if (!Number.isFinite(next) || next < 0) {
+      toast.warning("El precio debe ser un número mayor o igual a 0.");
+      return false;
+    }
+    if (next === Number(service.priceUsd || 0)) return true;
+    updateService(service, { priceUsd: next });
+    return true;
   }
 
   async function updateRoomCapacity(room, value) {
@@ -935,7 +996,9 @@ export default function ConfiguracionPage() {
                             max="480"
                             step="15"
                             defaultValue={s.durationMins || 60}
-                            onBlur={(e) => updateServiceNumber(s, "durationMins", e.target.value)}
+                            onBlur={(e) => {
+                              if (!updateServiceNumber(s, "durationMins", e.target.value)) e.target.value = s.durationMins || 60;
+                            }}
                             style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none" }}
                           />
                         </label>
@@ -948,7 +1011,9 @@ export default function ConfiguracionPage() {
                             max="90"
                             step="5"
                             defaultValue={s.bufferMins ?? 15}
-                            onBlur={(e) => updateServiceNumber(s, "bufferMins", e.target.value)}
+                            onBlur={(e) => {
+                              if (!updateServiceNumber(s, "bufferMins", e.target.value)) e.target.value = s.bufferMins ?? 15;
+                            }}
                             style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none" }}
                           />
                         </label>
@@ -957,7 +1022,9 @@ export default function ConfiguracionPage() {
                           disabled={!canModifyServices}
                           step="0.01"
                           defaultValue={Number(s.priceUsd).toFixed(2)}
-                          onBlur={(e) => { if (Number(e.target.value) !== Number(s.priceUsd)) updateService(s, { priceUsd: Number(e.target.value) }); }}
+                          onBlur={(e) => {
+                            if (!updateServicePrice(s, e.target.value)) e.target.value = Number(s.priceUsd || 0).toFixed(2);
+                          }}
                           style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
                         />
                         <button

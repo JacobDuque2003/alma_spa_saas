@@ -54,6 +54,14 @@ function normalizeBuffer(value) {
   return n;
 }
 
+function normalizePrice(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new BadRequestError('priceUsd debe ser un número mayor o igual a 0');
+  }
+  return n;
+}
+
 function normalizeColor(value) {
   if (value === undefined || value === null || value === '') return '#8C6E50';
   if (typeof value !== 'string' || !HEX_COLOR_RE.test(value)) {
@@ -193,7 +201,7 @@ async function createService(actor, data) {
       durationMins: data.durationMins === undefined ? 60 : normalizeDuration(data.durationMins),
       bufferMins: normalizeBuffer(data.bufferMins),
       colorHex: parent ? parent.colorHex : normalizeColor(data.colorHex),
-      priceUsd: data.priceUsd,
+      priceUsd: normalizePrice(data.priceUsd),
       offersHomeService: false,
       active: true,
       description: normalizeDescription(data.description) ?? null,
@@ -223,7 +231,7 @@ async function updateService(actor, id, changes) {
   const data = {};
   if (changes.name !== undefined) data.name = changes.name;
   if (changes.category !== undefined) data.category = changes.category;
-  if (changes.priceUsd !== undefined) data.priceUsd = changes.priceUsd;
+  if (changes.priceUsd !== undefined) data.priceUsd = normalizePrice(changes.priceUsd);
   if (changes.durationMins !== undefined) data.durationMins = normalizeDuration(changes.durationMins);
   if (changes.bufferMins !== undefined) data.bufferMins = normalizeBuffer(changes.bufferMins);
   if (changes.colorHex !== undefined) data.colorHex = normalizeColor(changes.colorHex);
