@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -310,7 +311,7 @@ function Shell({ children }) {
           marginTop: "auto",
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: sidebarCollapsed ? 0 : 8,
           padding: sidebarCollapsed ? "10px 0" : "10px 10px",
           borderTop: "1px solid rgba(168,154,135,0.35)",
           justifyContent: sidebarCollapsed ? "center" : "flex-start",
@@ -389,7 +390,7 @@ function Shell({ children }) {
                 border: "none",
                 cursor: "pointer",
                 color: "#A89A87",
-                padding: 4,
+                padding: sidebarCollapsed ? 0 : 4,
                 display: "inline-flex",
                 width: sidebarCollapsed ? 0 : 24,
                 opacity: sidebarCollapsed ? 0 : 1,
@@ -513,7 +514,7 @@ function Shell({ children }) {
           overflow: "hidden",
           boxSizing: "border-box",
           width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH,
-          padding: sidebarCollapsed ? "16px 14px" : "18px 14px 16px",
+          padding: "18px 14px 16px",
           transition: `width ${SIDEBAR_MOTION}, padding ${SIDEBAR_MOTION}`,
           willChange: "width",
           transform: "translateZ(0)",
@@ -565,7 +566,6 @@ function Shell({ children }) {
               </span>
             </div>
             <div
-              className="font-heading"
               style={{
                 position: "absolute",
                 width: 46,
@@ -577,17 +577,25 @@ function Shell({ children }) {
                 background: "#F7F5F0",
                 border: "1px solid rgba(168,154,135,0.28)",
                 boxShadow: "0 12px 30px rgba(107,85,64,0.08)",
-                color: "#6B5540",
-                fontSize: 16,
-                fontWeight: 700,
-                letterSpacing: 1.4,
                 opacity: sidebarCollapsed ? 1 : 0,
                 transform: sidebarCollapsed ? "scale(1)" : "scale(0.9)",
                 pointerEvents: sidebarCollapsed ? "auto" : "none",
                 transition: `opacity 180ms var(--ease-out-quart), transform ${SIDEBAR_MOTION}`,
+                overflow: "hidden",
               }}
             >
-              A
+              <Image
+                src="/favicon-32x32.png"
+                alt="ALMA Spa"
+                width={28}
+                height={28}
+                style={{
+                  width: 28,
+                  height: 28,
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
             </div>
           </div>
         </div>
