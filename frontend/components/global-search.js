@@ -21,7 +21,7 @@ export function GlobalSearch() {
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     const query = q.trim();
-    if (query.length < 2) {
+    if (!query) {
       setResults([]);
       setOpen(false);
       return;
@@ -63,8 +63,8 @@ export function GlobalSearch() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onFocus={() => q.trim().length >= 2 && setOpen(true)}
-          placeholder="Buscar clienta…"
+          onFocus={() => q.trim() && setOpen(true)}
+          placeholder="Buscar por ficha o clienta…"
           style={{
             width: "100%",
             padding: "8px 12px 8px 32px",

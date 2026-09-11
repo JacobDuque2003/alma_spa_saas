@@ -160,8 +160,19 @@ function buildClientListWhereSql(actor, query = {}) {
 async function listClientsByRecordNumber(actor, query, { limit, offset, sortDirection, withTotal }) {
   const where = buildClientListWhere(actor, query);
   const whereSql = buildClientListWhereSql(actor, query);
+  const q = String(query.q || '').trim();
   const direction = sortDirection === 'desc' ? Prisma.sql`DESC` : Prisma.sql`ASC`;
   const emptyDirection = sortDirection === 'desc' ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+  const searchPriority = q
+    ? Prisma.sql`
+        CASE
+          WHEN "recordNumber" = ${q} THEN 0
+          WHEN "recordNumber" ILIKE ${`${q}%`} THEN 1
+          WHEN "recordNumber" ILIKE ${`%${q}%`} THEN 2
+          ELSE 3
+        END ASC,
+      `
+    : Prisma.empty;
 
   const [clients, total] = await Promise.all([
     prisma.$queryRaw`
@@ -172,6 +183,7 @@ async function listClientsByRecordNumber(actor, query, { limit, offset, sortDire
       FROM "Client"
       ${whereSql}
       ORDER BY
+        ${searchPriority}
         CASE WHEN "recordNumber" IS NULL OR btrim("recordNumber") = '' THEN 0 ELSE 1 END ${emptyDirection},
         NULLIF(regexp_replace("recordNumber", '[^0-9]', '', 'g'), '')::numeric ${direction} NULLS LAST,
         "recordNumber" ${direction} NULLS LAST,
@@ -258,43 +270,17 @@ async function exportClients(actor, query = {}) {
 
 async function searchClients(actor, query = {}) {
   const q = String(query.q || '').trim();
-  if (q.length < 2) return [];
-
-  const where = { active: true };
-  if (actor.role === 'superadmin') {
-    if (query.tenantId) where.tenantId = query.tenantId;
-  } else {
-    where.tenantId = actor.tenantId;
-  }
-
-  const or = [
-    { fullName: { contains: q, mode: 'insensitive' } },
-    { recordNumber: { contains: q, mode: 'insensitive' } },
-    { whatsapp: { contains: q } },
-    { email: { contains: q, mode: 'insensitive' } },
-    { cedula: { contains: q } },
-  ];
-
-  // Búsqueda tolerante a números locales de Ecuador: "0993629256" encuentra
-  // "+593993629256". El número de ficha queda para la ronda futura donde exista
-  // el campo en Client; por ahora no inventamos una columna.
-  const digits = q.replace(/[^0-9]/g, '');
-  if (digits.length >= 7) {
-    or.push({ whatsapp: { endsWith: digits.replace(/^0+/, '') } });
-  }
-  where.OR = or;
+  if (!q) return [];
 
   const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 10);
-  const clients = await prisma.client.findMany({
-    where,
-    select: {
-      id: true,
-      recordNumber: true,
-      fullName: true,
-      whatsapp: true,
-    },
-    orderBy: [{ fullName: 'asc' }, { createdAt: 'desc' }],
-    take: limit,
+  const clients = await listClients(actor, {
+    ...query,
+    active: 'true',
+    q,
+    limit,
+    offset: 0,
+    sortKey: 'recordNumber',
+    sortDirection: 'asc',
   });
 
   return clients.map((c) => ({

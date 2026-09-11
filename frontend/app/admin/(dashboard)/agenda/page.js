@@ -476,7 +476,7 @@ export default function AgendaPage() {
 
   useEffect(() => {
     const query = agendaQuery.trim();
-    if (query.length < 2) {
+    if (!query) {
       setAgendaResults([]);
       setAgendaSearching(false);
       return;
@@ -2936,14 +2936,14 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     setClientSearch(q);
     setSelectedClient(null);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (q.trim().length < 2) {
+    if (!q.trim()) {
       setClientResults([]);
       return;
     }
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const results = await authFetch("/clients", { query: { q, limit: 8 } });
+        const results = await authFetch("/clients", { query: { q, limit: 8, sortKey: "recordNumber", sortDirection: "asc" } });
         setClientResults(Array.isArray(results) ? results : []);
       } catch {
         setClientResults([]);

@@ -153,34 +153,50 @@ test('listUpcomingBirthdays conserva la ficha de cada clienta', async () => {
 });
 
 test('searchClients devuelve DTO mínimo tenant-scoped y busca por teléfono local', async () => {
-  let argsSeen = null;
+  let rawSql = '';
+  let rawValues = [];
+  prisma.$queryRaw = async (strings, ...values) => {
+    rawSql = Array.from(strings).join('?');
+    rawValues = values;
+    return [{ id: 'c1', recordNumber: '42', fullName: 'Jacob Duque', whatsapp: '+593993629256' }];
+  };
   prisma.client = {
-    findMany: async (args) => {
-      argsSeen = args;
-      return [{ id: 'c1', fullName: 'Jacob Duque', whatsapp: '+593993629256' }];
-    },
+    count: async () => 1,
   };
 
   const result = await clientService.searchClients({ role: 'personal', tenantId: 't1' }, { q: '0993629256', limit: 50 });
 
-  assert.equal(argsSeen.where.tenantId, 't1');
-  assert.equal(argsSeen.where.active, true);
-  assert.equal(argsSeen.take, 10);
-  assert.equal(argsSeen.select.id, true);
-  assert.equal(argsSeen.select.recordNumber, true);
-  assert.equal('email' in argsSeen.select, false);
-  assert.equal('intake' in argsSeen.select, false);
-  assert.deepEqual(result, [{ type: 'client', id: 'c1', name: 'Jacob Duque', phone: '+593993629256', recordNumber: undefined }]);
+  assert.match(rawSql, /FROM "Client"/);
+  assert.match(rawSql, /ORDER BY/);
+  assert.match(rawSql, /OFFSET \?/);
+  assert.match(rawSql, /LIMIT \?/);
+  assert.equal(rawValues.at(-2), 0);
+  assert.equal(rawValues.at(-1), 10);
+  assert.deepEqual(result, [{ type: 'client', id: 'c1', name: 'Jacob Duque', phone: '+593993629256', recordNumber: '42' }]);
 });
 
-test('searchClients no lista todo si q tiene menos de 2 caracteres', async () => {
+test('searchClients no lista todo si q está vacío', async () => {
   let called = false;
-  prisma.client = { findMany: async () => { called = true; return []; } };
+  prisma.$queryRaw = async () => { called = true; return []; };
 
-  const result = await clientService.searchClients({ role: 'personal', tenantId: 't1' }, { q: 'J' });
+  const result = await clientService.searchClients({ role: 'personal', tenantId: 't1' }, { q: '   ' });
 
   assert.deepEqual(result, []);
   assert.equal(called, false);
+});
+
+test('searchClients permite buscar con un solo carácter', async () => {
+  let called = false;
+  prisma.$queryRaw = async () => {
+    called = true;
+    return [{ id: 'c1', recordNumber: '7', fullName: 'Ana', whatsapp: '+593999000007' }];
+  };
+  prisma.client = { count: async () => 1 };
+
+  const result = await clientService.searchClients({ role: 'personal', tenantId: 't1' }, { q: '7' });
+
+  assert.equal(called, true);
+  assert.equal(result[0].recordNumber, '7');
 });
 
 test('getClient rechaza cross-tenant con 403 y no incluye ClientIntake en el select', async () => {

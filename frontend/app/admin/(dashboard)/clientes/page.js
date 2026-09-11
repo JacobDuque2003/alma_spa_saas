@@ -866,6 +866,8 @@ export default function ClientesPage() {
                 value={query}
                 onChange={(e) => {
                   setClientPage(1);
+                  setSortKey("recordNumber");
+                  setSortDirection("asc");
                   setQuery(e.target.value);
                 }}
               />

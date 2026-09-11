@@ -218,13 +218,16 @@ test('GET /clients/:id bloquea cross-tenant', async () => {
 });
 
 test('GET /search exige permiso clientes y devuelve resultados mínimos tenant-scoped', async () => {
-  let argsSeen = null;
+  let rawSql = '';
+  let rawValues = [];
   mockAccessScheduleUser('dueno');
+  prisma.$queryRaw = async (strings, ...values) => {
+    rawSql = Array.from(strings).join('?');
+    rawValues = values;
+    return [{ id: 'c1', recordNumber: '25', fullName: 'Andrea Duque', whatsapp: '+593993629259' }];
+  };
   prisma.client = {
-    findMany: async (args) => {
-      argsSeen = args;
-      return [{ id: 'c1', fullName: 'Andrea Duque', whatsapp: '+593993629259' }];
-    },
+    count: async () => 1,
   };
 
   const res = await supertest(app)
@@ -232,9 +235,13 @@ test('GET /search exige permiso clientes y devuelve resultados mínimos tenant-s
     .set('Authorization', `Bearer ${token({ role: 'dueno' })}`);
 
   assert.equal(res.status, 200);
-  assert.equal(argsSeen.where.tenantId, 't1');
-  assert.equal(argsSeen.take, 10);
-  assert.deepEqual(res.body, [{ type: 'client', id: 'c1', name: 'Andrea Duque', phone: '+593993629259' }]);
+  assert.match(rawSql, /FROM "Client"/);
+  assert.match(rawSql, /ORDER BY/);
+  assert.match(rawSql, /OFFSET \?/);
+  assert.match(rawSql, /LIMIT \?/);
+  assert.equal(rawValues.at(-2), 0);
+  assert.equal(rawValues.at(-1), 10);
+  assert.deepEqual(res.body, [{ type: 'client', id: 'c1', name: 'Andrea Duque', recordNumber: '25', phone: '+593993629259' }]);
 });
 
 test('GET /search niega a personal sin permiso clientes', async () => {
