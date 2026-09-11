@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
-import { Database, Loader2, Plus, Upload, X, Sparkles, Trash2, ImageIcon, ImageOff, ShieldCheck, Cloud } from "lucide-react";
+import { ChevronDown, Cloud, Database, ImageIcon, ImageOff, Loader2, Pencil, Plus, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useToast } from "@/components/toast-provider";
@@ -231,6 +231,105 @@ function Toggle({ checked, onChange, disabled = false }) {
   );
 }
 
+function ServiceListRow({ service, isSubservice = false, isMobile = false, canModifyServices = true, onEdit, onMedia, onDelete, onToggle }) {
+  const active = service.active !== false;
+  const duration = Number(service.durationMins || 60);
+  const buffer = Number(service.bufferMins ?? 15);
+  const roomsText = Array.isArray(service.rooms) && service.rooms.length > 0
+    ? service.rooms.map((room) => room.name).join(", ")
+    : "sin cabina asignada";
+  const rowBg = isSubservice ? "rgba(253,252,250,0.62)" : "rgba(253,252,250,0.86)";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto",
+        gap: isMobile ? 12 : 16,
+        alignItems: "center",
+        padding: isMobile ? 12 : "13px 14px",
+        borderRadius: 14,
+        border: isSubservice ? "1px solid rgba(168,154,135,0.18)" : "1px solid rgba(168,154,135,0.26)",
+        background: rowBg,
+        opacity: active ? 1 : 0.58,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div
+          className="shrink-0 overflow-hidden border border-border bg-muted flex items-center justify-center"
+          style={{ width: isSubservice ? 32 : 38, height: isSubservice ? 32 : 38, borderRadius: 10 }}
+        >
+          {service.imageMimeType ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl(service)} alt={service.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+          ) : (
+            <ImageOff size={14} className="text-muted-foreground" />
+          )}
+        </div>
+
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: service.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)", flexShrink: 0 }} />
+            <span style={{ fontSize: isSubservice ? 13 : 14, fontWeight: isSubservice ? 600 : 700, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{service.name}</span>
+            {isSubservice && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50", fontWeight: 700 }}>Subservicio</span>}
+            {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
+          </div>
+          <p style={{ margin: "5px 0 0", fontSize: 12, color: "#A89A87" }}>
+            {duration} min sesión · {buffer} min pausa · {money(service.priceUsd)} · bloque {duration + buffer} min
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#8C6E50", opacity: 0.82, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isMobile ? "normal" : "nowrap" }}>
+            Cabinas: {roomsText}
+          </p>
+          {service.description && <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{service.description}</p>}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: isMobile ? "space-between" : "flex-end", flexWrap: "wrap" }}>
+        <Toggle checked={active} disabled={!canModifyServices} onChange={(val) => onToggle(service, val)} />
+        <button
+          type="button"
+          title="Editar servicio"
+          disabled={!canModifyServices}
+          onClick={() => { if (canModifyServices) onEdit(service); }}
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Pencil size={15} />
+        </button>
+        <button
+          type="button"
+          title="Descripción y foto"
+          disabled={!canModifyServices}
+          onClick={() => { if (canModifyServices) onMedia(service); }}
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ImageIcon size={15} />
+        </button>
+        <button
+          type="button"
+          title="Eliminar servicio"
+          disabled={!canModifyServices}
+          onClick={() => { if (canModifyServices) onDelete(service); }}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            border: "1px solid rgba(168,79,74,0.28)",
+            background: "rgba(168,79,74,0.06)",
+            color: "#A84F4A",
+            display: "grid",
+            placeItems: "center",
+            cursor: canModifyServices ? "pointer" : "not-allowed",
+            opacity: canModifyServices ? 1 : 0.5,
+            flexShrink: 0,
+          }}
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
@@ -385,6 +484,148 @@ function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
         <div style={{ display: "flex", gap: 10, marginTop: 4, position: "sticky", bottom: -28, zIndex: 2, padding: "12px 0 2px", background: "linear-gradient(to top, #FDFCFA 74%, rgba(253,252,250,0))" }}>
           <button type="button" onClick={onClose} style={pillSecondary}>Cancelar</button>
           <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Creando..." : "Crear servicio"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ServiceEditModal({ service, rooms, phase, onClose, onSaved, onOpenMedia }) {
+  const [name, setName] = useState(service?.name || "");
+  const [priceUsd, setPriceUsd] = useState(String(Number(service?.priceUsd || 0).toFixed(2)));
+  const [durationMins, setDurationMins] = useState(String(service?.durationMins || 60));
+  const [bufferMins, setBufferMins] = useState(String(service?.bufferMins ?? 15));
+  const [colorHex, setColorHex] = useState(service?.colorHex || "#8C6E50");
+  const [selectedRoomIds, setSelectedRoomIds] = useState(Array.isArray(service?.rooms) ? service.rooms.map((room) => room.id) : []);
+  const [saving, setSaving] = useState(false);
+  const [validation, setValidation] = useState(null);
+  const toast = useToast();
+
+  const isSubservice = Boolean(service?.parentServiceId);
+  const activeRooms = rooms.filter((room) => room.active !== false);
+
+  function toggleRoom(roomId) {
+    setSelectedRoomIds((prev) => prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [...prev, roomId]);
+    setValidation(null);
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const price = Number(priceUsd);
+    const duration = Number(durationMins);
+    const buffer = bufferMins === "" ? 15 : Number(bufferMins);
+    if (!name.trim()) {
+      setValidation("El nombre del servicio es obligatorio.");
+      return;
+    }
+    if (!isSubservice && selectedRoomIds.length === 0) {
+      setValidation("Selecciona al menos una cabina para este servicio.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setValidation("El precio debe ser un número mayor o igual a 0.");
+      return;
+    }
+    if (!Number.isInteger(duration) || duration < 15 || duration > 480) {
+      setValidation("La duración debe estar entre 15 y 480 minutos.");
+      return;
+    }
+    if (!Number.isInteger(buffer) || buffer < 0 || buffer > 90) {
+      setValidation("La pausa debe estar entre 0 y 90 minutos.");
+      return;
+    }
+
+    setValidation(null);
+    setSaving(true);
+    try {
+      const body = {
+        name: name.trim(),
+        priceUsd: price,
+        durationMins: duration,
+        bufferMins: buffer,
+        ...(isSubservice ? {} : { colorHex, roomIds: selectedRoomIds }),
+      };
+      const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body });
+      toast.success("Servicio actualizado.");
+      onSaved(updated);
+    } catch (err) {
+      setValidation(friendlyConfigError(err.message, "No se pudo guardar el servicio."));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Editar servicio — ${service?.name || ""}`} phase={phase} onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={labelStyle}>Nombre</label>
+          <input style={inputStyle} value={name} disabled={saving} onChange={(e) => setName(e.target.value)} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div><label style={labelStyle}>Duración</label><input type="number" min="15" max="480" step="15" style={inputStyle} value={durationMins} disabled={saving} onChange={(e) => setDurationMins(e.target.value)} /></div>
+          <div><label style={labelStyle}>Pausa</label><input type="number" min="0" max="90" step="5" style={inputStyle} value={bufferMins} disabled={saving} onChange={(e) => setBufferMins(e.target.value)} /></div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Precio (USD)</label>
+          <input type="number" step="0.01" min="0" style={inputStyle} value={priceUsd} disabled={saving} onChange={(e) => setPriceUsd(e.target.value)} />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Color</label>
+          <ServiceColorPalette value={colorHex} onChange={setColorHex} disabled={saving || isSubservice} />
+          {isSubservice && <p style={{ margin: "7px 0 0", fontSize: 11, color: "#A89A87" }}>Los subservicios heredan el color del servicio principal.</p>}
+        </div>
+
+        <div>
+          <label style={labelStyle}>Cabinas permitidas</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {activeRooms.map((room) => {
+              const checked = selectedRoomIds.includes(room.id);
+              return (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => { if (!isSubservice && !saving) toggleRoom(room.id); }}
+                  disabled={isSubservice || saving}
+                  style={{
+                    padding: "9px 10px",
+                    borderRadius: 12,
+                    border: checked ? `1px solid ${room.colorHex || "#8C6E50"}` : "1px solid rgba(168,154,135,0.32)",
+                    background: checked ? hexToRgba(room.colorHex || "#8C6E50", 0.13) : "#FDFCFA",
+                    color: checked ? "#6B5540" : "#8C6E50",
+                    fontSize: 12,
+                    fontWeight: checked ? 700 : 500,
+                    textAlign: "left",
+                    cursor: isSubservice || saving ? "not-allowed" : "pointer",
+                    opacity: isSubservice || saving ? 0.58 : 1,
+                  }}
+                >
+                  {room.name}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ margin: "7px 0 0", fontSize: 11, color: "#A89A87" }}>
+            {isSubservice ? "Los subservicios toman las cabinas del servicio principal para conservar disponibilidad." : "Estas cabinas controlan dónde puede reservarse el servicio."}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => onOpenMedia(service)}
+          className="flex items-center justify-center gap-2 rounded-[12px] border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm font-medium text-primary"
+        >
+          <ImageIcon size={15} /> Editar descripción y foto
+        </button>
+
+        {validation && <p style={{ fontSize: 13, color: "#C25450", margin: 0, textAlign: "center" }}>{validation}</p>}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 4, position: "sticky", bottom: -28, zIndex: 2, padding: "12px 0 2px", background: "linear-gradient(to top, #FDFCFA 74%, rgba(253,252,250,0))" }}>
+          <button type="button" onClick={onClose} disabled={saving} style={pillSecondary}>Cancelar</button>
+          <button type="submit" disabled={saving} style={{ ...pillPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando..." : "Guardar cambios"}</button>
         </div>
       </form>
     </Modal>
@@ -789,14 +1030,17 @@ export default function ConfiguracionPage() {
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [deleteServiceTarget, setDeleteServiceTarget] = useState(null);
   const [deletingService, setDeletingService] = useState(false);
+  const [editServiceTarget, setEditServiceTarget] = useState(null);
   const [mediaTarget, setMediaTarget] = useState(null);
+  const [collapsedServiceIds, setCollapsedServiceIds] = useState(() => new Set());
   const serviceAnim = useAnimatedMount(showServiceForm, 220);
   const deleteServiceAnim = useAnimatedMount(!!deleteServiceTarget, 220);
+  const editServiceAnim = useAnimatedMount(!!editServiceTarget, 220);
   const mediaAnim = useAnimatedMount(!!mediaTarget, 220);
   const activeServices = useMemo(() => services.filter((s) => s.active !== false), [services]);
   // Los servicios retirados no vuelven a aparecer tras recargar. El backend
   // solo los conserva internamente para no romper citas e historiales.
-  const visibleServices = useMemo(() => {
+  const serviceGroups = useMemo(() => {
     const ordered = [...services].sort((a, b) => {
       const aActive = a.active !== false;
       const bActive = b.active !== false;
@@ -809,8 +1053,12 @@ export default function ConfiguracionPage() {
       group.push(service);
       childrenByParent.set(service.parentServiceId, group);
     }
-    return ordered.filter((service) => !service.parentServiceId).flatMap((service) => [service, ...(childrenByParent.get(service.id) || [])]);
+    return ordered.filter((service) => !service.parentServiceId).map((service) => ({
+      service,
+      children: childrenByParent.get(service.id) || [],
+    }));
   }, [services]);
+  const visibleServiceCount = useMemo(() => serviceGroups.reduce((sum, group) => sum + 1 + group.children.length, 0), [serviceGroups]);
   const averagePrice = activeServices.length
     ? activeServices.reduce((sum, s) => sum + Number(s.priceUsd || 0), 0) / activeServices.length
     : 0;
@@ -862,29 +1110,13 @@ export default function ConfiguracionPage() {
     }
   }
 
-  function updateServiceNumber(service, field, value) {
-    const config = field === "bufferMins"
-      ? { min: 0, max: 90, fallback: 15, label: "La pausa" }
-      : { min: 15, max: 480, fallback: 60, label: "La duración" };
-    const next = Number(value);
-    if (!Number.isInteger(next) || next < config.min || next > config.max) {
-      toast.warning(`${config.label} debe estar entre ${config.min} y ${config.max} minutos.`);
-      return false;
-    }
-    if (next === Number(service[field] ?? config.fallback)) return true;
-    updateService(service, { [field]: next });
-    return true;
-  }
-
-  function updateServicePrice(service, value) {
-    const next = Number(value);
-    if (!Number.isFinite(next) || next < 0) {
-      toast.warning("El precio debe ser un número mayor o igual a 0.");
-      return false;
-    }
-    if (next === Number(service.priceUsd || 0)) return true;
-    updateService(service, { priceUsd: next });
-    return true;
+  function toggleServiceChildren(serviceId) {
+    setCollapsedServiceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(serviceId)) next.delete(serviceId);
+      else next.add(serviceId);
+      return next;
+    });
   }
 
   async function updateRoomCapacity(room, value) {
@@ -947,121 +1179,49 @@ export default function ConfiguracionPage() {
                 onAdd={canModifyServices ? () => setShowServiceForm(true) : undefined}
                 addLabel="Añadir servicio"
               />
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                {visibleServices.map((s, i, arr) => {
-                  const active = s.active !== false;
-                  const isSubservice = Boolean(s.parentServiceId);
+              <div style={{ display: "grid", gap: 12 }}>
+                {serviceGroups.map(({ service, children }) => {
+                  const collapsed = collapsedServiceIds.has(service.id);
                   return (
-                    <div key={s.id} style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 14, padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(168,154,135,0.3)" : "none", opacity: active ? 1 : 0.5, flexDirection: isMobile ? "column" : "row" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, width: "100%" }}>
-                        <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted flex items-center justify-center">
-                          {s.imageMimeType ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={imageUrl(s)} alt={s.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-                          ) : (
-                            <ImageOff size={14} className="text-muted-foreground" />
-                          )}
+                    <div key={service.id} style={{ display: "grid", gap: 8, padding: 8, borderRadius: 18, border: "1px solid rgba(168,154,135,0.22)", background: "rgba(247,245,240,0.34)" }}>
+                      <ServiceListRow
+                        service={service}
+                        isMobile={isMobile}
+                        canModifyServices={canModifyServices}
+                        onEdit={setEditServiceTarget}
+                        onMedia={setMediaTarget}
+                        onDelete={setDeleteServiceTarget}
+                        onToggle={(svc, active) => updateService(svc, { active })}
+                      />
+                      {children.length > 0 && (
+                        <div style={{ display: "grid", gap: 8, paddingLeft: isMobile ? 0 : 20 }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleServiceChildren(service.id)}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "fit-content", padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.32)", background: "#FDFCFA", color: "#8C6E50", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                          >
+                            <ChevronDown size={13} style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform var(--motion-fast) var(--ease-in-out-quart)" }} />
+                            {children.length} subservicio{children.length === 1 ? "" : "s"}
+                          </button>
+                          {!collapsed && children.map((child) => (
+                            <ServiceListRow
+                              key={child.id}
+                              service={child}
+                              isSubservice
+                              isMobile={isMobile}
+                              canModifyServices={canModifyServices}
+                              onEdit={setEditServiceTarget}
+                              onMedia={setMediaTarget}
+                              onDelete={setDeleteServiceTarget}
+                              onToggle={(svc, active) => updateService(svc, { active })}
+                            />
+                          ))}
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: isSubservice ? 14 : 0 }}>
-                            <span style={{ width: 9, height: 9, borderRadius: "50%", background: s.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)" }} />
-                            <span style={{ fontSize: 14, color: "#6B5540" }}>{s.name}</span>
-                            {isSubservice && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: "rgba(201,168,118,0.18)", color: "#8C6E50", fontWeight: 700 }}>Subservicio de {s.parentService?.name || "servicio principal"}</span>}
-                            {!active && <span style={{ fontSize: 11, padding: "2px 9px", borderRadius: 999, background: "rgba(194,84,80,0.12)", color: "#C25450" }}>Inactivo</span>}
-                          </div>
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#A89A87" }}>
-                            {s.durationMins || 60} min de sesión · {s.bufferMins ?? 15} min de pausa · bloque total {(s.durationMins || 60) + (s.bufferMins ?? 15)} min
-                          </p>
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#8C6E50", opacity: 0.82 }}>
-                            Cabinas permitidas: {Array.isArray(s.rooms) && s.rooms.length > 0 ? s.rooms.map((room) => room.name).join(", ") : "sin cabina asignada"}
-                          </p>
-                          {s.description && (
-                            <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{s.description}</p>
-                          )}
-                        </div>
-                        {!isMobile && <Toggle checked={active} disabled={!canModifyServices} onChange={(val) => updateService(s, { active: val })} />}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        {isSubservice ? (
-                          <span title="Color heredado del servicio principal" style={{ width: 24, height: 24, borderRadius: "50%", background: s.colorHex || "#8C6E50", border: "3px solid #FDFCFA", outline: "1px solid rgba(168,154,135,0.32)", flexShrink: 0 }} />
-                        ) : (
-                          <ServiceColorPalette compact value={s.colorHex || "#8C6E50"} disabled={!canModifyServices} onChange={(colorHex) => { if (colorHex !== String(s.colorHex || "").toUpperCase()) updateService(s, { colorHex }); }} />
-                        )}
-                        <label style={{ display: "grid", gap: 3, width: 74, flexShrink: 0 }}>
-                          <span style={{ fontSize: 10, color: "#A89A87" }}>Sesión</span>
-                          <input
-                            type="number"
-                            disabled={!canModifyServices}
-                            min="15"
-                            max="480"
-                            step="15"
-                            defaultValue={s.durationMins || 60}
-                            onBlur={(e) => {
-                              if (!updateServiceNumber(s, "durationMins", e.target.value)) e.target.value = s.durationMins || 60;
-                            }}
-                            style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none" }}
-                          />
-                        </label>
-                        <label style={{ display: "grid", gap: 3, width: 70, flexShrink: 0 }}>
-                          <span style={{ fontSize: 10, color: "#A89A87" }}>Pausa</span>
-                          <input
-                            type="number"
-                            disabled={!canModifyServices}
-                            min="0"
-                            max="90"
-                            step="5"
-                            defaultValue={s.bufferMins ?? 15}
-                            onBlur={(e) => {
-                              if (!updateServiceNumber(s, "bufferMins", e.target.value)) e.target.value = s.bufferMins ?? 15;
-                            }}
-                            style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none" }}
-                          />
-                        </label>
-                        <input
-                          type="number"
-                          disabled={!canModifyServices}
-                          step="0.01"
-                          defaultValue={Number(s.priceUsd).toFixed(2)}
-                          onBlur={(e) => {
-                            if (!updateServicePrice(s, e.target.value)) e.target.value = Number(s.priceUsd || 0).toFixed(2);
-                          }}
-                          style={{ width: 84, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(168,154,135,0.5)", background: "#FDFCFA", textAlign: "right", fontSize: 13, color: "#6B5540", outline: "none", flexShrink: 0 }}
-                        />
-                        <button
-                          type="button"
-                          title="Descripción y foto"
-                          disabled={!canModifyServices}
-                          onClick={() => { if (canModifyServices) setMediaTarget(s); }}
-                          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/5 text-primary"
-                        >
-                          <ImageIcon size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          title="Eliminar servicio"
-                          disabled={!canModifyServices}
-                          onClick={() => { if (canModifyServices) setDeleteServiceTarget(s); }}
-                          style={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 10,
-                            border: "1px solid rgba(168,79,74,0.28)",
-                            background: "rgba(168,79,74,0.06)",
-                            color: "#A84F4A",
-                            display: "grid",
-                            placeItems: "center",
-                            cursor: "pointer",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                        {isMobile && <Toggle checked={active} disabled={!canModifyServices} onChange={(val) => updateService(s, { active: val })} />}
-                      </div>
+                      )}
                     </div>
                   );
                 })}
-                {visibleServices.length === 0 && (
+                {visibleServiceCount === 0 && (
                   <EmptyState
                     icon={<Sparkles size={28} strokeWidth={1.5} />}
                     title="Todavía no hay servicios"
@@ -1163,6 +1323,32 @@ export default function ConfiguracionPage() {
           return next;
         });
       }} />}
+      {editServiceAnim.shouldRender && editServiceTarget && (
+        <ServiceEditModal
+          service={editServiceTarget}
+          rooms={rooms}
+          phase={editServiceAnim.phase}
+          onClose={() => setEditServiceTarget(null)}
+          onOpenMedia={(service) => {
+            setEditServiceTarget(null);
+            setMediaTarget(service);
+          }}
+          onSaved={(updated) => {
+            setEditServiceTarget(null);
+            setServices((prev) => {
+              const next = prev.map((svc) => {
+                if (svc.id === updated.id) return { ...svc, ...updated };
+                if (!updated.parentServiceId && svc.parentServiceId === updated.id) {
+                  return { ...svc, colorHex: updated.colorHex || svc.colorHex, category: updated.category || svc.category };
+                }
+                return svc;
+              });
+              saveConfigDataCache({ services: next });
+              return next;
+            });
+          }}
+        />
+      )}
       {deleteServiceAnim.shouldRender && deleteServiceTarget && (
         <DeleteServiceModal
           service={deleteServiceTarget}
