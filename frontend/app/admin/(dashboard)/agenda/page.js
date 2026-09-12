@@ -1030,28 +1030,38 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
 
   return (
     <aside
-      className="alma-hover-scroll"
       aria-hidden={!open}
       style={{
         flex: `0 0 ${open ? 292 : 0}px`,
         width: open ? 292 : 0,
-        minWidth: open ? 276 : 0,
+        minWidth: 0,
         maxWidth: open ? 312 : 0,
         borderRight: open ? "1px solid rgba(168,154,135,0.26)" : "1px solid rgba(168,154,135,0)",
         background: "linear-gradient(180deg, rgba(253,252,250,0.78), rgba(247,245,240,0.9))",
-        overflowY: "auto",
-        overflowX: "hidden",
-        padding: open ? "18px 18px 24px" : "18px 0 24px",
+        overflow: "hidden",
         boxShadow: open ? "12px 0 30px rgba(107,85,64,0.04)" : "0 0 0 rgba(107,85,64,0)",
-        overscrollBehavior: "contain",
         boxSizing: "border-box",
-        opacity: open ? 1 : 0,
         pointerEvents: open ? "auto" : "none",
-        transform: open ? "translateX(0)" : "translateX(-14px)",
-        transition: "flex-basis 280ms var(--ease-in-out-quart), width 280ms var(--ease-in-out-quart), min-width 280ms var(--ease-in-out-quart), max-width 280ms var(--ease-in-out-quart), padding 280ms var(--ease-in-out-quart), opacity 180ms var(--ease-in-out-quart), transform 280ms var(--ease-in-out-quart), border-color 280ms var(--ease-in-out-quart), box-shadow 280ms var(--ease-in-out-quart)",
-        willChange: "width, transform, opacity",
+        transition: "flex-basis 280ms var(--ease-in-out-quart), width 280ms var(--ease-in-out-quart), max-width 280ms var(--ease-in-out-quart), border-color 280ms var(--ease-in-out-quart), box-shadow 280ms var(--ease-in-out-quart)",
+        willChange: "width",
       }}
     >
+      <div
+        className="alma-hover-scroll"
+        style={{
+          width: 292,
+          height: "100%",
+          overflowY: open ? "auto" : "hidden",
+          overflowX: "hidden",
+          padding: "18px 18px 24px",
+          overscrollBehavior: "contain",
+          boxSizing: "border-box",
+          opacity: open ? 1 : 0,
+          transform: open ? "translateX(0)" : "translateX(-18px)",
+          transition: "opacity 170ms var(--ease-in-out-quart), transform 280ms var(--ease-in-out-quart)",
+          willChange: "transform, opacity",
+        }}
+      >
       <div style={{ width: "min(100%, 232px)", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <h2 className="font-heading" style={{ margin: 0, color: "#6B5540", fontSize: 20, lineHeight: 1.1, fontWeight: 700 }}>
           {monthLabel(monthDate)}
@@ -1179,6 +1189,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
             <span style={{ color: "#A89A87", fontSize: 13 }}>Sin servicios activos</span>
           )}
         </div>
+      </div>
       </div>
     </aside>
   );
