@@ -663,6 +663,7 @@ export default function AgendaPage() {
                   cursor: "pointer",
                   boxShadow: sideCalendarOpen ? "0 12px 26px rgba(107,85,64,0.14)" : "0 10px 26px rgba(107,85,64,0.06)",
                   flexShrink: 0,
+                  transition: "background 220ms var(--ease-in-out-quart), color 220ms var(--ease-in-out-quart), box-shadow 220ms var(--ease-in-out-quart), border-color 220ms var(--ease-in-out-quart)",
                 }}
               >
                 <Menu size={18} />
@@ -884,14 +885,24 @@ export default function AgendaPage() {
         )}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", gap: isMobile ? 0 : 8 }}>
-        {!isMobile && sideCalendarOpen && (
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          overflow: "hidden",
+          gap: isMobile ? 0 : sideCalendarOpen ? 8 : 0,
+          transition: "gap 280ms var(--ease-in-out-quart)",
+        }}
+      >
+        {!isMobile && (
           <AgendaSidePanel
             selectedDate={selectedDate}
             monthDate={sideCalendarMonth}
             services={agendaServices}
             onSelectDate={selectDateFromSideCalendar}
             onMonthChange={setSideCalendarMonth}
+            open={sideCalendarOpen}
           />
         )}
 
@@ -1011,7 +1022,7 @@ export default function AgendaPage() {
   );
 }
 
-function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMonthChange }) {
+function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMonthChange, open = true }) {
   const days = calendarMonthDays(monthDate);
   const activeMonth = new Date(monthDate + "T12:00:00").getMonth();
   const selectedMonth = new Date(selectedDate + "T12:00:00").getMonth();
@@ -1020,17 +1031,25 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
   return (
     <aside
       className="alma-hover-scroll"
+      aria-hidden={!open}
       style={{
-        flex: "0 0 clamp(276px, 17vw, 312px)",
-        minWidth: 276,
-        borderRight: "1px solid rgba(168,154,135,0.26)",
+        flex: `0 0 ${open ? 292 : 0}px`,
+        width: open ? 292 : 0,
+        minWidth: open ? 276 : 0,
+        maxWidth: open ? 312 : 0,
+        borderRight: open ? "1px solid rgba(168,154,135,0.26)" : "1px solid rgba(168,154,135,0)",
         background: "linear-gradient(180deg, rgba(253,252,250,0.78), rgba(247,245,240,0.9))",
         overflowY: "auto",
         overflowX: "hidden",
-        padding: "18px 18px 24px",
-        boxShadow: "12px 0 30px rgba(107,85,64,0.04)",
+        padding: open ? "18px 18px 24px" : "18px 0 24px",
+        boxShadow: open ? "12px 0 30px rgba(107,85,64,0.04)" : "0 0 0 rgba(107,85,64,0)",
         overscrollBehavior: "contain",
         boxSizing: "border-box",
+        opacity: open ? 1 : 0,
+        pointerEvents: open ? "auto" : "none",
+        transform: open ? "translateX(0)" : "translateX(-14px)",
+        transition: "flex-basis 280ms var(--ease-in-out-quart), width 280ms var(--ease-in-out-quart), min-width 280ms var(--ease-in-out-quart), max-width 280ms var(--ease-in-out-quart), padding 280ms var(--ease-in-out-quart), opacity 180ms var(--ease-in-out-quart), transform 280ms var(--ease-in-out-quart), border-color 280ms var(--ease-in-out-quart), box-shadow 280ms var(--ease-in-out-quart)",
+        willChange: "width, transform, opacity",
       }}
     >
       <div style={{ width: "min(100%, 232px)", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
