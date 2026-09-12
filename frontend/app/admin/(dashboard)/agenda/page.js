@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/lib/auth-context";
-import { Loader2, X, Search } from "lucide-react";
+import { Loader2, Menu, X, Search } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useGridTransition } from "@/lib/use-grid-transition";
@@ -378,6 +378,10 @@ export default function AgendaPage() {
   const [agendaResults, setAgendaResults] = useState([]);
   const [agendaSearching, setAgendaSearching] = useState(false);
   const [sideCalendarMonth, setSideCalendarMonth] = useState(firstDayOfMonth(today));
+  const [sideCalendarOpen, setSideCalendarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("alma-agenda-side-calendar-open") !== "false";
+  });
 
   const detailAnim = useAnimatedMount(!!selected, 220);
   const slotGroupAnim = useAnimatedMount(!!slotGroup, 220);
@@ -446,6 +450,11 @@ export default function AgendaPage() {
   useEffect(() => {
     setSideCalendarMonth(firstDayOfMonth(selectedDate));
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("alma-agenda-side-calendar-open", sideCalendarOpen ? "true" : "false");
+  }, [sideCalendarOpen]);
 
   // Cambios originados por Almita, la reserva pública u otro miembro del
   // equipo llegan por este stream. La agenda vuelve a pedir únicamente el
@@ -635,6 +644,30 @@ export default function AgendaPage() {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: isMobile ? "1 1 auto" : "0 1 520px" }}>
+            {!isMobile && (
+              <button
+                type="button"
+                onClick={() => setSideCalendarOpen((open) => !open)}
+                aria-label={sideCalendarOpen ? "Ocultar calendario lateral" : "Mostrar calendario lateral"}
+                title={sideCalendarOpen ? "Ocultar calendario" : "Mostrar calendario"}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 14,
+                  border: "1px solid rgba(168,154,135,0.42)",
+                  background: sideCalendarOpen ? "#8C6E50" : "rgba(253,252,250,0.86)",
+                  color: sideCalendarOpen ? "#F7F5F0" : "#8C6E50",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  boxShadow: sideCalendarOpen ? "0 12px 26px rgba(107,85,64,0.14)" : "0 10px 26px rgba(107,85,64,0.06)",
+                  flexShrink: 0,
+                }}
+              >
+                <Menu size={18} />
+              </button>
+            )}
             <h1
               className="font-heading"
               style={{ fontSize: isMobile ? 22 : 26, fontWeight: 600, color: "#6B5540", margin: 0, flexShrink: 0 }}
@@ -852,6 +885,16 @@ export default function AgendaPage() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", gap: isMobile ? 0 : 8 }}>
+        {!isMobile && sideCalendarOpen && (
+          <AgendaSidePanel
+            selectedDate={selectedDate}
+            monthDate={sideCalendarMonth}
+            services={agendaServices}
+            onSelectDate={selectDateFromSideCalendar}
+            onMonthChange={setSideCalendarMonth}
+          />
+        )}
+
         {/* Grid */}
         <div
           className={gridClass || undefined}
@@ -897,16 +940,6 @@ export default function AgendaPage() {
             />
           )}
         </div>
-
-        {!isMobile && (
-          <AgendaSidePanel
-            selectedDate={selectedDate}
-            monthDate={sideCalendarMonth}
-            services={agendaServices}
-            onSelectDate={selectDateFromSideCalendar}
-            onMonthChange={setSideCalendarMonth}
-          />
-        )}
       </div>
 
       {slotGroupAnim.shouldRender && (
@@ -990,12 +1023,12 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
       style={{
         flex: "0 0 clamp(276px, 17vw, 312px)",
         minWidth: 276,
-        borderLeft: "1px solid rgba(168,154,135,0.26)",
+        borderRight: "1px solid rgba(168,154,135,0.26)",
         background: "linear-gradient(180deg, rgba(253,252,250,0.78), rgba(247,245,240,0.9))",
         overflowY: "auto",
         overflowX: "hidden",
         padding: "18px 18px 24px",
-        boxShadow: "-12px 0 30px rgba(107,85,64,0.04)",
+        boxShadow: "12px 0 30px rgba(107,85,64,0.04)",
         overscrollBehavior: "contain",
         boxSizing: "border-box",
       }}
