@@ -733,6 +733,41 @@ test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita act
   assert.equal(slots.includes('2099-08-01T15:15:00.000Z'), true, 'ofrece el siguiente bloque completo disponible');
 });
 
+test('getRescheduleAvailability usa la duración real personalizada de la cita', async () => {
+  mockPrisma({
+    service: {
+      findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }),
+    },
+    room: {
+      findMany: async () => [{ id: 'room1', specialty: 'masajes' }],
+    },
+    user: {
+      findFirst: async () => ({ id: 'staff1' }),
+    },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1',
+        tenantId: 't1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T14:45:00.000Z'),
+      }),
+      findMany: async () => [],
+    },
+  });
+
+  const slots = await appointmentService.getRescheduleAvailability({
+    tenantId: 't1',
+    tenantConfig: { businessHours: { morning: { start: '09:00', end: '10:00' }, afternoon: null } },
+    appointmentId: 'appt1',
+    date: '2099-08-01',
+  });
+
+  assert.equal(slots.includes('2099-08-01T14:00:00.000Z'), true, '45 minutos sí caben en una ventana de 1 hora');
+});
+
 test('listAppointments permite filtrar historial por clienta sin salir del tenant', async () => {
   let seenArgs;
   mockPrisma({
@@ -865,6 +900,80 @@ test('updateAppointment permite mover a un grupo con la misma terapeuta si hay p
 
   assert.equal(result.endsAt.toISOString(), '2099-08-01T15:15:00.000Z');
   assert.equal(updateData.startsAt.toISOString(), '2099-08-01T14:00:00.000Z');
+});
+
+test('updateAppointment permite ajustar la hora fin de una cita puntual', async () => {
+  let updateData = null;
+  mockPrisma({
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'masajes', capacity: 1 }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1',
+        tenantId: 't1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        clientId: 'c1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }),
+      findMany: async () => [],
+      update: async ({ data }) => {
+        updateData = data;
+        return { id: 'appt1', ...data };
+      },
+    },
+  });
+
+  const result = await appointmentService.updateAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    'appt1',
+    { endsAt: '2099-08-01T14:45:00.000Z' }
+  );
+
+  assert.equal(result.endsAt.toISOString(), '2099-08-01T14:45:00.000Z');
+  assert.equal(updateData.startsAt, undefined);
+});
+
+test('updateAppointment rechaza alargar una cita si cruza otra reserva', async () => {
+  mockPrisma({
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'masajes', capacity: 1 }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1',
+        tenantId: 't1',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        clientId: 'c1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'),
+        endsAt: new Date('2099-08-01T15:15:00.000Z'),
+      }),
+      findMany: async () => [{
+        id: 'other',
+        clientId: 'c2',
+        serviceId: 'srv1',
+        roomId: 'room1',
+        staffId: 'staff1',
+        startsAt: new Date('2099-08-01T15:30:00.000Z'),
+        endsAt: new Date('2099-08-01T16:30:00.000Z'),
+      }],
+      update: async () => {
+        throw new Error('no debe actualizar si cruza otra reserva');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.updateAppointment(
+      { role: 'dueno', tenantId: 't1' },
+      'appt1',
+      { endsAt: '2099-08-01T16:00:00.000Z' }
+    ),
+    (err) => err.status === 409 && /ocupada|disponibles|cruza/.test(err.message)
+  );
 });
 
 test('updateAppointment permite a dueña mover una cita a horario interno ampliado', async () => {

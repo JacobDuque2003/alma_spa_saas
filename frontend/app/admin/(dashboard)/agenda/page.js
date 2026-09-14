@@ -123,6 +123,51 @@ function hhmmFromTotalMinutes(totalMinutes) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function minutesFromHHMM(hhmm) {
+  const [h, m] = String(hhmm || "00:00").split(":").map(Number);
+  return (Number(h) || 0) * 60 + (Number(m) || 0);
+}
+
+function durationText(minutes) {
+  const mins = Number(minutes || 0);
+  if (!Number.isFinite(mins) || mins <= 0) return "0 min";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (!h) return `${m} min`;
+  if (!m) return `${h} h`;
+  return `${h} h ${m} min`;
+}
+
+function buildEndTimeOptions(dateStr, startsAtIso, currentEndIso) {
+  if (!dateStr || !startsAtIso) return [];
+  const startHHMM = formatTime(startsAtIso);
+  const startMins = minutesFromHHMM(startHHMM);
+  const maxEnd = Math.min((24 * 60) - 15, startMins + (8 * 60));
+  const values = new Map();
+  for (let mins = startMins + 15; mins <= maxEnd; mins += 15) {
+    const hhmm = hhmmFromTotalMinutes(mins);
+    const value = localDateTimeToIso(dateStr, hhmm);
+    values.set(value, {
+      value,
+      label: formatTime(value),
+      caption: durationText(mins - startMins),
+    });
+  }
+  if (currentEndIso && !values.has(currentEndIso)) {
+    const currentEnd = new Date(currentEndIso);
+    const start = new Date(startsAtIso);
+    const diff = Math.round((currentEnd - start) / 60000);
+    if (Number.isFinite(diff) && diff > 0) {
+      values.set(currentEndIso, {
+        value: currentEndIso,
+        label: formatTime(currentEndIso),
+        caption: durationText(diff),
+      });
+    }
+  }
+  return Array.from(values.values()).sort((a, b) => new Date(a.value) - new Date(b.value));
+}
+
 function hexToRgba(hex, alpha = 1) {
   const rgb = hexToRgb(hex);
   if (!rgb) return `rgba(140,110,80,${alpha})`;
@@ -2225,16 +2270,21 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const [saving, setSaving] = useState(false);
   const [editDate, setEditDate] = useState("");
   const [editSlot, setEditSlot] = useState("");
+  const [editEndSlot, setEditEndSlot] = useState("");
   const [editRoomId, setEditRoomId] = useState("");
   const [editStaffId, setEditStaffId] = useState("");
   const [editIndications, setEditIndications] = useState("");
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
+  const appointmentDefaultDuration = appt ? appointmentBlockMins(appt) : 45;
+  const appointmentStartIso = appt?.startsAt ? new Date(appt.startsAt).toISOString() : "";
+  const appointmentLocalDate = appt?.startsAt ? toLocalDate(new Date(appt.startsAt)) : "";
 
   useEffect(() => {
     if (!appt) return;
     setEditDate(toLocalDate(new Date(appt.startsAt)));
     setEditSlot(new Date(appt.startsAt).toISOString());
+    setEditEndSlot(new Date(appt.endsAt).toISOString());
     setEditRoomId(appt.room?.id || "");
     setEditStaffId(appt.staff?.id || "");
     setEditIndications(appt.indications || "");
@@ -2252,9 +2302,18 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     })
       .then((data) => {
         if (cancelled) return;
-        const slots = Array.isArray(data?.slots) ? data.slots : [];
+        const rawSlots = Array.isArray(data?.slots) ? data.slots : [];
+        const slots = editDate === appointmentLocalDate && appointmentStartIso
+          ? Array.from(new Set([appointmentStartIso, ...rawSlots])).sort((a, b) => new Date(a) - new Date(b))
+          : rawSlots;
         setRescheduleSlots(slots);
-        setEditSlot((current) => (slots.includes(current) ? current : slots[0] || ""));
+        setEditSlot((current) => {
+          const nextSlot = slots.includes(current) ? current : slots[0] || "";
+          if (nextSlot && nextSlot !== current) {
+            setEditEndSlot(addMinutesToDate(new Date(nextSlot), appointmentDefaultDuration).toISOString());
+          }
+          return nextSlot;
+        });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -2268,7 +2327,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     return () => {
       cancelled = true;
     };
-  }, [appt?.id, editDate, editRoomId, editStaffId, editing, toast]);
+  }, [appt?.id, appointmentDefaultDuration, appointmentLocalDate, appointmentStartIso, editDate, editRoomId, editStaffId, editing, toast]);
 
   if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
@@ -2320,7 +2379,19 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
         toast.error("Selecciona un horario disponible");
         return;
       }
+      if (!editEndSlot) {
+        toast.error("Selecciona una hora de fin");
+        return;
+      }
+      const startDate = new Date(editSlot);
+      const endDate = new Date(editEndSlot);
+      const customDuration = Math.round((endDate - startDate) / 60000);
+      if (!Number.isFinite(customDuration) || customDuration <= 0) {
+        toast.error("La hora de fin debe ser posterior al inicio");
+        return;
+      }
       if (new Date(editSlot).getTime() !== new Date(appt.startsAt).getTime()) body.startsAt = editSlot;
+      if (new Date(editEndSlot).getTime() !== new Date(appt.endsAt).getTime()) body.endsAt = editEndSlot;
       if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
       if (editStaffId && editStaffId !== appt.staff?.id) body.staffId = editStaffId;
       if (canScheduleOutside) {
@@ -2351,11 +2422,24 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const canFollowUp = onFollowUp && appt.status === "confirmado" && appt.endsAt && new Date(appt.endsAt) < new Date();
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" };
   const pillBtn = (bg, color, border) => ({ padding: "7px 16px", borderRadius: 999, border: border || "none", background: bg, color, fontSize: 12, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 });
+  const realDurationMins = appointmentBlockMins(appt);
+  const standardDurationMins = totalServiceBlockMins(appt.service || {});
+  function handleEditSlotChange(nextSlot) {
+    const currentDuration = editSlot && editEndSlot
+      ? Math.max(15, Math.round((new Date(editEndSlot) - new Date(editSlot)) / 60000))
+      : realDurationMins;
+    setEditSlot(nextSlot);
+    if (nextSlot) setEditEndSlot(addMinutesToDate(new Date(nextSlot), currentDuration).toISOString());
+  }
   const rescheduleTimeOptions = rescheduleSlots.map((slot) => ({
     value: slot,
     label: formatTime(slot),
-    caption: `${appt.service?.name || "Servicio"} · bloque ${totalServiceBlockMins(appt.service || {})} min`,
+    caption: `${appt.service?.name || "Servicio"} · conserva ${durationText(realDurationMins)}`,
   }));
+  const endTimeOptions = buildEndTimeOptions(editDate, editSlot, editEndSlot);
+  const editingDurationMins = editSlot && editEndSlot
+    ? Math.round((new Date(editEndSlot) - new Date(editSlot)) / 60000)
+    : realDurationMins;
 
   return (
     <div
@@ -2384,7 +2468,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
             <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
                 <span style={{ color: "#A89A87" }}>Horario</span>
-                <span>{formatTime(appt.startsAt)} – {formatTime(appt.endsAt)}{appt.service?.durationMins && <span style={{ color: "#A89A87", marginLeft: 8 }}>({appt.service.durationMins} min)</span>}</span>
+                <span>{formatTime(appt.startsAt)} – {formatTime(appt.endsAt)}<span style={{ color: "#A89A87", marginLeft: 8 }}>({durationText(realDurationMins)})</span></span>
               </div>
               {appt.client && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
@@ -2489,13 +2573,70 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
               </div>
               <div>
                 <PremiumSelect
-                  label="Hora disponible"
+                  label="Hora inicio"
                   value={editSlot}
                   options={rescheduleTimeOptions}
                   placeholder={rescheduleSlotsLoading ? "Buscando horarios…" : "Seleccionar hora"}
                   emptyLabel={rescheduleSlotsLoading ? "Buscando horarios…" : "Sin horarios ese día"}
-                  onChange={setEditSlot}
+                  onChange={handleEditSlotChange}
                 />
+              </div>
+            </div>
+            <div>
+              <PremiumSelect
+                label="Hora fin"
+                value={editEndSlot}
+                options={endTimeOptions}
+                placeholder="Seleccionar fin"
+                emptyLabel="Selecciona primero la hora de inicio"
+                onChange={setEditEndSlot}
+              />
+              <p style={{ margin: "6px 0 0", fontSize: 12, color: "#A89A87", lineHeight: 1.45 }}>
+                Duración de esta cita: <strong style={{ color: "#8C6E50" }}>{durationText(editingDurationMins)}</strong>
+                {standardDurationMins !== editingDurationMins && (
+                  <span> · estándar del servicio: {durationText(standardDurationMins)}</span>
+                )}
+              </p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                {[30, 45, 60, 75, 90, 105, 120].map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    disabled={!editSlot}
+                    onClick={() => setEditEndSlot(addMinutesToDate(new Date(editSlot), mins).toISOString())}
+                    style={{
+                      border: "1px solid rgba(168,154,135,0.32)",
+                      background: mins === editingDurationMins ? "rgba(201,168,118,0.22)" : "#FDFCFA",
+                      color: "#8C6E50",
+                      borderRadius: 999,
+                      padding: "5px 9px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: editSlot ? "pointer" : "not-allowed",
+                      opacity: editSlot ? 1 : 0.5,
+                    }}
+                  >
+                    {durationText(mins)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  disabled={!editSlot}
+                  onClick={() => setEditEndSlot(addMinutesToDate(new Date(editSlot), standardDurationMins).toISOString())}
+                  style={{
+                    border: "1px solid rgba(140,110,80,0.30)",
+                    background: "#F7F5F0",
+                    color: "#6B5540",
+                    borderRadius: 999,
+                    padding: "5px 9px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: editSlot ? "pointer" : "not-allowed",
+                    opacity: editSlot ? 1 : 0.5,
+                  }}
+                >
+                  Estándar
+                </button>
               </div>
             </div>
             {!rescheduleSlotsLoading && rescheduleSlots.length === 0 && (

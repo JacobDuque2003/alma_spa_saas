@@ -17,6 +17,8 @@ function getBusinessHours(tenantConfig) {
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const SLOT_STEP_MINS = 15;
+const MIN_APPOINTMENT_MINS = 15;
+const MAX_APPOINTMENT_MINS = 8 * 60;
 const INTERNAL_AGENDA_HOURS = { morning: { start: '08:00', end: '22:00' }, afternoon: null };
 
 function minutesFromHHMM(hhmm) {
@@ -32,6 +34,35 @@ function hhmmFromMinutes(total) {
 
 function addMinutes(date, mins) {
   return new Date(date.getTime() + mins * 60_000);
+}
+
+function appointmentDurationMins(startsAt, endsAt) {
+  return Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000);
+}
+
+function fallbackAppointmentDurationMins(appointment, service) {
+  const mins = appointmentDurationMins(new Date(appointment.startsAt), new Date(appointment.endsAt));
+  return Number.isFinite(mins) && mins >= MIN_APPOINTMENT_MINS ? mins : totalBlockMins(service);
+}
+
+function assertValidAppointmentRange(startsAt, endsAt) {
+  if (!(endsAt instanceof Date) || Number.isNaN(endsAt.getTime())) {
+    throw new BadRequestError('endsAt debe ser una fecha válida');
+  }
+  const mins = appointmentDurationMins(startsAt, endsAt);
+  if (!Number.isFinite(mins) || mins <= 0) {
+    throw new BadRequestError('La hora de fin debe ser posterior a la hora de inicio');
+  }
+  if (mins < MIN_APPOINTMENT_MINS) {
+    throw new BadRequestError(`La cita debe durar al menos ${MIN_APPOINTMENT_MINS} minutos`);
+  }
+  if (mins > MAX_APPOINTMENT_MINS) {
+    throw new BadRequestError('La cita no puede durar más de 8 horas');
+  }
+  if (mins % SLOT_STEP_MINS !== 0) {
+    throw new BadRequestError(`La duración debe ajustarse en bloques de ${SLOT_STEP_MINS} minutos`);
+  }
+  return mins;
 }
 
 function totalBlockMins(service) {
@@ -302,8 +333,8 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
  *
  * A diferencia de la disponibilidad para una reserva nueva, conserva la
  * cabina y terapeuta elegidos (o los cambios explícitos del panel), excluye
- * la cita actual de los conflictos y aplica exactamente el mismo bloque del
- * servicio: duración + pausa, horario de la cabina y zona del tenant.
+ * la cita actual de los conflictos y conserva la duración real de esa cita
+ * puntual; si no existe, vuelve al bloque estándar del servicio.
  */
 async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId, includeInternalHours = false }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
@@ -356,8 +387,10 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
 
   const slots = [];
   const businessHours = roomAvailabilityHours(room, tenantConfig, date, includeInternalHours);
-  for (const slot of generateSlotsForService(date, businessHours, tz, service)) {
-    const endsAt = addMinutes(slot, totalBlockMins(service));
+  const blockMins = fallbackAppointmentDurationMins(appointment, service);
+  const slotService = { ...service, durationMins: blockMins, bufferMins: 0 };
+  for (const slot of generateSlotsForService(date, businessHours, tz, slotService)) {
+    const endsAt = addMinutes(slot, blockMins);
     if (
       isRoomSlotAvailable(appointments, room, service.id, slot, endsAt)
       && isStaffSlotAvailable(appointments, staff.id, {
@@ -799,6 +832,7 @@ async function updateAppointment(actor, id, changes) {
 
   const data = {};
   if (changes.startsAt !== undefined) data.startsAt = new Date(changes.startsAt);
+  const requestedEndsAt = changes.endsAt !== undefined ? new Date(changes.endsAt) : null;
   if (changes.roomId !== undefined) data.roomId = changes.roomId;
   if (changes.staffId !== undefined) {
     // M-3: validar staffId contra target.tenantId — sin esto, un dueño puede
@@ -819,13 +853,14 @@ async function updateAppointment(actor, id, changes) {
   }
   if (changes.indications !== undefined) data.indications = changes.indications ? String(changes.indications).trim() : null;
 
-  if (data.startsAt || data.roomId !== undefined || data.staffId !== undefined) {
+  if (data.startsAt || requestedEndsAt || data.roomId !== undefined || data.staffId !== undefined) {
     const service = await prisma.service.findUnique({ where: { id: target.serviceId } });
     const startsAt = data.startsAt || target.startsAt;
     if (data.startsAt && (Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= Date.now())) {
       throw new BadRequestError('No se puede reprogramar a una fecha u horario que ya pasó');
     }
-    const endsAt = addMinutes(startsAt, totalBlockMins(service));
+    const endsAt = requestedEndsAt || addMinutes(startsAt, fallbackAppointmentDurationMins(target, service));
+    assertValidAppointmentRange(startsAt, endsAt);
     data.endsAt = endsAt;
     const tenant = await prisma.tenant.findUnique({ where: { id: target.tenantId }, select: { config: true } });
     const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
