@@ -225,11 +225,12 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
         onClick={onSelect}
         className={birthdayToday ? "alma-birthday-row" : undefined}
         style={{
-          display: "flex",
-          alignItems: "center",
+          display: "grid",
+          gridTemplateColumns: "38px minmax(0, 1fr)",
+          alignItems: "start",
           gap: 12,
-          padding: "13px 12px",
-          borderRadius: 14,
+          padding: "14px 13px",
+          borderRadius: 16,
           background: selected ? "linear-gradient(135deg, rgba(235,205,181,0.68), #FDFCFA)" : "linear-gradient(135deg, #FFFFFF, rgba(253,252,250,0.86))",
           border: selected ? "1px solid rgba(201,168,118,0.62)" : "1px solid rgba(201,168,118,0.28)",
           cursor: "pointer",
@@ -239,15 +240,22 @@ function ClientDirectoryRow({ client, selected, view, onSelect, onCopyEmail, isM
           position: "relative",
           overflow: "hidden",
         }}
-      >
+        >
         {confetti}
         <span style={{ width: 38, height: 38, borderRadius: "50%", background: selected ? "#C9A876" : "rgba(201,168,118,0.32)", color: selected ? "#F7F5F0" : "#8C6E50", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
           {initials(client.fullName)}
         </span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#6B5540", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.fullName}</div>
-          <div style={{ fontSize: 12, color: "#A89A87", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {client.recordNumber ? `Ficha ${client.recordNumber} · ` : ""}{formatEcuadorPhone(client.whatsapp)}{client.email ? ` · ${client.email}` : ""}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ fontSize: 14, lineHeight: 1.22, fontWeight: 800, color: "#6B5540", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{client.fullName}</div>
+            <span style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 999, background: client.active === false ? "rgba(168,79,74,0.08)" : "rgba(92,122,64,0.10)", color: client.active === false ? "#A84F4A" : "#5C7A40", fontSize: 10, fontWeight: 800 }}>
+              {statusLabel}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 8px", marginTop: 7, fontSize: 12, color: "#A89A87", lineHeight: 1.25 }}>
+            {client.recordNumber && <span>Ficha {client.recordNumber}</span>}
+            <span>{formatEcuadorPhone(client.whatsapp) || "Sin teléfono"}</span>
+            {client.email && <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.email}</span>}
           </div>
           {view === "cumples" && <div style={{ marginTop: 2, fontSize: 12, color: "#8C6E50", fontWeight: 700 }}>{birthdayHint}</div>}
         </div>

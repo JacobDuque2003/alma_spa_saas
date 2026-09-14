@@ -182,6 +182,7 @@ function matchesAgendaSearch(appt, query) {
 }
 
 const OPEN_APPOINTMENT_STATUSES = new Set(["pendiente", "pendiente_bot", "confirmado"]);
+const MIN_APPOINTMENT_CARD_HEIGHT = 56;
 
 function addMinutesToDate(date, mins) {
   return new Date(date.getTime() + Number(mins || 0) * 60_000);
@@ -1209,13 +1210,13 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   }
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
       {active.map((appt) => {
         const color = appointmentColor(appt, roomColorMap);
         const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
         const statusLabel = STATUS_LABELS[appt.status] || appt.status;
         const time = formatTime(appt.startsAt);
-        const dur = appt.service?.durationMins || 60;
+        const dur = appointmentBlockMins(appt);
         return (
           <button
             key={appt.id}
@@ -1224,13 +1225,14 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
               display: "flex",
               alignItems: "stretch",
               border: "1px solid rgba(168,154,135,0.35)",
-              borderRadius: 12,
-              background: "#F7F5F0",
+              borderRadius: 16,
+              background: "linear-gradient(135deg, #FFFFFF, rgba(253,252,250,0.88))",
               overflow: "hidden",
               cursor: "pointer",
               padding: 0,
               textAlign: "left",
-              minHeight: 72,
+              minHeight: 82,
+              boxShadow: "0 12px 26px rgba(107,85,64,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
               textDecoration: appt.status === "no_show" ? "line-through" : "none",
               textDecorationColor: "rgba(194,84,80,0.55)",
               textDecorationThickness: 1.5,
@@ -1243,9 +1245,9 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
                 background: color,
               }}
             />
-            <div style={{ flex: 1, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: "#6B5540" }}>
+            <div style={{ flex: 1, minWidth: 0, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <span style={{ fontSize: 15, lineHeight: 1.18, fontWeight: 800, color: "#6B5540", minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                   {appt.client?.fullName || "Cliente"}
                 </span>
                 <span
@@ -1255,18 +1257,20 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
                     borderRadius: 999,
                     background: statusInfo.bg,
                     color: statusInfo.text,
-                    fontWeight: 500,
+                    fontWeight: 800,
+                    flexShrink: 0,
                   }}
                 >
                   {statusLabel}
                 </span>
               </div>
-              <div style={{ fontSize: 13, color: "#8C6E50" }}>
+              <div style={{ fontSize: 13, color: "#8C6E50", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {appt.staff?.name || "Terapeuta por asignar"}
               </div>
-              <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#A89A87" }}>
-                <span>{time} · {dur} min</span>
-                {appt.room && <span>{appt.room.name}</span>}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: "#A89A87", lineHeight: 1.25 }}>
+                <span>{time} · bloque {dur} min</span>
+                {appt.room && <span>{cabinDisplayName(appt.room.name)}</span>}
+                {appt.service?.name && <span>{appt.service.name}</span>}
               </div>
             </div>
           </button>
@@ -1469,7 +1473,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                         top: topOffset + 3,
                         left: 4,
                         right: 4,
-                        height: Math.max(Math.min(height - 6, 58), 38),
+                        height: Math.max(Math.min(height - 6, 66), MIN_APPOINTMENT_CARD_HEIGHT),
                         borderRadius: 8,
                         padding: "6px 9px",
                         border: "1px solid rgba(140,110,80,0.24)",
@@ -1503,7 +1507,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       position: "absolute",
                       top: topOffset + 1,
                       ...lanePosition(lane, 3),
-                      height: Math.max(height - 2, 20),
+                      height: Math.max(height - 2, MIN_APPOINTMENT_CARD_HEIGHT),
                       borderRadius: 6,
                       padding: "4px 8px",
                       fontSize: 11,
@@ -1573,7 +1577,7 @@ function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
 }
 
 function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, onMoveAppointment, canMoveAppointments, draftAppointment }) {
-  const HOUR_HEIGHT = 66;
+  const HOUR_HEIGHT = 72;
   const HEADER_HEIGHT = 78;
   const [draggingId, setDraggingId] = useState(null);
   const [dragState, setDragState] = useState(null);
@@ -1587,8 +1591,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     .map((appt) => appt.room);
   const columns = [...configuredRooms, ...fallbackRooms];
   const visibleColumns = columns.length ? columns : [{ id: "__sin-cabina", name: "Sin cabinas", specialty: "configuración" }];
-  const columnWidth = visibleColumns.length > 8 ? 156 : 168;
-  const minWidth = Math.max(760, 56 + visibleColumns.length * columnWidth);
+  const timeColumnWidth = 48;
   const firstHour = HOURS[0];
   const lastHour = HOURS[HOURS.length - 1];
 
@@ -1601,7 +1604,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     const gridRect = event.currentTarget.parentElement.getBoundingClientRect();
     const columnBoundsByRoomId = {};
     visibleColumns.forEach((column, index) => {
-      const left = gridRect.left + 56 + index * rect.width;
+      const left = gridRect.left + timeColumnWidth + index * rect.width;
       columnBoundsByRoomId[column.id] = { left, right: left + rect.width };
     });
     const columnIndex = visibleColumns.findIndex((column) => column.id === room.id);
@@ -1615,7 +1618,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       roomColor: roomColorMap[room.id] || room.colorHex || "#8C6E50",
       columnIndex,
       columnWidth: rect.width,
-      previewLeft: 56 + columnIndex * rect.width + 8,
+      previewLeft: timeColumnWidth + columnIndex * rect.width + 4,
       previewTop: HEADER_HEIGHT + (topOffset || 0) + 4,
       anchorX: event.clientX,
       anchorY: event.clientY,
@@ -1651,7 +1654,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
   function makeDragPreview(appt, target) {
     const duration = appointmentBlockMins(appt);
-    const height = Math.max((duration / 60) * HOUR_HEIGHT - 8, 42);
+    const height = Math.max((duration / 60) * HOUR_HEIGHT - 8, MIN_APPOINTMENT_CARD_HEIGHT);
     const roomWidth = target.columnWidth || 158;
     return {
       id: appt.id,
@@ -1662,7 +1665,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       target: {
         left: target.previewLeft,
         top: target.previewTop,
-        width: Math.max(roomWidth - 16, 42),
+        width: Math.max(roomWidth - 8, 42),
         height,
       },
     };
@@ -1681,7 +1684,8 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       className="alma-hover-scroll alma-agenda-grid-scroll"
       style={{
         flex: 1,
-        overflow: "auto",
+        overflowY: "auto",
+        overflowX: "hidden",
         padding: "0 clamp(6px, 1vw, 18px) 24px",
         maxWidth: "100%",
         overscrollBehavior: "contain",
@@ -1690,12 +1694,11 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `56px repeat(${visibleColumns.length}, minmax(${columnWidth}px, 1fr))`,
+          gridTemplateColumns: `${timeColumnWidth}px repeat(${visibleColumns.length}, minmax(0, 1fr))`,
           border: "1px solid rgba(168,154,135,0.4)",
           borderRadius: 12,
           background: "#F7F5F0",
           overflow: "hidden",
-          minWidth,
           width: "100%",
           position: "relative",
         }}
@@ -1709,7 +1712,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
               key={room.id}
               style={{
                 minHeight: 78,
-                padding: "12px 14px",
+                padding: "10px 6px",
                 borderLeft: "1px solid rgba(168,154,135,0.20)",
                 borderBottom: `2px solid ${premiumColor}`,
                 background: "linear-gradient(180deg, rgba(253,252,250,0.98) 0%, rgba(247,245,240,0.88) 100%)",
@@ -1724,10 +1727,10 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                 className="font-heading"
                 style={{
                   color: premiumColor,
-                  fontSize: 18,
+                  fontSize: visibleColumns.length >= 9 ? 14 : visibleColumns.length >= 7 ? 15 : 17,
                   fontWeight: 700,
                   lineHeight: 1.12,
-                  letterSpacing: "-0.01em",
+                  letterSpacing: 0,
                   overflow: "hidden",
                   display: "-webkit-box",
                   WebkitLineClamp: 2,
@@ -1752,8 +1755,8 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                 style={{
                   position: "absolute",
                   top: i * HOUR_HEIGHT,
-                  right: 8,
-                  fontSize: 11,
+                  right: 6,
+                  fontSize: 10,
                   color: openInAnyRoom ? "#A89A87" : "#C9BFB0",
                 }}
               >
@@ -1812,12 +1815,12 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                     style={{
                       position: "absolute",
                       top: topOffset + 4,
-                      left: 8,
-                      right: 8,
-                      height: Math.max(height - 8, 42),
+                      left: 4,
+                      right: 4,
+                      height: Math.max(height - 8, MIN_APPOINTMENT_CARD_HEIGHT),
                       borderRadius: 10,
-                      padding: "8px 10px",
-                      fontSize: 12,
+                      padding: "7px 8px",
+                      fontSize: 11,
                       overflow: "hidden",
                       pointerEvents: "none",
                       border: `2px dashed ${color}`,
@@ -1854,7 +1857,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                 const height = (appointmentBlockMins(first) / 60) * HOUR_HEIGHT;
                 const color = appointmentColor(first, roomColorMap);
                 const isGroup = groupAppointments.length > 1;
-                const groupHeight = Math.max(height - 8, isGroup ? 50 : 42);
+                const groupHeight = Math.max(height - 8, isGroup ? MIN_APPOINTMENT_CARD_HEIGHT + 8 : MIN_APPOINTMENT_CARD_HEIGHT);
 
                 const renderPiece = (appt, index, compact = false) => {
                   const noShow = appt.status === "no_show";
@@ -1878,7 +1881,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         const originTarget = {
                           timeLabel: formatTime(appt.startsAt),
                           columnWidth,
-                          previewLeft: 56 + visibleColumns.findIndex((column) => column.id === appointmentRoomId(appt)) * columnWidth + 8,
+                          previewLeft: timeColumnWidth + visibleColumns.findIndex((column) => column.id === appointmentRoomId(appt)) * columnWidth + 4,
                           previewTop: HEADER_HEIGHT + topOffset + 4,
                         };
                         setDragState(makeDragPreview(appt, originTarget));
@@ -1894,12 +1897,12 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                       style={{
                         position: isGroup ? "relative" : "absolute",
                         top: isGroup ? undefined : topOffset + 4,
-                        left: isGroup ? undefined : 8,
-                        right: isGroup ? undefined : 8,
-                        height: isGroup ? "100%" : Math.max(height - 8, 42),
+                        left: isGroup ? undefined : 4,
+                        right: isGroup ? undefined : 4,
+                        height: isGroup ? "100%" : Math.max(height - 8, MIN_APPOINTMENT_CARD_HEIGHT),
                         minWidth: 0,
                         borderRadius: isGroup ? 8 : 10,
-                        padding: compact ? "6px 7px" : "8px 10px",
+                        padding: compact ? "5px 6px" : "7px 8px",
                         fontSize: compact ? 11 : 12,
                         overflow: "hidden",
                         cursor: canMoveAppointments && !noShow ? "grab" : "pointer",
@@ -1917,7 +1920,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         textDecorationThickness: 1.5,
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 5, alignItems: "center" }}>
                         <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.client?.fullName || "Cliente"}</strong>
                         {!isGroup && <span style={{ opacity: noShow ? 0.9 : 0.72, flexShrink: 0 }}>{formatTime(appt.startsAt)}</span>}
                       </div>
@@ -1942,14 +1945,14 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                     style={{
                       position: "absolute",
                       top: topOffset + 4,
-                      left: 8,
-                      right: 8,
+                      left: 4,
+                      right: 4,
                       height: groupHeight,
                       borderRadius: 12,
-                      padding: 4,
+                      padding: 3,
                       display: "grid",
                       gridTemplateColumns: groupAppointments.length === 2 ? "1fr 1fr" : "repeat(2, minmax(0, 1fr))",
-                      gap: 4,
+                      gap: 3,
                       border: `1px solid ${hexToRgba(color, 0.42)}`,
                       background: `linear-gradient(135deg, ${hexToRgba(color, 0.28)}, rgba(253,252,250,0.72))`,
                       boxShadow: "0 12px 28px rgba(64,51,39,0.13)",
@@ -1971,7 +1974,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
             aria-hidden="true"
             style={{
               position: "absolute",
-              left: dragState.target.left,
+              left: Math.max(timeColumnWidth + 4, dragState.target.left),
               top: dragState.target.top,
               width: dragState.target.width,
               height: dragState.target.height,
@@ -2071,7 +2074,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                     top: topOffset + 4,
                     left: 8,
                     right: 8,
-                    height: Math.max(Math.min(height - 8, 62), 44),
+                    height: Math.max(Math.min(height - 8, 68), MIN_APPOINTMENT_CARD_HEIGHT),
                     borderRadius: 10,
                     padding: "7px 12px",
                     border: "1px solid rgba(140,110,80,0.24)",
@@ -2105,7 +2108,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                   position: "absolute",
                   top: topOffset + 1,
                   ...lanePosition(lane, 6),
-                  height: Math.max(height - 2, 24),
+                  height: Math.max(height - 2, MIN_APPOINTMENT_CARD_HEIGHT),
                   borderRadius: 8,
                   padding: "6px 12px",
                   fontSize: 13,
