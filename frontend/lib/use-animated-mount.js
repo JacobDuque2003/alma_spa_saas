@@ -6,16 +6,17 @@ export function useAnimatedMount(isOpen, durationMs = 220) {
   const timeoutRef = useRef(null);
 
   useEffect(() => {
+    clearTimeout(timeoutRef.current);
     if (isOpen) {
       setPhase("entering");
-      const t = setTimeout(() => setPhase("entered"), 10);
-      return () => clearTimeout(t);
-    } else if (phase) {
-      setPhase("exiting");
-      timeoutRef.current = setTimeout(() => setPhase(null), durationMs);
+      timeoutRef.current = setTimeout(() => setPhase("entered"), 10);
       return () => clearTimeout(timeoutRef.current);
     }
-  }, [isOpen]);
+
+    setPhase((current) => (current === null ? null : "exiting"));
+    timeoutRef.current = setTimeout(() => setPhase(null), durationMs);
+    return () => clearTimeout(timeoutRef.current);
+  }, [isOpen, durationMs]);
 
   return { shouldRender: phase !== null, phase: phase || "exiting" };
 }

@@ -30,6 +30,7 @@ const METRICS = [
   "clientes-nuevos-recurrentes",
   "movimiento-por-dia-hora",
 ];
+const EMPTY_ARRAY = Object.freeze([]);
 
 function toLocalDate(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0];
@@ -79,7 +80,7 @@ export default function ReportesPage() {
     if (!loading) setHasAnimated(true);
   }, [loading]);
 
-  const occ = reports["ocupacion-gabinetes"]?.value?.data?.gabinetes || [];
+  const occ = reports["ocupacion-gabinetes"]?.value?.data?.gabinetes || EMPTY_ARRAY;
   const occRaw = reports["ocupacion-gabinetes"]?.value?.data;
   const income = reports["ingresos-servicio"];
   const sold = reports["servicios-vendidos"]?.value?.data?.services || [];

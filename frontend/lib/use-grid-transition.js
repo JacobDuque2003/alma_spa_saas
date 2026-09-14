@@ -14,7 +14,7 @@ export function useGridTransition(navDirection, loading) {
     if (!loading && navDirection !== 0) {
       setGridClass(navDirection > 0 ? "alma-grid-enter-left" : "alma-grid-enter-right");
     }
-  }, [loading]);
+  }, [loading, navDirection]);
 
   const onAnimationEnd = () => setGridClass("");
 
