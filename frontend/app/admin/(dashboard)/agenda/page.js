@@ -609,7 +609,7 @@ export default function AgendaPage() {
     const previousAppointments = appointments;
     const movedRoom = rooms.find((room) => room.id === target.roomId) || appt.room;
     const nextStart = new Date(target.startsAt);
-    const nextEnd = addMinutesToDate(nextStart, totalServiceBlockMins(appt.service || {}));
+    const nextEnd = addMinutesToDate(nextStart, appointmentBlockMins(appt));
     const optimistic = {
       ...appt,
       startsAt: nextStart.toISOString(),
@@ -638,6 +638,36 @@ export default function AgendaPage() {
       setAppointments(previousAppointments);
       setSelected((current) => (current?.id === appt.id ? appt : current));
       toast.error(err?.message || "No se pudo mover la reserva. Revisa que la cabina, la terapeuta y la clienta estén libres en ese horario.");
+    }
+  }
+
+  async function resizeAppointment(appt, target) {
+    if (!canCreateMoveAppointments || !appt?.id || !target?.endsAt) return;
+    const previousAppointments = appointments;
+    const optimistic = {
+      ...appt,
+      endsAt: target.endsAt,
+    };
+
+    setAppointments((prev) => prev.map((item) => (item.id === appt.id ? optimistic : item)));
+    setSelected((current) => (current?.id === appt.id ? optimistic : current));
+
+    try {
+      const updated = await authFetch(`/appointments/${appt.id}`, {
+        method: "PATCH",
+        body: {
+          endsAt: target.endsAt,
+          ...(canScheduleOutside ? { allowOutsideBusinessHours: true, outsideBusinessHoursReason: "Agenda interna ampliada" } : {}),
+        },
+      });
+      const merged = { ...optimistic, ...updated, service: appt.service, client: appt.client, room: appt.room, staff: appt.staff };
+      setAppointments((prev) => prev.map((item) => (item.id === appt.id ? merged : item)));
+      setSelected((current) => (current?.id === appt.id ? merged : current));
+      toast.success("Duración actualizada");
+    } catch (err) {
+      setAppointments(previousAppointments);
+      setSelected((current) => (current?.id === appt.id ? appt : current));
+      toast.error(err?.message || "No se pudo ajustar la duración. Revisa que no se cruce con otra reserva.");
     }
   }
 
@@ -992,6 +1022,7 @@ export default function AgendaPage() {
               onSelectGroup={setSlotGroup}
               onCreateFromSlot={canCreateMoveAppointments ? openQuickCreate : null}
               onMoveAppointment={moveAppointment}
+              onResizeAppointment={resizeAppointment}
               canMoveAppointments={canCreateMoveAppointments}
               draftAppointment={quickDraft}
             />
@@ -1621,11 +1652,13 @@ function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
   return hourInWindow(hour, morning) || hourInWindow(hour, afternoon);
 }
 
-function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, onMoveAppointment, canMoveAppointments, draftAppointment }) {
+function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, onMoveAppointment, onResizeAppointment, canMoveAppointments, draftAppointment }) {
   const HOUR_HEIGHT = 72;
   const HEADER_HEIGHT = 78;
   const [draggingId, setDraggingId] = useState(null);
   const [dragState, setDragState] = useState(null);
+  const [resizeState, setResizeState] = useState(null);
+  const resizeSessionRef = useRef(null);
   const active = (appointments || [])
     .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
@@ -1639,6 +1672,90 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   const timeColumnWidth = 48;
   const firstHour = HOURS[0];
   const lastHour = HOURS[HOURS.length - 1];
+
+  const resizeTargetFromPointer = useCallback((session, clientY) => {
+    if (!session) return null;
+    const rawY = Math.max(0, Math.min(clientY - session.columnTop, session.columnHeight));
+    const snappedFromFirstHour = Math.round(((rawY / HOUR_HEIGHT) * 60) / 15) * 15;
+    const totalMinutes = Math.max(
+      session.minEndMins,
+      Math.min(session.maxEndMins, (firstHour * 60) + snappedFromFirstHour)
+    );
+    const endLabel = hhmmFromTotalMinutes(totalMinutes);
+    const durationMins = totalMinutes - session.startMins;
+    return {
+      endsAt: localDateTimeToIso(date, endLabel),
+      endLabel,
+      durationMins,
+      height: Math.max((durationMins / 60) * HOUR_HEIGHT - 8, MIN_APPOINTMENT_CARD_HEIGHT),
+    };
+  }, [HOUR_HEIGHT, date, firstHour]);
+
+  useEffect(() => {
+    if (!resizeState?.id) return undefined;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+
+    function handlePointerMove(event) {
+      const next = resizeTargetFromPointer(resizeSessionRef.current, event.clientY);
+      if (next) setResizeState((current) => (current ? { ...current, ...next } : current));
+    }
+
+    function handlePointerUp(event) {
+      const session = resizeSessionRef.current;
+      const next = resizeTargetFromPointer(session, event.clientY);
+      resizeSessionRef.current = null;
+      setResizeState(null);
+      if (session?.appt && next?.endsAt && next.endsAt !== session.originalEndsAt) {
+        onResizeAppointment?.(session.appt, next);
+      }
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [onResizeAppointment, resizeState?.id, resizeTargetFromPointer]);
+
+  function beginAppointmentResize(event, appt) {
+    if (!canMoveAppointments || !onResizeAppointment || !appt?.id || appt.status === "no_show") return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const columnEl = event.currentTarget.closest("[data-agenda-room-column]");
+    const columnRect = columnEl?.getBoundingClientRect();
+    if (!columnRect) return;
+    const startMins = minutesFromHHMM(formatTime(appt.startsAt));
+    const minEndMins = startMins + 15;
+    const maxEndMins = Math.min((lastHour + 1) * 60, startMins + (8 * 60));
+    const currentDuration = appointmentBlockMins(appt);
+    const session = {
+      appt,
+      columnTop: columnRect.top,
+      columnHeight: columnRect.height,
+      startMins,
+      minEndMins,
+      maxEndMins,
+      originalEndsAt: appt.endsAt,
+    };
+    resizeSessionRef.current = session;
+    const initial = resizeTargetFromPointer(session, event.clientY) || {
+      endsAt: appt.endsAt,
+      endLabel: formatTime(appt.endsAt),
+      durationMins: currentDuration,
+      height: Math.max((currentDuration / 60) * HOUR_HEIGHT - 8, MIN_APPOINTMENT_CARD_HEIGHT),
+    };
+    setResizeState({ id: appt.id, ...initial });
+  }
 
   function targetFromPointer(event, room) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1906,13 +2023,17 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
                 const renderPiece = (appt, index, compact = false) => {
                   const noShow = appt.status === "no_show";
+                  const activeResize = resizeState?.id === appt.id ? resizeState : null;
+                  const pieceDuration = activeResize?.durationMins || appointmentBlockMins(appt);
+                  const pieceHeight = Math.max((pieceDuration / 60) * HOUR_HEIGHT - 8, MIN_APPOINTMENT_CARD_HEIGHT);
+                  const canResizePiece = !isGroup && !!canMoveAppointments && !!onResizeAppointment && !noShow;
                   return (
                     <button
                       key={appt.id}
                       className={isGroup ? "alma-cabin-group-piece" : undefined}
-                      draggable={!!canMoveAppointments && !noShow}
+                      draggable={!!canMoveAppointments && !noShow && !activeResize}
                       onDragStart={(event) => {
-                        if (!canMoveAppointments || noShow) {
+                        if (!canMoveAppointments || noShow || activeResize) {
                           event.preventDefault();
                           return;
                         }
@@ -1944,13 +2065,13 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         top: isGroup ? undefined : topOffset + 4,
                         left: isGroup ? undefined : 4,
                         right: isGroup ? undefined : 4,
-                        height: isGroup ? "100%" : Math.max(height - 8, MIN_APPOINTMENT_CARD_HEIGHT),
+                        height: isGroup ? "100%" : pieceHeight,
                         minWidth: 0,
                         borderRadius: isGroup ? 8 : 10,
-                        padding: compact ? "5px 6px" : "7px 8px",
+                        padding: compact ? "5px 6px" : canResizePiece ? "7px 8px 14px" : "7px 8px",
                         fontSize: compact ? 11 : 12,
                         overflow: "hidden",
-                        cursor: canMoveAppointments && !noShow ? "grab" : "pointer",
+                        cursor: activeResize ? "ns-resize" : canMoveAppointments && !noShow ? "grab" : "pointer",
                         border: noShow ? "1px solid rgba(194,84,80,0.55)" : "1px solid rgba(255,255,255,0.22)",
                         background: noShow
                           ? "rgba(194,84,80,0.12)"
@@ -1963,6 +2084,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         textDecoration: noShow ? "line-through" : "none",
                         textDecorationColor: "rgba(194,84,80,0.75)",
                         textDecorationThickness: 1.5,
+                        transition: activeResize ? "height 80ms linear, box-shadow 120ms ease" : "box-shadow 140ms ease, opacity 140ms ease",
                       }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 5, alignItems: "center" }}>
@@ -1976,6 +2098,33 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         <div style={{ marginTop: 3, opacity: noShow ? 0.75 : 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
                           {appt.indications}
                         </div>
+                      )}
+                      {activeResize && (
+                        <div style={{ marginTop: 3, opacity: 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 800 }}>
+                          Hasta {activeResize.endLabel} · {durationText(activeResize.durationMins)}
+                        </div>
+                      )}
+                      {canResizePiece && (
+                        <span
+                          aria-hidden="true"
+                          onPointerDown={(event) => beginAppointmentResize(event, appt)}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          style={{
+                            position: "absolute",
+                            left: 12,
+                            right: 12,
+                            bottom: 4,
+                            height: 6,
+                            borderRadius: 999,
+                            background: activeResize ? "rgba(247,245,240,0.72)" : "rgba(247,245,240,0.36)",
+                            boxShadow: "0 1px 0 rgba(64,51,39,0.08)",
+                            cursor: "ns-resize",
+                            touchAction: "none",
+                          }}
+                        />
                       )}
                     </button>
                   );
