@@ -26,6 +26,7 @@ const tenantConfigRoutes = require('./routes/tenantConfig');
 const auditLogRoutes = require('./routes/auditLog');
 const searchRoutes = require('./routes/search');
 const backupRoutes = require('./routes/admin/backup');
+const adminTenantRoutes = require('./routes/admin/tenants');
 const errorHandler = require('./middleware/errorHandler');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
@@ -122,6 +123,7 @@ app.use('/tenant/config', tenantConfigRoutes);
 app.use('/audit-log', auditLogRoutes);
 app.use('/search', searchRoutes);
 app.use('/admin/backup', backupRoutes);
+app.use('/admin/tenants', adminTenantRoutes);
 
 app.use(errorHandler);
 

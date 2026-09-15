@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import {
   BarChart3,
+  Building2,
   CalendarDays,
   ClipboardList,
   Inbox,
@@ -44,6 +45,7 @@ const NAV_ITEMS = [
   { href: "/admin/personal", label: "Equipo", enabled: true, roles: ["superadmin", "dueno"], icon: UserCog },
   { href: "/admin/configuracion", label: "Configuración", enabled: true, permission: "configuracion", icon: Settings },
   { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"], icon: ClipboardList },
+  { href: "/admin/sistema", label: "Sistema", enabled: true, roles: ["superadmin"], icon: Building2 },
 ];
 
 const UPCOMING_BIRTHDAY_DAYS = 8;

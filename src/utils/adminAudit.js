@@ -8,6 +8,7 @@ const SUMMARY_WHITELIST = {
   room: ['name', 'specialty', 'sortOrder', 'capacity', 'colorHex', 'opensAt', 'closesAt', 'active', 'status'],
   category: ['name', 'active'],
   auth: [],
+  tenant: ['name', 'slug', 'plan', 'active', 'billingStatus', 'billingDueAt', 'billingGraceUntil', 'suspendedAt', 'suspensionReason'],
 };
 
 function pickSafe(entity, obj) {

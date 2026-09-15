@@ -11,6 +11,9 @@ async function resolvePublicTenant(req, res, next) {
   if (!tenant || !tenant.active) {
     return res.status(404).json({ error: 'No encontrado' });
   }
+  if (tenant.billingStatus === 'suspended') {
+    return res.status(403).json({ error: 'Las reservas en línea no están disponibles temporalmente.' });
+  }
   req.publicTenant = { id: tenant.id, slug: tenant.slug, config: tenant.config };
   next();
 }

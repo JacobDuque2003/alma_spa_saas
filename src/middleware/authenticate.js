@@ -28,6 +28,12 @@ async function authenticate(req, res, next) {
         email: true,
         active: true,
         sessionVersion: true,
+        tenant: {
+          select: {
+            active: true,
+            billingStatus: true,
+          },
+        },
       },
     });
   } catch (err) {
@@ -41,6 +47,21 @@ async function authenticate(req, res, next) {
 
   if (!currentUser || currentUser.active === false || identityChanged || tokenSessionVersion !== currentSessionVersion) {
     return res.status(401).json({ error: 'Sesión inválida o cuenta actualizada. Inicie sesión nuevamente.' });
+  }
+
+  if (
+    currentUser.role !== 'superadmin'
+    && Object.prototype.hasOwnProperty.call(currentUser, 'tenant')
+    && (!currentUser.tenant || currentUser.tenant.active === false)
+  ) {
+    return res.status(403).json({ error: 'La cuenta del negocio no está disponible.', reason: 'tenantUnavailable' });
+  }
+
+  if (currentUser.role !== 'superadmin' && currentUser.tenant?.billingStatus === 'suspended') {
+    return res.status(402).json({
+      error: 'El acceso está suspendido por estado de mensualidad. Contacte a soporte.',
+      reason: 'tenantSuspended',
+    });
   }
 
   // La identidad y el rol efectivos siempre salen de la base de datos. El JWT

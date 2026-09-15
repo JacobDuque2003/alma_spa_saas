@@ -971,6 +971,15 @@ async function matchServiceByQuery(tenantId, query) {
 async function handleInboundMessage({ tenant, connection, conv, incoming }) {
   const waId = conv.customerWaId;
 
+  if (tenant?.billingStatus === 'suspended') {
+    logBot('info', 'omitido: tenant suspendido por estado comercial', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      waIdTail: safeTail(waId),
+    });
+    return;
+  }
+
   if (conv.botActive === false) {
     logBot('info', 'omitido: bot desactivado para esta conversación', {
       tenant: tenant.slug,

@@ -52,6 +52,14 @@ export async function authFetch(path, { method = "GET", body, query } = {}) {
     throw err;
   }
 
+  if (res.status === 402 && data?.reason === "tenantSuspended") {
+    await logout();
+    const err = new Error(data?.error || "Acceso suspendido");
+    err.status = res.status;
+    err.reason = data.reason;
+    throw err;
+  }
+
   if (!res.ok) {
     const err = new Error(data?.error || "Error inesperado");
     err.status = res.status;

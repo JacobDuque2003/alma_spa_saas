@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../utils/prisma');
 const { signToken } = require('../utils/jwt');
+const { AppError } = require('../utils/errors');
 
 const SALT_ROUNDS = 10;
 
@@ -32,7 +33,17 @@ async function hashPassword(plainPassword) {
 }
 
 async function login(email, plainPassword) {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: {
+      tenant: {
+        select: {
+          active: true,
+          billingStatus: true,
+        },
+      },
+    },
+  });
   if (!user || !user.active) {
     return null;
   }
@@ -40,6 +51,15 @@ async function login(email, plainPassword) {
   const validPassword = await bcrypt.compare(plainPassword, user.passwordHash);
   if (!validPassword) {
     return null;
+  }
+
+  if (user.role !== 'superadmin' && Object.prototype.hasOwnProperty.call(user, 'tenant')) {
+    if (!user.tenant || user.tenant.active === false) {
+      throw new AppError('La cuenta del negocio no está disponible.', 403);
+    }
+    if (user.tenant.billingStatus === 'suspended') {
+      throw new AppError('El acceso está suspendido por estado de mensualidad. Contacte a soporte.', 402);
+    }
   }
 
   // El login nunca se restringe por accessSchedule: autenticación (probar

@@ -63,3 +63,25 @@ test('authenticate invalida inmediatamente un token de una versión anterior de 
   assert.equal(res.statusCode, 401);
   assert.match(res.body.error, /cuenta actualizada/i);
 });
+
+test('authenticate bloquea sesiones de tenants suspendidos', async () => {
+  prisma.user = {
+    findUnique: async () => ({
+      id: 'u1',
+      tenantId: 't1',
+      role: 'personal',
+      active: true,
+      email: 'u1@test.com',
+      sessionVersion: 0,
+      tenant: { active: true, billingStatus: 'suspended' },
+    }),
+  };
+  const token = signToken({ id: 'u1', tenantId: 't1', role: 'personal', sessionVersion: 0 });
+  const req = { headers: { authorization: `Bearer ${token}` } };
+
+  const { res, nextCalled } = await callMiddleware(req);
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 402);
+  assert.equal(res.body.reason, 'tenantSuspended');
+});
