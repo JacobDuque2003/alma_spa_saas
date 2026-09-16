@@ -1,7 +1,6 @@
-// Estado en memoria del bot por conversación. Piloto de una sola instancia
-// (mismo patrón que auth-rate-limit y accessSchedule-audit-throttle). Un
-// reinicio del proceso pierde el estado — el próximo mensaje reinicia en el
-// menú principal, lo cual es aceptable para la Fase 1 sin migración.
+// Estado activo del bot por conversación. Vive en memoria para responder rápido
+// y se hidrata/persiste desde WhatsAppConversation.botState al recibir mensajes,
+// de modo que un reinicio del proceso no corta una reserva a medio camino.
 //
 // Dos mapas independientes:
 //  - flowState: qué sub-flujo está activo (menú, viendo servicios, etc.) y

@@ -413,7 +413,69 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
  * determinístico; si el insert choca contra una restricción concurrente de
  * Appointment, reintenta con la siguiente combinación.
  */
-async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientId, serviceId, startsAt, modality, status }) {
+async function getAvailableStaffForSlot({ tenantId, tenantConfig, serviceId, startsAt, clientId = null }) {
+  const start = startsAt instanceof Date ? startsAt : new Date(startsAt);
+  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) return [];
+
+  const service = await prisma.service.findFirst({ where: { id: serviceId, tenantId, active: true } });
+  if (!service) throw new BadRequestError('serviceId inválido para este tenant');
+
+  const endsAt = addMinutes(start, totalBlockMins(service));
+  const roomCandidates = await getCompatibleRooms(prisma, tenantId, service);
+  if (roomCandidates.length === 0) return [];
+
+  const staffCandidates = await prisma.user.findMany({
+    where: { tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, jobTitle: true },
+  });
+  if (staffCandidates.length === 0) return [];
+
+  const conflicting = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      startsAt: { lt: endsAt },
+      endsAt: { gt: start },
+      status: { in: OPEN_STATUSES },
+      OR: [
+        { staffId: { in: staffCandidates.map((s) => s.id) } },
+        { roomId: { in: roomCandidates.map((r) => r.id) } },
+        ...(clientId ? [{ clientId }] : []),
+      ],
+    },
+  });
+
+  if (clientId && !isResourceFree(conflicting, 'clientId', clientId, start, endsAt)) return [];
+
+  const dateStr = toLocalDateInTimezone(start, getTenantTimezone(tenantConfig));
+  const roomsInsideWindow = roomCandidates.filter((room) => {
+    const hours = roomBusinessHours(room, tenantConfig, dateStr);
+    return isRangeInsideBusinessHours(hours, localHHMM(start, getTenantTimezone(tenantConfig)), localHHMM(endsAt, getTenantTimezone(tenantConfig)));
+  });
+
+  return staffCandidates.filter((staff) => roomsInsideWindow.some((room) => (
+    isRoomSlotAvailable(conflicting, room, service.id, start, endsAt)
+    && isStaffSlotAvailable(conflicting, staff.id, {
+      serviceId: service.id,
+      roomId: room.id,
+      startsAt: start,
+      endsAt,
+    })
+  )));
+}
+
+async function resolveAndCreateAppointment(tx, {
+  tenantId,
+  tenantConfig,
+  clientId,
+  serviceId,
+  startsAt,
+  modality,
+  status,
+  staffId,
+  depositStatus,
+  depositAmountUsd,
+}) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
@@ -433,9 +495,18 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
     throw new SlotUnavailableError();
   }
   const staffCandidates = await tx.user.findMany({
-    where: { tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
+    where: {
+      tenantId,
+      role: { in: STAFF_ROLES },
+      active: true,
+      canAttendAppointments: true,
+      ...(staffId ? { id: staffId } : {}),
+    },
     orderBy: { id: 'asc' },
   });
+  if (staffId && staffCandidates.length === 0) {
+    throw new BadRequestError('La terapeuta seleccionada no está disponible para atender citas');
+  }
 
   const orConditions = [{ staffId: { in: staffCandidates.map((s) => s.id) } }];
   if (roomCandidates.length) orConditions.push({ roomId: { in: roomCandidates.map((r) => r.id) } });
@@ -495,6 +566,8 @@ async function resolveAndCreateAppointment(tx, { tenantId, tenantConfig, clientI
           startsAt,
           endsAt,
           priceUsd: service.priceUsd,
+          ...(depositStatus ? { depositStatus } : {}),
+          ...(depositAmountUsd != null ? { depositAmountUsd } : {}),
           ...(status ? { status } : {}),
         },
       });
@@ -933,6 +1006,7 @@ async function updateStatus(actor, id, status) {
 
 module.exports = {
   getAvailability,
+  getAvailableStaffForSlot,
   getRescheduleAvailability,
   resolveAndCreateAppointment,
   createPublicBooking,

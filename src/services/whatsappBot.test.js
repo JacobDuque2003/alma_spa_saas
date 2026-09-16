@@ -59,6 +59,7 @@ function installPrismaMocks({ humanReplied = false, services = [], serviceById =
     create: async () => ({}),
     aggregate: async () => ({ _sum: { costUsd: 0 } }),
   };
+  appointmentService.getAvailableStaffForSlot = async () => ([{ id: 'staff1', name: 'Gianella', jobTitle: 'Terapeuta' }]);
   return { messageCreates, clientCreates, conversationUpdates };
 }
 
@@ -973,6 +974,102 @@ test('booking confirmation buttons have correct IDs', async () => {
   const ids = confirmation.action.buttons.map(b => b.reply.id);
   assert.ok(ids.includes('bk_yes'));
   assert.ok(ids.includes('bk_no'));
+});
+
+test('booking recupera botState guardado y confirma terapeuta con anticipo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const { conversationUpdates } = installPrismaMocks({
+    clientByPhone: { id: 'client1', fullName: 'Ana' },
+    serviceById: {
+      s1: { id: 's1', tenantId: 't1', name: 'Masaje', category: 'Masajes', priceUsd: 30, durationMins: 60, active: true },
+    },
+    tenantConfig: {
+      bookingDeposit: {
+        enabled: true,
+        amountUsd: 10,
+        instructions: 'Enviar comprobante a recepción.',
+      },
+    },
+  });
+  const convWithState = {
+    ...CONV,
+    botState: {
+      flow: 'booking',
+      booking: {
+        step: 'select_staff',
+        serviceId: 's1',
+        serviceName: 'Masaje',
+        timeSlot: '2099-08-01T15:00:00.000Z',
+        availableStaff: [{ id: 'staff1', name: 'Gianella', jobTitle: 'Terapeuta' }],
+      },
+      tone: 'usted',
+    },
+  };
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: convWithState,
+    incoming: { type: 'text', text: { body: 'Gianella' } },
+  });
+
+  const confirmation = sent.at(-1);
+  assert.equal(confirmation.kind, 'interactive');
+  assert.match(confirmation.payload.body.text, /Gianella/);
+  assert.match(confirmation.payload.body.text, /Anticipo pendiente de \$10\.00/);
+  const persisted = conversationUpdates.at(-1).botState;
+  assert.equal(persisted.booking.step, 'confirm');
+  assert.equal(persisted.booking.staffId, 'staff1');
+  assert.equal(persisted.booking.depositRequired, true);
+  assert.equal(persisted.booking.depositAmountUsd, 10);
+});
+
+test('booking confirm envia terapeuta y anticipo a la creación de reserva', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks({ clientByPhone: { id: 'client1', fullName: 'Ana' } });
+  let capturedArgs = null;
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: {
+      step: 'confirm',
+      serviceId: 's1',
+      serviceName: 'Masaje',
+      timeSlot: '2099-08-01T15:00:00.000Z',
+      clientName: 'Ana',
+      staffId: 'staff1',
+      staffName: 'Gianella',
+      depositRequired: true,
+      depositAmountUsd: 10,
+      depositInstructions: 'Enviar comprobante a recepción.',
+    },
+    tone: 'usted',
+  });
+  prisma.$transaction = async (fn) => fn(prisma);
+  const origResolve = require('./appointmentService').resolveAndCreateAppointment;
+  require('./appointmentService').resolveAndCreateAppointment = async (tx, args) => {
+    capturedArgs = args;
+    return { id: 'apt1' };
+  };
+
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT,
+      connection: CONN,
+      conv: CONV,
+      incoming: { type: 'text', text: { body: 'confirmo' } },
+    });
+    assert.equal(capturedArgs.staffId, 'staff1');
+    assert.equal(capturedArgs.depositStatus, 'pending');
+    assert.equal(capturedArgs.depositAmountUsd, 10);
+    const success = sent.find((message) => message.kind === 'text' && /reservado/i.test(message.body));
+    assert.ok(success);
+    assert.match(success.body, /Gianella/);
+    assert.match(success.body, /Anticipo pendiente.*\$10\.00/s);
+  } finally {
+    require('./appointmentService').resolveAndCreateAppointment = origResolve;
+  }
 });
 
 // ─── State history tests ──────────────────────────────────────

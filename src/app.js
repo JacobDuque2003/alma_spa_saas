@@ -25,6 +25,7 @@ const reportRoutes = require('./routes/reports');
 const tenantConfigRoutes = require('./routes/tenantConfig');
 const auditLogRoutes = require('./routes/auditLog');
 const searchRoutes = require('./routes/search');
+const systemStatusRoutes = require('./routes/systemStatus');
 const backupRoutes = require('./routes/admin/backup');
 const adminTenantRoutes = require('./routes/admin/tenants');
 const errorHandler = require('./middleware/errorHandler');
@@ -122,6 +123,7 @@ app.use('/reports', reportRoutes);
 app.use('/tenant/config', tenantConfigRoutes);
 app.use('/audit-log', auditLogRoutes);
 app.use('/search', searchRoutes);
+app.use('/system', systemStatusRoutes);
 app.use('/admin/backup', backupRoutes);
 app.use('/admin/tenants', adminTenantRoutes);
 

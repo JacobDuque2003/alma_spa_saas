@@ -280,6 +280,13 @@ enum AppointmentModality {
   domicilio
 }
 
+enum AppointmentDepositStatus {
+  not_required
+  pending
+  paid
+  waived
+}
+
 model Appointment {
   id                String              @id @default(cuid())
   tenantId          String
@@ -298,6 +305,8 @@ model Appointment {
   outsideBusinessHoursById String?
   confirmationToken String              @unique @default(cuid())
   priceUsd          Decimal             @db.Decimal(10, 2)
+  depositStatus     AppointmentDepositStatus @default(not_required)
+  depositAmountUsd  Decimal?            @db.Decimal(10, 2)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 

@@ -19,6 +19,8 @@ const MAIN_MENU_BACK = 'nav_main_menu';
 const BOOK_DATE_PREFIX = 'bkd_';
 const BOOK_TIME_PREFIX = 'bkt_';
 const BOOK_TIME_PAGE_PREFIX = 'bkt_page_';
+const BOOK_STAFF_PREFIX = 'bkstaff_';
+const BOOK_STAFF_ANY = 'bkstaff_any';
 const BOOK_PERIOD_MORNING = 'bkp_morning';
 const BOOK_PERIOD_AFTERNOON = 'bkp_afternoon';
 const BOOK_CONFIRM_YES = 'bk_yes';
@@ -398,6 +400,34 @@ function bookingConfirmation(summary, { tone } = {}) {
   };
 }
 
+function therapistPicker(staff, { tone } = {}) {
+  const rows = [
+    {
+      id: BOOK_STAFF_ANY,
+      title: 'Sin preferencia',
+      description: tone === 'tu' ? 'Te asignamos una terapeuta disponible' : 'Le asignamos una terapeuta disponible',
+    },
+    ...(staff || []).slice(0, 9).map((person) => ({
+      id: `${BOOK_STAFF_PREFIX}${person.id}`,
+      title: String(person.name || 'Terapeuta').slice(0, 24),
+      description: String(person.jobTitle || 'Terapeuta').slice(0, 72),
+    })),
+  ];
+  return {
+    type: 'list',
+    body: {
+      text: tone === 'tu'
+        ? '👩‍⚕️ ¿Con qué terapeuta quieres reservar?'
+        : '👩‍⚕️ ¿Con qué terapeuta desea reservar?',
+    },
+    footer: { text: 'Alma Spa 🌿' },
+    action: {
+      button: 'Elegir terapeuta',
+      sections: [{ title: 'Terapeutas disponibles', rows }],
+    },
+  };
+}
+
 function bookingRecipientPicker({ tone } = {}) {
   return {
     type: 'button',
@@ -483,6 +513,8 @@ module.exports = {
   BOOK_DATE_PREFIX,
   BOOK_TIME_PREFIX,
   BOOK_TIME_PAGE_PREFIX,
+  BOOK_STAFF_PREFIX,
+  BOOK_STAFF_ANY,
   BOOK_PERIOD_MORNING,
   BOOK_PERIOD_AFTERNOON,
   BOOK_CONFIRM_YES,
@@ -513,6 +545,7 @@ module.exports = {
   timeSlotList,
   timePeriodPicker,
   timeSlotButtons,
+  therapistPicker,
   bookingConfirmation,
   bookingRecipientPicker,
   appointmentActions,
