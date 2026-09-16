@@ -749,7 +749,7 @@ export default function ClientesPage() {
   ];
 
   return (
-    <div style={{ display: "flex", height: "100%" }}>
+    <div className="alma-clients-page" style={{ display: "flex", height: "100%", minWidth: 0 }}>
       {newClientAnim.shouldRender && (
         <NewClientModal
           phase={newClientAnim.phase}
@@ -794,12 +794,13 @@ export default function ClientesPage() {
                 {view !== "cumples" && directoryTotal > 0 ? ` · mostrando ${directoryPageStart}-${directoryPageEnd}` : ""}
               </span>
             </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+            <div className="alma-client-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
               {canExportClients && (
                 <button
                   type="button"
                   onClick={handleExportClients}
                   disabled={exporting}
+                  className="alma-client-action-secondary"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -823,11 +824,12 @@ export default function ClientesPage() {
                 </button>
               )}
               {canEditClients && (
-                <button type="button" onClick={() => setShowImportClients(true)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 16px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.38)", background: "#FDFCFA", color: "#8C6E50", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flex: isMobile ? 1 : "initial" }}><Upload size={14} />Importar Excel</button>
+                <button className="alma-client-action-secondary" type="button" onClick={() => setShowImportClients(true)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 16px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.38)", background: "#FDFCFA", color: "#8C6E50", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flex: isMobile ? 1 : "initial" }}><Upload size={14} />Importar Excel</button>
               )}
               {canEditClients && (
                 <button
                   onClick={() => setShowNewClient(true)}
+                  className="alma-client-action-primary"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -996,7 +998,7 @@ export default function ClientesPage() {
 
       {/* Detail panel */}
       {selectedId && (!isMobile || mobileDetailAnim.shouldRender) && (
-      <div key={isMobile ? undefined : selectedId} className={isMobile ? `alma-slide-right alma-anim-${mobileDetailAnim.phase}` : "alma-stagger"} style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 34px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto", background: "linear-gradient(135deg, rgba(247,245,240,0.62), rgba(253,252,250,0.55))" }}>
+      <div key={isMobile ? undefined : selectedId} className={`alma-client-detail ${isMobile ? `alma-slide-right alma-anim-${mobileDetailAnim.phase}` : "alma-stagger"}`} style={{ flex: 1, minWidth: 0, padding: isMobile ? "16px" : "26px 34px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto", overflowX: "hidden", background: "linear-gradient(135deg, rgba(247,245,240,0.62), rgba(253,252,250,0.55))" }}>
         <button
             onClick={closeClientDetail}
             style={{

@@ -590,6 +590,7 @@ enum AuditEntity {
   service
   room
   category
+  appointment
   auth
   whatsapp
   tenant

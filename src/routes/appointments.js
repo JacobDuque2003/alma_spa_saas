@@ -68,6 +68,7 @@ router.get('/:id/reschedule-availability', async (req, res, next) => {
       date: req.query.date,
       roomId: req.query.roomId || undefined,
       staffId: req.query.staffId || undefined,
+      serviceId: req.query.serviceId || undefined,
       includeInternalHours: canSeeInternalHours(req.user),
     });
     res.json({ slots });

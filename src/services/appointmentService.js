@@ -205,6 +205,33 @@ function isInsideBusinessHours(tenantConfig, startsAt, endsAt, businessHoursOver
   );
 }
 
+async function recordAppointmentAudit(actor, before, after, action = 'update') {
+  if (!prisma.adminAuditLog?.create || !actor?.id || !actor?.email || !before || !after) return;
+  const tracked = ['serviceId', 'startsAt', 'endsAt', 'roomId', 'staffId', 'status', 'indications', 'priceUsd'];
+  const changes = {};
+  for (const field of tracked) {
+    const previous = before[field] instanceof Date ? before[field].toISOString() : String(before[field] ?? '');
+    const next = after[field] instanceof Date ? after[field].toISOString() : String(after[field] ?? '');
+    if (previous !== next) changes[field] = { before: previous || null, after: next || null };
+  }
+  if (Object.keys(changes).length === 0) return;
+  try {
+    await prisma.adminAuditLog.create({
+      data: {
+        tenantId: before.tenantId,
+        actorId: actor.id,
+        actorEmail: actor.email,
+        entity: 'appointment',
+        entityId: before.id,
+        action,
+        detail: { clientId: before.clientId, changes },
+      },
+    });
+  } catch (err) {
+    console.error('[appointment-audit] No se pudo registrar el cambio', { appointmentId: before.id, error: err.message });
+  }
+}
+
 function normalizeOutsideReason(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 240);
 }
@@ -336,7 +363,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
  * la cita actual de los conflictos y conserva la duración real de esa cita
  * puntual; si no existe, vuelve al bloque estándar del servicio.
  */
-async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId, includeInternalHours = false }) {
+async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId, serviceId, includeInternalHours = false }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
     throw new BadRequestError('date debe tener formato YYYY-MM-DD');
   }
@@ -347,7 +374,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
   }
 
   const service = await prisma.service.findFirst({
-    where: { id: appointment.serviceId, tenantId, active: true },
+    where: { id: serviceId || appointment.serviceId, tenantId, active: true },
   });
   if (!service) {
     throw new BadRequestError('El servicio de esta cita ya no está disponible');
@@ -387,9 +414,11 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
 
   const slots = [];
   const businessHours = roomAvailabilityHours(room, tenantConfig, date, includeInternalHours);
-  const blockMins = fallbackAppointmentDurationMins(appointment, service);
+  const blockMins = service.id === appointment.serviceId
+    ? fallbackAppointmentDurationMins(appointment, service)
+    : totalBlockMins(service);
   const slotService = { ...service, durationMins: blockMins, bufferMins: 0 };
-  for (const slot of generateSlotsForService(date, businessHours, tz, slotService)) {
+  for (const slot of generateSlotsForService(date, businessHours, tz, slotService, { includePastSlots: includeInternalHours })) {
     const endsAt = addMinutes(slot, blockMins);
     if (
       isRoomSlotAvailable(appointments, room, service.id, slot, endsAt)
@@ -904,6 +933,15 @@ async function updateAppointment(actor, id, changes) {
   assertTenantScope(actor, target.tenantId);
 
   const data = {};
+  let service = null;
+  if (changes.serviceId !== undefined) {
+    service = await prisma.service.findFirst({
+      where: { id: changes.serviceId, tenantId: target.tenantId, active: true },
+    });
+    if (!service) throw new BadRequestError('serviceId invalido para este tenant');
+    data.serviceId = service.id;
+    data.priceUsd = service.priceUsd;
+  }
   if (changes.startsAt !== undefined) data.startsAt = new Date(changes.startsAt);
   const requestedEndsAt = changes.endsAt !== undefined ? new Date(changes.endsAt) : null;
   if (changes.roomId !== undefined) data.roomId = changes.roomId;
@@ -926,16 +964,16 @@ async function updateAppointment(actor, id, changes) {
   }
   if (changes.indications !== undefined) data.indications = changes.indications ? String(changes.indications).trim() : null;
 
-  if (data.startsAt || requestedEndsAt || data.roomId !== undefined || data.staffId !== undefined) {
-    const service = await prisma.service.findUnique({ where: { id: target.serviceId } });
+  if (data.startsAt || requestedEndsAt || data.roomId !== undefined || data.staffId !== undefined || data.serviceId !== undefined) {
+    service ||= await prisma.service.findUnique({ where: { id: target.serviceId } });
     const startsAt = data.startsAt || target.startsAt;
-    if (data.startsAt && (Number.isNaN(startsAt.getTime()) || startsAt.getTime() <= Date.now())) {
-      throw new BadRequestError('No se puede reprogramar a una fecha u horario que ya pasó');
+    const tenant = await prisma.tenant.findUnique({ where: { id: target.tenantId }, select: { config: true } });
+    if (data.startsAt && (Number.isNaN(startsAt.getTime()) || (startsAt.getTime() <= Date.now() && !canCreateManualPastAppointment(actor, tenant?.config, startsAt)))) {
+      throw new BadRequestError('Solo se pueden mover citas pasadas dentro del día actual desde la agenda interna');
     }
-    const endsAt = requestedEndsAt || addMinutes(startsAt, fallbackAppointmentDurationMins(target, service));
+    const endsAt = requestedEndsAt || addMinutes(startsAt, data.serviceId ? totalBlockMins(service) : fallbackAppointmentDurationMins(target, service));
     assertValidAppointmentRange(startsAt, endsAt);
     data.endsAt = endsAt;
-    const tenant = await prisma.tenant.findUnique({ where: { id: target.tenantId }, select: { config: true } });
     const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
     const roomId = data.roomId !== undefined ? data.roomId : target.roomId;
     const staffId = data.staffId !== undefined ? data.staffId : target.staffId;
@@ -980,6 +1018,7 @@ async function updateAppointment(actor, id, changes) {
 
   try {
     const appointment = await prisma.appointment.update({ where: { id }, data });
+    await recordAppointmentAudit(actor, target, appointment);
     notifyAgenda(target.tenantId, 'appointment.updated', appointment);
     return appointment;
   } catch (err) {
@@ -1000,6 +1039,7 @@ async function updateStatus(actor, id, status) {
   assertTenantScope(actor, target.tenantId);
 
   const appointment = await prisma.appointment.update({ where: { id }, data: { status } });
+  await recordAppointmentAudit(actor, target, appointment);
   notifyAgenda(target.tenantId, 'appointment.status.updated', appointment);
   return appointment;
 }

@@ -1274,7 +1274,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
 
 function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   const active = appointments
-    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
+    .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
 
   if (active.length === 0) {
@@ -1309,7 +1309,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
               textAlign: "left",
               minHeight: 82,
               boxShadow: "0 12px 26px rgba(107,85,64,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
-              textDecoration: appt.status === "no_show" ? "line-through" : "none",
+              textDecoration: ["no_show", "cancelado"].includes(appt.status) ? "line-through" : "none",
               textDecorationColor: "rgba(194,84,80,0.55)",
               textDecorationThickness: 1.5,
             }}
@@ -1501,7 +1501,6 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
         {days.map((d) => {
           const isToday = d === today;
           const dayAppointments = (appointments || []).filter((a) => {
-            if (a.status === "cancelado") return false;
             return toLocalDate(new Date(a.startsAt)) === d;
           });
           const laneMap = buildSlotLanes(dayAppointments);
@@ -1595,10 +1594,10 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       color: "#F7F5F0",
                       textAlign: "left",
                       zIndex: 1,
-                      textDecoration: appt.status === "no_show" ? "line-through" : "none",
+                      textDecoration: ["no_show", "cancelado"].includes(appt.status) ? "line-through" : "none",
                       textDecorationColor: "rgba(194,84,80,0.85)",
                       textDecorationThickness: 1.5,
-                      opacity: appt.status === "no_show" ? 0.75 : 1,
+                      opacity: ["no_show", "cancelado"].includes(appt.status) ? 0.75 : 1,
                     }}
                   >
                     <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -1660,7 +1659,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   const [resizeState, setResizeState] = useState(null);
   const resizeSessionRef = useRef(null);
   const active = (appointments || [])
-    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
+    .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   const configuredRooms = (rooms || []).filter((room) => room.active !== false);
   const configuredIds = new Set(configuredRooms.map((room) => room.id));
@@ -1727,7 +1726,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   }, [onResizeAppointment, resizeState?.id, resizeTargetFromPointer]);
 
   function beginAppointmentResize(event, appt) {
-    if (!canMoveAppointments || !onResizeAppointment || !appt?.id || appt.status === "no_show") return;
+    if (!canMoveAppointments || !onResizeAppointment || !appt?.id) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -2022,18 +2021,18 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                 const groupHeight = Math.max(height - 8, isGroup ? MIN_APPOINTMENT_CARD_HEIGHT + 8 : MIN_APPOINTMENT_CARD_HEIGHT);
 
                 const renderPiece = (appt, index, compact = false) => {
-                  const noShow = appt.status === "no_show";
+                  const noShow = appt.status === "no_show" || appt.status === "cancelado";
                   const activeResize = resizeState?.id === appt.id ? resizeState : null;
                   const pieceDuration = activeResize?.durationMins || appointmentBlockMins(appt);
                   const pieceHeight = Math.max((pieceDuration / 60) * HOUR_HEIGHT - 8, MIN_APPOINTMENT_CARD_HEIGHT);
-                  const canResizePiece = !isGroup && !!canMoveAppointments && !!onResizeAppointment && !noShow;
+                  const canResizePiece = !isGroup && !!canMoveAppointments && !!onResizeAppointment;
                   return (
                     <button
                       key={appt.id}
                       className={isGroup ? "alma-cabin-group-piece" : undefined}
-                      draggable={!!canMoveAppointments && !noShow && !activeResize}
+                      draggable={!!canMoveAppointments && !activeResize}
                       onDragStart={(event) => {
-                        if (!canMoveAppointments || noShow || activeResize) {
+                        if (!canMoveAppointments || activeResize) {
                           event.preventDefault();
                           return;
                         }
@@ -2071,7 +2070,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         padding: compact ? "5px 6px" : canResizePiece ? "7px 8px 14px" : "7px 8px",
                         fontSize: compact ? 11 : 12,
                         overflow: "hidden",
-                        cursor: activeResize ? "ns-resize" : canMoveAppointments && !noShow ? "grab" : "pointer",
+                        cursor: activeResize ? "ns-resize" : canMoveAppointments ? "grab" : "pointer",
                         border: noShow ? "1px solid rgba(194,84,80,0.55)" : "1px solid rgba(255,255,255,0.22)",
                         background: noShow
                           ? "rgba(194,84,80,0.12)"
@@ -2202,7 +2201,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
 function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGroup }) {
   const HOUR_HEIGHT = 66;
-  const active = appointments.filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date);
+  const active = appointments.filter((a) => toLocalDate(new Date(a.startsAt)) === date);
   const laneMap = buildSlotLanes(active);
   const entries = visibleScheduleEntries(active);
 
@@ -2422,10 +2421,14 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const [editEndSlot, setEditEndSlot] = useState("");
   const [editRoomId, setEditRoomId] = useState("");
   const [editStaffId, setEditStaffId] = useState("");
+  const [editServiceId, setEditServiceId] = useState("");
+  const [services, setServices] = useState([]);
   const [editIndications, setEditIndications] = useState("");
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
   const appointmentDefaultDuration = appt ? appointmentBlockMins(appt) : 45;
+  const editingService = services.find((service) => service.id === editServiceId);
+  const editingDefaultDuration = editingService ? totalServiceBlockMins(editingService) : appointmentDefaultDuration;
   const appointmentStartIso = appt?.startsAt ? new Date(appt.startsAt).toISOString() : "";
   const appointmentLocalDate = appt?.startsAt ? toLocalDate(new Date(appt.startsAt)) : "";
 
@@ -2436,8 +2439,16 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     setEditEndSlot(new Date(appt.endsAt).toISOString());
     setEditRoomId(appt.room?.id || "");
     setEditStaffId(appt.staff?.id || "");
+    setEditServiceId(appt.service?.id || appt.serviceId || "");
     setEditIndications(appt.indications || "");
   }, [appt]);
+
+  useEffect(() => {
+    if (!editing) return;
+    authFetch("/services")
+      .then((rows) => setServices(Array.isArray(rows) ? rows.filter((service) => service.active) : []))
+      .catch(() => setServices([]));
+  }, [editing]);
 
   useEffect(() => {
     if (!editing || !appt?.id || !editDate) {
@@ -2447,7 +2458,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     let cancelled = false;
     setRescheduleSlotsLoading(true);
     authFetch(`/appointments/${appt.id}/reschedule-availability`, {
-      query: { date: editDate, roomId: editRoomId || undefined, staffId: editStaffId || undefined },
+      query: { date: editDate, roomId: editRoomId || undefined, staffId: editStaffId || undefined, serviceId: editServiceId || undefined },
     })
       .then((data) => {
         if (cancelled) return;
@@ -2459,7 +2470,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
         setEditSlot((current) => {
           const nextSlot = slots.includes(current) ? current : slots[0] || "";
           if (nextSlot && nextSlot !== current) {
-            setEditEndSlot(addMinutesToDate(new Date(nextSlot), appointmentDefaultDuration).toISOString());
+            setEditEndSlot(addMinutesToDate(new Date(nextSlot), editingDefaultDuration).toISOString());
           }
           return nextSlot;
         });
@@ -2476,7 +2487,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     return () => {
       cancelled = true;
     };
-  }, [appt?.id, appointmentDefaultDuration, appointmentLocalDate, appointmentStartIso, editDate, editRoomId, editStaffId, editing, toast]);
+  }, [appt?.id, appointmentLocalDate, appointmentStartIso, editDate, editRoomId, editServiceId, editStaffId, editing, editingDefaultDuration, toast]);
 
   if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
@@ -2543,6 +2554,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
       if (new Date(editEndSlot).getTime() !== new Date(appt.endsAt).getTime()) body.endsAt = editEndSlot;
       if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
       if (editStaffId && editStaffId !== appt.staff?.id) body.staffId = editStaffId;
+      if (editServiceId && editServiceId !== (appt.service?.id || appt.serviceId)) body.serviceId = editServiceId;
       if (canScheduleOutside) {
         body.allowOutsideBusinessHours = true;
         body.outsideBusinessHoursReason = "Agenda interna ampliada";
@@ -2551,7 +2563,8 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
       const updated = await authFetch(`/appointments/${appt.id}`, { method: "PATCH", body });
       const newRoom = rooms.find((r) => r.id === (updated.roomId || editRoomId));
       const newStaff = staffList.find((s) => s.id === (updated.staffId || editStaffId));
-      onUpdated({ ...appt, ...updated, service: appt.service, client: appt.client, room: newRoom || appt.room, staff: newStaff || appt.staff });
+      const newService = services.find((service) => service.id === (updated.serviceId || editServiceId));
+      onUpdated({ ...appt, ...updated, service: newService || appt.service, client: appt.client, room: newRoom || appt.room, staff: newStaff || appt.staff });
       toast.success("Cita actualizada");
     } catch (err) {
       toast.error(err.message || "No se pudo actualizar la cita");
@@ -2560,7 +2573,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     }
   }
 
-  const canChange = canManageAppointments && appt.status !== "cancelado" && appt.status !== "no_show";
+  const canChange = canManageAppointments;
   // Follow-up: pensado para citas ya cumplidas donde la clienta necesita
   // volver (ej. tratamiento con seguimiento). Se muestra solo si la cita
   // esta confirmada Y ya termino en el pasado — heuristica de "asistió"
@@ -2568,7 +2581,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   // NO se toca; el boton dispara la creacion de una CITA NUEVA con los
   // mismos datos, delegando en NewAppointmentForm (que ya reutiliza
   // createManualAppointment con las validaciones de tenant/disponibilidad).
-  const canFollowUp = onFollowUp && appt.status === "confirmado" && appt.endsAt && new Date(appt.endsAt) < new Date();
+  const canFollowUp = canManageAppointments && onFollowUp;
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid rgba(168,154,135,0.5)", borderRadius: 8, fontSize: 13, color: "#6B5540", background: "#FDFCFA", outline: "none" };
   const pillBtn = (bg, color, border) => ({ padding: "7px 16px", borderRadius: 999, border: border || "none", background: bg, color, fontSize: 12, fontWeight: 500, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 });
   const realDurationMins = appointmentBlockMins(appt);
@@ -2583,7 +2596,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const rescheduleTimeOptions = rescheduleSlots.map((slot) => ({
     value: slot,
     label: formatTime(slot),
-    caption: `${appt.service?.name || "Servicio"} · conserva ${durationText(realDurationMins)}`,
+    caption: `${editingService?.name || appt.service?.name || "Servicio"} · ${durationText(editingDefaultDuration)}`,
   }));
   const endTimeOptions = buildEndTimeOptions(editDate, editSlot, editEndSlot);
   const editingDurationMins = editSlot && editEndSlot
@@ -2699,7 +2712,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
                     <button disabled={saving} onClick={() => changeStatus("cancelado")} style={pillBtn("rgba(194,84,80,0.1)", "#C25450", "1px solid rgba(194,84,80,0.3)")}>Cancelar cita</button>
                     <button disabled={saving} onClick={() => changeStatus("no_show")} style={pillBtn("rgba(168,154,135,0.15)", "#A89A87", "1px solid rgba(168,154,135,0.4)")}>No asistió</button>
                   </div>
-                  <button disabled={saving} onClick={() => setEditing(true)} style={pillBtn("#8C6E50", "#F7F5F0")}>Editar cita / terapeuta</button>
+                  <button disabled={saving} onClick={() => setEditing(true)} style={pillBtn("#8C6E50", "#F7F5F0")}>Editar cita</button>
                   {canFollowUp && (
                     <button
                       disabled={saving}
@@ -2715,6 +2728,22 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
           </>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <PremiumSelect
+                label="Servicio"
+                value={editServiceId}
+                options={services.map((service) => ({ value: service.id, label: service.name, caption: `${service.durationMins} min + ${service.bufferMins ?? 15} min de pausa` }))}
+                placeholder="Seleccionar servicio"
+                emptyLabel="Sin servicios activos"
+                onChange={(nextServiceId) => {
+                  setEditServiceId(nextServiceId);
+                  const selected = services.find((service) => service.id === nextServiceId);
+                  const compatible = selected?.rooms || [];
+                  if (compatible.length && !compatible.some((room) => room.id === editRoomId)) setEditRoomId(compatible[0].id);
+                  if (editSlot && selected) setEditEndSlot(addMinutesToDate(new Date(editSlot), totalServiceBlockMins(selected)).toISOString());
+                }}
+              />
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Fecha</label>
@@ -2797,7 +2826,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
               <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Cabina</label>
               <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 <option value="">Sin cambio</option>
-                {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {(services.find((service) => service.id === editServiceId)?.rooms || rooms).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
             <div>

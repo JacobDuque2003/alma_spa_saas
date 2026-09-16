@@ -12,6 +12,7 @@ const ENTITY_OPTIONS = [
   { value: "service", label: "Servicios" },
   { value: "room", label: "Cabinas" },
   { value: "category", label: "Categorías" },
+  { value: "appointment", label: "Citas" },
 ];
 
 const ACTION_LABELS = {
@@ -54,6 +55,7 @@ const ENTITY_LABELS = {
   room: { article: "la", noun: "cabina" },
   category: { article: "la", noun: "categoría" },
   user: { article: "la", noun: "cuenta" },
+  appointment: { article: "la", noun: "cita" },
 };
 
 // El actor viene como email (siempre presente en la fila del audit log).
@@ -117,17 +119,35 @@ const DETAIL_LABELS = {
   opensAt: "abre",
   closesAt: "cierra",
   status: "estado",
+  serviceId: "servicio",
+  startsAt: "inicio",
+  endsAt: "fin",
+  roomId: "cabina",
+  staffId: "terapeuta",
+  indications: "indicaciones",
 };
 
 function formatDetailValue(key, value) {
   if (typeof value === "boolean") return value ? "sí" : "no";
   if (key === "priceUsd") return `$${Number(value || 0).toFixed(2)}`;
   if (key === "durationMins" || key === "bufferMins") return `${value} min`;
+  if ((key === "startsAt" || key === "endsAt") && value && value !== "—") return formatDate(value);
   return String(value);
 }
 
 function DetailCell({ detail }) {
   if (!detail || typeof detail !== "object") return <span style={{ color: "#A89A87" }}>—</span>;
+  if (detail.changes && typeof detail.changes === "object") {
+    return (
+      <span style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#6B5540" }}>
+        {Object.entries(detail.changes).map(([key, change]) => (
+          <span key={key}>
+            <b>{DETAIL_LABELS[key] || key}</b>: {formatDetailValue(key, change?.before ?? "—")} → {formatDetailValue(key, change?.after ?? "—")}
+          </span>
+        ))}
+      </span>
+    );
+  }
   return (
     <span style={{ fontSize: 12, color: "#6B5540" }}>
       {Object.entries(detail).map(([k, v], i) => (

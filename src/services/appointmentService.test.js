@@ -7,7 +7,7 @@ process.env.INTAKE_ENCRYPTION_KEY = process.env.INTAKE_ENCRYPTION_KEY || crypto.
 const prisma = require('../utils/prisma');
 const appointmentService = require('./appointmentService');
 
-function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, client = {}, clientIntake = {}, tenant = {} } = {}) {
+function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, client = {}, clientIntake = {}, tenant = {}, adminAuditLog = {} } = {}) {
   const tenantMock = {
     findUnique: async () => ({ config: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } } } }),
     ...tenant,
@@ -20,6 +20,7 @@ function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, clie
   prisma.client = client;
   prisma.clientIntake = clientIntake;
   prisma.tenant = tenantMock;
+  prisma.adminAuditLog = adminAuditLog;
   prisma.$transaction = async (cb) => cb(tx);
 }
 
@@ -735,6 +736,7 @@ test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita act
 
 test('getRescheduleAvailability usa la duración real personalizada de la cita', async () => {
   mockPrisma({
+    adminAuditLog: { create: async () => ({}) },
     service: {
       findFirst: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }),
     },
@@ -833,6 +835,7 @@ test('listServiceLegend devuelve solo servicios activos del tenant con nombre y 
 
 test('updateAppointment rechaza reprogramar fuera del horario dividido', async () => {
   mockPrisma({
+    adminAuditLog: { create: async () => ({}) },
     service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
     room: { findMany: async () => [{ id: 'room1', specialty: 'masajes' }] },
     appointment: {
@@ -1012,4 +1015,68 @@ test('updateAppointment permite a dueña mover una cita a horario interno amplia
   assert.equal(result.outsideBusinessHours, true);
   assert.equal(updateData.outsideBusinessHoursById, 'owner1');
   assert.match(updateData.outsideBusinessHoursReason, /Agenda interna/);
+});
+
+test('updateAppointment cambia servicio, precio y duración usando una cabina compatible', async () => {
+  let updateData = null;
+  mockPrisma({
+    adminAuditLog: { create: async () => ({}) },
+    service: {
+      findFirst: async ({ where }) => where.id === 'srv2'
+        ? { id: 'srv2', tenantId: 't1', category: 'facial', durationMins: 45, bufferMins: 15, priceUsd: 55 }
+        : null,
+    },
+    room: { findMany: async () => [{ id: 'room2', specialty: 'facial', capacity: 1 }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1', tenantId: 't1', clientId: 'c1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'), endsAt: new Date('2099-08-01T15:15:00.000Z'), priceUsd: 30,
+      }),
+      findMany: async () => [],
+      update: async ({ data }) => {
+        updateData = data;
+        return { id: 'appt1', tenantId: 't1', clientId: 'c1', ...data };
+      },
+    },
+  });
+
+  const result = await appointmentService.updateAppointment(
+    { id: 'owner1', email: 'owner@alma.test', role: 'dueno', tenantId: 't1' },
+    'appt1',
+    { serviceId: 'srv2', roomId: 'room2' }
+  );
+
+  assert.equal(result.serviceId, 'srv2');
+  assert.equal(Number(result.priceUsd), 55);
+  assert.equal(updateData.endsAt.toISOString(), '2099-08-01T15:00:00.000Z');
+});
+
+test('updateAppointment permite mover internamente una cita a una hora pasada del mismo día', async () => {
+  let updateData = null;
+  mockPrisma({
+    adminAuditLog: { create: async () => ({}) },
+    service: { findUnique: async () => ({ id: 'srv1', category: 'masajes', durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'masajes', capacity: 1 }] },
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1', tenantId: 't1', clientId: 'c1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1',
+        startsAt: new Date('2099-08-01T13:00:00.000Z'), endsAt: new Date('2099-08-01T14:15:00.000Z'),
+      }),
+      findMany: async () => [],
+      update: async ({ data }) => {
+        updateData = data;
+        return { id: 'appt1', tenantId: 't1', clientId: 'c1', ...data };
+      },
+    },
+  });
+
+  await withMockedNow('2099-08-01T18:00:00.000Z', async () => {
+    await appointmentService.updateAppointment(
+      { id: 'staff2', role: 'personal', tenantId: 't1' },
+      'appt1',
+      { startsAt: '2099-08-01T15:00:00.000Z' }
+    );
+  });
+
+  assert.equal(updateData.startsAt.toISOString(), '2099-08-01T15:00:00.000Z');
 });

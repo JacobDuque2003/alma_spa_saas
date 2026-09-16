@@ -9,12 +9,29 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshSession = useCallback(() => authFetch("/auth/me")
+    .then((currentUser) => {
+      setUser(currentUser);
+      return currentUser;
+    })
+    .catch(() => {
+      setUser(null);
+      return null;
+    })
+    .finally(() => setLoading(false)), []);
+
   useEffect(() => {
-    authFetch("/auth/me")
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
-  }, []);
+    refreshSession();
+
+    // Al volver con Atrás/Adelante, el navegador puede restaurar una captura
+    // visual desde memoria sin volver a ejecutar la página. Revalidamos para
+    // que nunca parezca iniciada una sesión cuya cookie ya fue eliminada.
+    function handlePageShow(event) {
+      if (event.persisted) refreshSession();
+    }
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [refreshSession]);
 
   const logout = useCallback(() => doLogout(), []);
 

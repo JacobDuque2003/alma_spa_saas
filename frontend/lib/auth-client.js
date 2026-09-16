@@ -10,6 +10,27 @@ function publishOutOfSchedule(active, nextWindowOpensAt = null, kind = "readOnly
   }));
 }
 
+let sessionValidationPromise = null;
+
+async function validateCurrentSession() {
+  if (sessionValidationPromise) return sessionValidationPromise;
+  sessionValidationPromise = fetch("/api/proxy/auth/me", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  })
+    .then((res) => {
+      if (res.ok) return true;
+      if (res.status === 401) return false;
+      return null;
+    })
+    .catch(() => null)
+    .finally(() => {
+      sessionValidationPromise = null;
+    });
+  return sessionValidationPromise;
+}
+
 export async function authFetch(path, { method = "GET", body, query } = {}) {
   const url = new URL(`/api/proxy${path}`, window.location.origin);
   if (query) {
@@ -30,10 +51,23 @@ export async function authFetch(path, { method = "GET", body, query } = {}) {
   }
 
   if (res.status === 401) {
-    // Clear the (possibly stale) cookie server-side BEFORE redirecting.
-    // If we skip this, /admin/login's middleware sees the cookie, bounces
-    // us back to /admin/agenda, AuthProvider re-runs /auth/me, gets 401
-    // again → reload storm.
+    // Una consulta secundaria no debe borrar una sesión válida. Algunos
+    // módulos hacen varias lecturas al abrirse y una respuesta aislada puede
+    // fallar aunque /auth/me siga reconociendo el token.
+    if (path !== "/auth/me") {
+      const sessionIsValid = await validateCurrentSession();
+      if (sessionIsValid === true) {
+        const err = new Error("No se pudo autorizar esta consulta. La sesión continúa activa.");
+        err.status = 401;
+        throw err;
+      }
+      if (sessionIsValid === null) {
+        const err = new Error("No se pudo verificar la sesión. Intente nuevamente.");
+        err.status = 503;
+        throw err;
+      }
+    }
+    // /auth/me confirmó que el token realmente expiró o fue invalidado.
     await logout();
     throw new Error("Sesión expirada");
   }
