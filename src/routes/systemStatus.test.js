@@ -18,14 +18,14 @@ function mockBaseUser(role = 'dueno') {
         return { active: true };
       }
       return {
-        id: role === 'personal' ? 'u-personal' : 'u-dueno',
+        id: role === 'personal' ? 'u-personal' : role === 'superadmin' ? 'u-superadmin' : 'u-dueno',
         name: 'Gianella',
         email: `${role}@alma.test`,
         role,
-        tenantId: 't1',
+        tenantId: role === 'superadmin' ? null : 't1',
         active: true,
         sessionVersion: 0,
-        tenant: { active: true, billingStatus: 'active' },
+        tenant: role === 'superadmin' ? null : { active: true, billingStatus: 'active' },
       };
     },
   };
@@ -96,8 +96,8 @@ function mockStatusModels() {
   };
 }
 
-test('GET /system/status devuelve señales de integraciones sin secretos', async () => {
-  mockBaseUser('dueno');
+test('GET /system/status devuelve señales de integraciones sin secretos para superadmin', async () => {
+  mockBaseUser('superadmin');
   mockStatusModels();
   const originalAnthropic = process.env.ANTHROPIC_API_KEY;
   const originalBucket = process.env.GCS_BUCKET;
@@ -109,7 +109,7 @@ test('GET /system/status devuelve señales de integraciones sin secretos', async
   process.env.DATABASE_URL = 'postgres://secret';
 
   try {
-    const token = signToken({ id: 'u-dueno', role: 'dueno', tenantId: 't1' });
+    const token = signToken({ id: 'u-superadmin', role: 'superadmin', tenantId: null });
     const res = await supertest(app)
       .get('/system/status')
       .set('Authorization', `Bearer ${token}`);
@@ -138,6 +138,19 @@ test('GET /system/status devuelve señales de integraciones sin secretos', async
     if (originalDb === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = originalDb;
   }
+});
+
+test('GET /system/status bloquea dueña', async () => {
+  mockBaseUser('dueno');
+  prisma.tenant = {
+    findUnique: async () => ({ id: 't1', config: { timezone: 'America/Guayaquil' } }),
+  };
+  const token = signToken({ id: 'u-dueno', role: 'dueno', tenantId: 't1' });
+  const res = await supertest(app)
+    .get('/system/status')
+    .set('Authorization', `Bearer ${token}`);
+
+  assert.equal(res.status, 403);
 });
 
 test('GET /system/status bloquea personal', async () => {

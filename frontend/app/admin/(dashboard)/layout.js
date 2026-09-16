@@ -38,7 +38,7 @@ import { ToastProvider } from "@/components/toast-provider";
 //   personal      -> requireRole('superadmin','dueno')  en /users (no delegable)
 //   configuracion -> requirePermission('configuracion') en /services, /rooms, /tenant/config
 //   logs          -> requireRole('superadmin','dueno')  en /audit-log
-//   estado        -> requireRole('superadmin','dueno')  en /system/status
+//   estado        -> requireRole('superadmin')          en /system/status
 const NAV_ITEMS = [
   { href: "/admin/agenda", label: "Agenda", enabled: true, permission: "agenda", icon: CalendarDays },
   { href: "/admin/clientes", label: "Clientes", enabled: true, permission: "clientes", icon: Users },
@@ -47,7 +47,7 @@ const NAV_ITEMS = [
   { href: "/admin/personal", label: "Equipo", enabled: true, roles: ["superadmin", "dueno"], icon: UserCog },
   { href: "/admin/configuracion", label: "Configuración", enabled: true, permission: "configuracion", icon: Settings },
   { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"], icon: ClipboardList },
-  { href: "/admin/estado", label: "Estado", enabled: true, roles: ["superadmin", "dueno"], icon: Activity },
+  { href: "/admin/estado", label: "Estado", enabled: true, roles: ["superadmin"], icon: Activity },
   { href: "/admin/sistema", label: "Sistema", enabled: true, roles: ["superadmin"], icon: Building2 },
 ];
 
