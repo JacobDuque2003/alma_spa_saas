@@ -1886,10 +1886,11 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
               }}
             >
               <strong
-                className="font-heading"
+                className="font-heading alma-cabin-header-name"
                 style={{
                   color: premiumColor,
-                  fontSize: visibleColumns.length >= 9 ? 14 : visibleColumns.length >= 7 ? 15 : 17,
+                  "--alma-cabin-title-size": visibleColumns.length >= 9 ? "14px" : visibleColumns.length >= 7 ? "15px" : "17px",
+                  fontSize: "var(--alma-cabin-title-size)",
                   fontWeight: 700,
                   lineHeight: 1.12,
                   letterSpacing: 0,

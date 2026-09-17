@@ -774,4 +774,12 @@
   .alma-grid-exit-right { animation: alma-slide-out-right var(--motion-base) var(--ease-out-quart) forwards; }
   .alma-grid-enter-left { animation: alma-slide-in-left var(--motion-base) var(--ease-out-quart) both; }
   .alma-grid-enter-right { animation: alma-slide-in-right var(--motion-base) var(--ease-out-quart) both; }
+
+  /* En monitores amplios, los nombres de cabina aprovechan mejor el espacio disponible. */
+  @media (min-width: 1600px) {
+    .alma-cabin-header-name {
+      font-size: calc(var(--alma-cabin-title-size) + 2px) !important;
+      line-height: 1.18 !important;
+    }
+  }
 }
