@@ -1274,7 +1274,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
 
 function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   const active = appointments
-    .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
+    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
 
   if (active.length === 0) {
@@ -1501,6 +1501,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
         {days.map((d) => {
           const isToday = d === today;
           const dayAppointments = (appointments || []).filter((a) => {
+            if (a.status === "cancelado") return false;
             return toLocalDate(new Date(a.startsAt)) === d;
           });
           const laneMap = buildSlotLanes(dayAppointments);
@@ -1659,7 +1660,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   const [resizeState, setResizeState] = useState(null);
   const resizeSessionRef = useRef(null);
   const active = (appointments || [])
-    .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
+    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   const configuredRooms = (rooms || []).filter((room) => room.active !== false);
   const configuredIds = new Set(configuredRooms.map((room) => room.id));
@@ -2201,7 +2202,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
 function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGroup }) {
   const HOUR_HEIGHT = 66;
-  const active = appointments.filter((a) => toLocalDate(new Date(a.startsAt)) === date);
+  const active = appointments.filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date);
   const laneMap = buildSlotLanes(active);
   const entries = visibleScheduleEntries(active);
 
