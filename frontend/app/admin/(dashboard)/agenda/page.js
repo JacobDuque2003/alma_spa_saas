@@ -43,11 +43,16 @@ function titleCaseText(text = "") {
     .join(" ");
 }
 
-function cabinDisplayName(name = "") {
+function cabinDisplayParts(name = "") {
   const parts = String(name).split(" - ");
-  if (parts.length < 2) return String(name);
+  if (parts.length < 2) return { title: String(name), description: "" };
   const [prefix, ...rest] = parts;
-  return `${prefix} - ${titleCaseText(rest.join(" - "))}`;
+  return { title: prefix, description: titleCaseText(rest.join(" - ")) };
+}
+
+function cabinDisplayName(name = "") {
+  const { title, description } = cabinDisplayParts(name);
+  return description ? `${title} - ${description}` : title;
 }
 
 function hexToRgb(hex = "") {
@@ -1869,6 +1874,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
         {visibleColumns.map((room) => {
           const roomColor = roomColorMap[room.id] || room.colorHex || "#8C6E50";
           const premiumColor = premiumCabinColor(roomColor);
+          const cabinName = cabinDisplayParts(room.name);
           return (
             <div
               key={room.id}
@@ -1895,13 +1901,22 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                   lineHeight: 1.12,
                   letterSpacing: 0,
                   overflow: "hidden",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: "100%",
+                  minWidth: 0,
                   textShadow: "0 1px 0 rgba(255,255,255,0.55)",
                 }}
               >
-                {cabinDisplayName(room.name)}
+                <span style={{ width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {cabinName.title.toLocaleUpperCase("es-EC")}
+                </span>
+                {cabinName.description && (
+                  <span style={{ width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {cabinName.description}
+                  </span>
+                )}
               </strong>
             </div>
           );
