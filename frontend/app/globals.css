@@ -778,7 +778,7 @@
   /* En monitores amplios, los nombres de cabina aprovechan mejor el espacio disponible. */
   @media (min-width: 1600px) {
     .alma-cabin-header-name {
-      font-size: calc(var(--alma-cabin-title-size) + 2px) !important;
+      font-size: calc(var(--alma-cabin-title-size) + 4px) !important;
       line-height: 1.18 !important;
     }
   }
