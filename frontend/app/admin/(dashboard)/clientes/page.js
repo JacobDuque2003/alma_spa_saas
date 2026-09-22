@@ -451,10 +451,9 @@ export default function ClientesPage() {
   const [clientLoadError, setClientLoadError] = useState("");
   const [detail, setDetail] = useState(null);
   const [intake, setIntake] = useState(null);
-  const [treatments, setTreatments] = useState([]);
   const [clientAppointments, setClientAppointments] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailSectionsLoaded, setDetailSectionsLoaded] = useState({ summary: false, intake: false, timeline: false });
+  const [detailSectionsLoaded, setDetailSectionsLoaded] = useState({ summary: false, intake: false });
   const isMobile = useIsMobile();
   const toast = useToast();
   const [mobileShowDetail, setMobileShowDetail] = useState(Boolean(preselectedId));
@@ -537,21 +536,24 @@ export default function ClientesPage() {
   useEffect(() => {
     setDetail(null);
     setIntake(null);
-    setTreatments([]);
     setClientAppointments([]);
-    setDetailSectionsLoaded({ summary: false, intake: false, timeline: false });
+    setDetailSectionsLoaded({ summary: false, intake: false });
   }, [selectedId]);
 
   const fetchDetail = useCallback(async () => {
     if (!selectedId) return;
     setDetailLoading(true);
     try {
-      const [clientData, appointmentData] = await Promise.all([
+      const [clientData, historyData] = await Promise.all([
         authFetch(`/clients/${selectedId}`),
-        authFetch("/appointments", { query: { clientId: selectedId } }).catch(() => []),
+        authFetch(`/clients/${selectedId}/history`, { query: { filter: "appointments", limit: 1, includeSummary: true } }).catch(() => null),
       ]);
       setDetail(clientData);
-      setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
+      const summary = historyData?.appointmentSummary || {};
+      const summaryAppointments = [summary.lastAppointment, summary.nextAppointment]
+        .filter(Boolean)
+        .filter((appointment, index, rows) => rows.findIndex((row) => row.id === appointment.id) === index);
+      setClientAppointments(summaryAppointments);
       setDetailSectionsLoaded((prev) => ({ ...prev, summary: true }));
     } catch {
       setDetail(null);
@@ -574,28 +576,10 @@ export default function ClientesPage() {
     }
   }, [detailSectionsLoaded.intake, selectedId]);
 
-  const fetchTimeline = useCallback(async ({ force = false } = {}) => {
-    if (!selectedId || (!force && detailSectionsLoaded.timeline)) return;
-    try {
-      const [treatmentsData, appointmentData] = await Promise.all([
-        authFetch(`/clients/${selectedId}/treatments`).catch(() => []),
-        authFetch("/appointments", { query: { clientId: selectedId } }).catch(() => []),
-      ]);
-      setTreatments(Array.isArray(treatmentsData) ? treatmentsData : []);
-      setClientAppointments(Array.isArray(appointmentData) ? appointmentData : []);
-      setDetailSectionsLoaded((prev) => ({ ...prev, timeline: true }));
-    } catch {
-      setTreatments([]);
-      setClientAppointments([]);
-      setDetailSectionsLoaded((prev) => ({ ...prev, timeline: true }));
-    }
-  }, [detailSectionsLoaded.timeline, selectedId]);
-
   useEffect(() => {
     if (!selectedId) return;
     if (activeTab === "anamnesis") fetchIntake();
-    if (activeTab === "historial") fetchTimeline();
-  }, [activeTab, fetchIntake, fetchTimeline, selectedId]);
+  }, [activeTab, fetchIntake, selectedId]);
 
   const [showEditClient, setShowEditClient] = useState(false);
   const [showDeleteClient, setShowDeleteClient] = useState(false);
@@ -621,7 +605,6 @@ export default function ClientesPage() {
     setSelectedId(null);
     setDetail(null);
     setIntake(null);
-    setTreatments([]);
     setClientAppointments([]);
     setMobileShowDetail(false);
     setActiveTab("resumen");
@@ -637,7 +620,6 @@ export default function ClientesPage() {
     setSelectedId(null);
     setDetail(null);
     setIntake(null);
-    setTreatments([]);
     setClientAppointments([]);
     setMobileShowDetail(false);
     setActiveTab("resumen");
@@ -741,11 +723,10 @@ export default function ClientesPage() {
   }
 
   const appointmentCount = clientAppointments.length;
-  const treatmentCount = treatments.length;
   const tabItems = [
     { key: "resumen", label: "Resumen", meta: appointmentCount },
     { key: "anamnesis", label: "Anamnesis", meta: intake?.consentSigned ? "Firmada" : "Sin firma" },
-    { key: "historial", label: "Historial", meta: treatmentCount + appointmentCount },
+    { key: "historial", label: "Historial", meta: "Ver" },
   ];
 
   return (
@@ -1201,7 +1182,7 @@ export default function ClientesPage() {
             <div style={{ flex: 1, minHeight: 0 }}>
               {activeTab === "resumen" && <ClientPersonalSummaryCard client={detail} appointments={clientAppointments} canEdit={canEditClients} onEdit={() => setShowEditClient(true)} onCopyEmail={handleCopyEmail} />}
               {activeTab === "anamnesis" && <IntakeCard intake={intake} canEdit={canEditIntake} onEdit={() => setShowEditIntake(true)} />}
-              {activeTab === "historial" && <TreatmentsCard treatments={treatments} appointments={clientAppointments} clientId={selectedId} canEdit={canEditHistory} onSaved={() => fetchTimeline({ force: true })} />}
+              {activeTab === "historial" && <TreatmentsCard clientId={selectedId} canEdit={canEditHistory} />}
             </div>
           </>
         ) : (
@@ -1689,7 +1670,7 @@ function TreatmentDeleteModal({ treatment, phase, onClose, onDeleted }) {
   );
 }
 
-function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSaved }) {
+function TreatmentsCard({ clientId, canEdit }) {
   const [showForm, setShowForm] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
@@ -1701,8 +1682,49 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [historyRows, setHistoryRows] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("all");
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [historyVersion, setHistoryVersion] = useState(0);
   const toast = useToast();
   const deleteTreatmentAnim = useAnimatedMount(Boolean(treatmentToDelete), 220);
+
+  const loadHistory = useCallback(async ({ append = false } = {}) => {
+    const offset = append ? historyRows.length : 0;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const data = await authFetch(`/clients/${clientId}/history`, {
+        query: {
+          filter: historyFilter,
+          from: historyFrom || undefined,
+          to: historyTo || undefined,
+          limit: 15,
+          offset,
+        },
+      });
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      setHistoryRows((current) => (append ? [...current, ...rows] : rows));
+      setHistoryTotal(Number(data?.total) || 0);
+      setHistoryHasMore(Boolean(data?.hasMore));
+    } catch (err) {
+      if (!append) setHistoryRows([]);
+      setHistoryError(err.message || "No se pudo cargar el historial");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [clientId, historyFilter, historyFrom, historyRows.length, historyTo]);
+
+  useEffect(() => {
+    loadHistory();
+  // historyVersion fuerza la recarga después de crear, editar o eliminar.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, historyFilter, historyFrom, historyTo, historyVersion]);
 
   useEffect(() => {
     if (!showForm || !canEdit) return;
@@ -1754,7 +1776,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
       }
       setShowForm(false);
       resetForm();
-      onSaved?.();
+      setHistoryVersion((value) => value + 1);
     } catch (err) {
       setError(err.message || "Error al guardar");
     } finally {
@@ -1770,17 +1792,19 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
     cancelado: { label: "Cancelada", color: "#9A4E48", bg: "rgba(154,78,72,0.10)" },
     no_show: { label: "No asistió", color: "#B85A56", bg: "rgba(194,84,80,0.12)" },
   };
-  const historyRows = [
-    ...(treatments || []).map((t) => ({ type: "treatment", date: t.sessionDate, treatment: t })),
-    ...(appointments || []).map((a) => ({ type: "appointment", date: a.startsAt, appointment: a })),
-  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 14);
+  const historyFilters = [
+    ["all", "Todos"],
+    ["appointments", "Citas"],
+    ["treatments", "Tratamientos"],
+    ["exceptions", "Canceladas / No asistió"],
+  ];
 
   return (
     <div className="alma-card" style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid rgba(121,134,203,0.16)", background: "linear-gradient(135deg, #fffdf8, rgba(121,134,203,0.035))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <h3 className="font-heading" style={{ fontSize: 21, fontWeight: 600, color: "#6B5540", margin: 0 }}>Historial de la clienta</h3>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 13, color: "#A89A87" }}>{(treatments || []).length} tratamientos · {(appointments || []).length} reservas</span>
+          <span style={{ fontSize: 13, color: "#A89A87" }}>{historyTotal} movimientos</span>
           {canEdit && <button onClick={() => (showForm ? (setShowForm(false), resetForm()) : openCreate())} style={{ padding: "4px 14px", borderRadius: 999, border: "1px solid #8C6E50", background: showForm ? "#8C6E50" : "none", color: showForm ? "#F7F5F0" : "#8C6E50", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{showForm ? "Cancelar" : "+ Agregar"}</button>}
         </div>
       </div>
@@ -1789,7 +1813,7 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
           treatment={treatmentToDelete}
           phase={deleteTreatmentAnim.phase}
           onClose={() => setTreatmentToDelete(null)}
-          onDeleted={() => { setTreatmentToDelete(null); onSaved?.(); }}
+          onDeleted={() => { setTreatmentToDelete(null); setHistoryVersion((value) => value + 1); }}
         />
       )}
 
@@ -1803,8 +1827,41 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
           <button type="submit" disabled={saving} style={{ padding: "8px 0", borderRadius: 999, border: "none", background: "#8C6E50", color: "#F7F5F0", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Guardando..." : editingTreatment ? "Guardar cambios" : "Guardar tratamiento"}</button>
         </form>
       )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingBottom: 12, borderBottom: "1px solid rgba(168,154,135,0.20)" }}>
+        {historyFilters.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setHistoryFilter(value)}
+            style={{
+              border: `1px solid ${historyFilter === value ? "#8C6E50" : "rgba(168,154,135,0.34)"}`,
+              borderRadius: 999,
+              padding: "6px 11px",
+              background: historyFilter === value ? "#8C6E50" : "#FDFCFA",
+              color: historyFilter === value ? "#F7F5F0" : "#6B5540",
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#A89A87", fontSize: 11 }}>
+          Desde
+          <input type="date" value={historyFrom} max={historyTo || undefined} onChange={(event) => setHistoryFrom(event.target.value)} style={{ ...inputSt, width: 132, padding: "5px 8px", fontSize: 11 }} />
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#A89A87", fontSize: 11 }}>
+          Hasta
+          <input type="date" value={historyTo} min={historyFrom || undefined} onChange={(event) => setHistoryTo(event.target.value)} style={{ ...inputSt, width: 132, padding: "5px 8px", fontSize: 11 }} />
+        </label>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto" }}>
-        {historyRows.length === 0 ? (
+        {historyLoading && historyRows.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "60px 0", color: "#A89A87", fontSize: 13 }}><Loader2 size={16} className="animate-spin" /> Cargando historial...</div>
+        ) : historyError && historyRows.length === 0 ? (
+          <p style={{ textAlign: "center", padding: "50px 0", fontSize: 13, color: "#C25450" }}>{historyError}</p>
+        ) : historyRows.length === 0 ? (
           <p style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#A89A87" }}>Sin historial registrado todavía.</p>
         ) : (
           historyRows.map((row, index) => {
@@ -1848,6 +1905,11 @@ function TreatmentsCard({ treatments, appointments = [], clientId, canEdit, onSa
               </div>
             );
           })
+        )}
+        {historyHasMore && (
+          <button type="button" disabled={historyLoading} onClick={() => loadHistory({ append: true })} style={{ alignSelf: "center", margin: "14px 0 4px", padding: "8px 18px", borderRadius: 999, border: "1px solid rgba(140,110,80,0.48)", background: "#FDFCFA", color: "#8C6E50", fontSize: 12, fontWeight: 700, cursor: historyLoading ? "wait" : "pointer", opacity: historyLoading ? 0.65 : 1 }}>
+            {historyLoading ? "Cargando..." : "Cargar anteriores"}
+          </button>
         )}
       </div>
     </div>

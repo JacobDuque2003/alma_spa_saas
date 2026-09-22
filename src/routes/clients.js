@@ -259,6 +259,17 @@ router.get('/clients/:clientId/treatments', clientes, async (req, res, next) => 
   }
 });
 
+router.get('/clients/:clientId/history', clientes, async (req, res, next) => {
+  try {
+    const history = await treatmentHistoryService.listClientHistory(req.user, req.params.clientId, req.query);
+    if (!history) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(history);
+  } catch (err) {
+    logCrossTenant(req, err);
+    next(err);
+  }
+});
+
 router.post('/clients/:clientId/treatments', clientHistoryEdit, async (req, res, next) => {
   try {
     const treatment = await treatmentHistoryService.createTreatment(req.user, req.params.clientId, req.body);

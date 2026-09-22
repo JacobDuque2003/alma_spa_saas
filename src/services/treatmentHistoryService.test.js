@@ -74,3 +74,56 @@ test('updateTreatment: setea updatedById = actor (D8)', async () => {
   );
   assert.equal(captured.updatedById, 'editor1');
 });
+
+test('listClientHistory pagina citas y tratamientos sin perder canceladas', async () => {
+  prisma.client = clientOk();
+  prisma.appointment = {
+    findMany: async () => [{
+      id: 'a1', tenantId: 't1', clientId: 'c1', status: 'cancelado',
+      startsAt: new Date('2026-08-20T15:00:00.000Z'), service: { name: 'Facial' },
+    }],
+    count: async () => 1,
+  };
+  prisma.treatmentHistory = {
+    findMany: async () => [{
+      id: 'th1', tenantId: 't1', clientId: 'c1',
+      sessionDate: new Date('2026-08-19T15:00:00.000Z'),
+      notesEnc: null, notesIv: null, notesTag: null, service: { name: 'Masaje' },
+    }],
+    count: async () => 1,
+  };
+
+  const result = await treatmentHistoryService.listClientHistory(
+    { id: 'u1', tenantId: 't1', role: 'dueno' },
+    'c1',
+    { limit: 1, offset: 0 }
+  );
+
+  assert.equal(result.total, 2);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].type, 'appointment');
+  assert.equal(result.rows[0].appointment.status, 'cancelado');
+  assert.equal(result.hasMore, true);
+});
+
+test('listClientHistory filtra canceladas y no asistencias', async () => {
+  prisma.client = clientOk();
+  let capturedWhere;
+  prisma.appointment = {
+    findMany: async ({ where }) => { capturedWhere = where; return []; },
+    count: async () => 0,
+  };
+  prisma.treatmentHistory = {
+    findMany: async () => { throw new Error('No debe consultar tratamientos'); },
+    count: async () => { throw new Error('No debe contar tratamientos'); },
+  };
+
+  const result = await treatmentHistoryService.listClientHistory(
+    { id: 'u1', tenantId: 't1', role: 'dueno' },
+    'c1',
+    { filter: 'exceptions' }
+  );
+
+  assert.deepEqual(capturedWhere.status.in, ['cancelado', 'no_show']);
+  assert.equal(result.total, 0);
+});

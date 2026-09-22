@@ -46,6 +46,129 @@ async function listTreatments(actor, clientId) {
   return records.map(toDTO);
 }
 
+function historyDateRange(query = {}) {
+  const range = {};
+  if (query.from) {
+    const from = new Date(`${query.from}T00:00:00.000Z`);
+    if (Number.isNaN(from.getTime())) throw new BadRequestError('Fecha inicial invalida');
+    range.gte = from;
+  }
+  if (query.to) {
+    const to = new Date(`${query.to}T00:00:00.000Z`);
+    if (Number.isNaN(to.getTime())) throw new BadRequestError('Fecha final invalida');
+    to.setUTCDate(to.getUTCDate() + 1);
+    range.lt = to;
+  }
+  if (range.gte && range.lt && range.gte >= range.lt) {
+    throw new BadRequestError('El rango de fechas es invalido');
+  }
+  return Object.keys(range).length ? range : undefined;
+}
+
+async function listClientHistory(actor, clientId, query = {}) {
+  const client = await loadClientForActor(actor, clientId);
+  if (!client) return null;
+
+  const limit = Math.min(Math.max(Number(query.limit) || 15, 1), 50);
+  const offset = Math.max(Number(query.offset) || 0, 0);
+  const filter = ['all', 'appointments', 'treatments', 'exceptions'].includes(String(query.filter))
+    ? String(query.filter)
+    : 'all';
+  const dateRange = historyDateRange(query);
+  const includeAppointments = filter !== 'treatments';
+  const includeTreatments = filter !== 'appointments' && filter !== 'exceptions';
+  const appointmentWhere = {
+    tenantId: client.tenantId,
+    clientId,
+    ...(dateRange ? { startsAt: dateRange } : {}),
+    ...(filter === 'exceptions' ? { status: { in: ['cancelado', 'no_show'] } } : {}),
+  };
+  const treatmentWhere = {
+    tenantId: client.tenantId,
+    clientId,
+    ...(dateRange ? { sessionDate: dateRange } : {}),
+  };
+  const fetchSize = offset + limit + 1;
+  const appointmentInclude = {
+    service: { select: { id: true, name: true, colorHex: true } },
+    room: { select: { id: true, name: true } },
+    staff: { select: { id: true, name: true } },
+  };
+
+  const [appointments, treatments, appointmentTotal, treatmentTotal] = await Promise.all([
+    includeAppointments
+      ? prisma.appointment.findMany({
+        where: appointmentWhere,
+        orderBy: [{ startsAt: 'desc' }, { id: 'desc' }],
+        take: fetchSize,
+        include: appointmentInclude,
+      })
+      : Promise.resolve([]),
+    includeTreatments
+      ? prisma.treatmentHistory.findMany({
+        where: treatmentWhere,
+        orderBy: [{ sessionDate: 'desc' }, { id: 'desc' }],
+        take: fetchSize,
+        include: {
+          service: { select: { id: true, name: true, colorHex: true } },
+          therapist: { select: { id: true, name: true } },
+        },
+      })
+      : Promise.resolve([]),
+    includeAppointments ? prisma.appointment.count({ where: appointmentWhere }) : Promise.resolve(0),
+    includeTreatments ? prisma.treatmentHistory.count({ where: treatmentWhere }) : Promise.resolve(0),
+  ]);
+
+  const rows = [
+    ...appointments.map((appointment) => ({
+      type: 'appointment',
+      id: appointment.id,
+      date: appointment.startsAt,
+      appointment,
+    })),
+    ...treatments.map((record) => ({
+      type: 'treatment',
+      id: record.id,
+      date: record.sessionDate,
+      treatment: toDTO(record),
+    })),
+  ]
+    .sort((a, b) => new Date(b.date) - new Date(a.date) || b.id.localeCompare(a.id))
+    .slice(offset, offset + limit);
+  const total = appointmentTotal + treatmentTotal;
+  let appointmentSummary;
+  if (String(query.includeSummary).toLowerCase() === 'true') {
+    const now = new Date();
+    const baseWhere = {
+      tenantId: client.tenantId,
+      clientId,
+      status: { not: 'cancelado' },
+    };
+    const [nextAppointment, lastAppointment] = await Promise.all([
+      prisma.appointment.findFirst({
+        where: { ...baseWhere, startsAt: { gte: now } },
+        orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+        include: appointmentInclude,
+      }),
+      prisma.appointment.findFirst({
+        where: { ...baseWhere, startsAt: { lt: now } },
+        orderBy: [{ startsAt: 'desc' }, { id: 'desc' }],
+        include: appointmentInclude,
+      }),
+    ]);
+    appointmentSummary = { nextAppointment, lastAppointment };
+  }
+
+  return {
+    rows,
+    total,
+    limit,
+    offset,
+    hasMore: offset + rows.length < total,
+    ...(appointmentSummary ? { appointmentSummary } : {}),
+  };
+}
+
 async function listAvailableTherapists(actor) {
   if (!actor?.tenantId) return [];
   return prisma.user.findMany({
@@ -144,4 +267,4 @@ async function deleteTreatment(actor, id) {
   return { id };
 }
 
-module.exports = { listTreatments, listAvailableTherapists, createTreatment, updateTreatment, deleteTreatment };
+module.exports = { listTreatments, listClientHistory, listAvailableTherapists, createTreatment, updateTreatment, deleteTreatment };
