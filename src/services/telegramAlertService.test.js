@@ -28,7 +28,8 @@ test('sendAlert envía al chat configurado y deduplica errores repetidos', async
     assert.equal(second.skipped, 'deduplicated');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].body.chat_id, '12345');
-    assert.match(calls[0].body.text, /CRITICO/);
+    assert.match(calls[0].body.text, /^🔴 \[Alma_Spa\] Meta falló/);
+    assert.match(calls[0].body.text, /\(Ecuador\)/);
   } finally {
     global.fetch = originalFetch;
     delete process.env.TELEGRAM_BOT_TOKEN;

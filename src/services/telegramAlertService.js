@@ -1,6 +1,7 @@
 const TELEGRAM_API = 'https://api.telegram.org';
 const DEFAULT_COOLDOWN_MS = 15 * 60_000;
 const SEND_TIMEOUT_MS = 8_000;
+const SYSTEM_NAME = 'Alma_Spa';
 const recentAlerts = new Map();
 
 function isEnabled() {
@@ -37,13 +38,19 @@ async function sendAlert({ severity = 'info', title, details = [], dedupeKey, co
   if (!isEnabled()) return { ok: false, skipped: 'not_configured' };
   if (!shouldSend(dedupeKey, cooldownMs)) return { ok: false, skipped: 'deduplicated' };
 
-  const labels = { info: 'INFO', warning: 'ADVERTENCIA', critical: 'CRITICO', recovery: 'RECUPERADO' };
+  const icons = { info: '🟢', warning: '🟡', critical: '🔴', recovery: '🔵' };
+  const ecuadorTime = new Intl.DateTimeFormat('es-EC', {
+    timeZone: 'America/Guayaquil',
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(new Date());
   const lines = [
-    `[${labels[severity] || labels.info}] ${clean(title, 180)}`,
+    `${icons[severity] || icons.info} [${SYSTEM_NAME}] ${clean(title, 180)}`,
+    `🕒 ${ecuadorTime} (Ecuador)`,
+    '',
     ...details.filter((item) => item?.value !== undefined && item?.value !== null && item?.value !== '')
-      .map((item) => `${clean(item.label, 80)}: ${clean(item.value)}`),
-    `Ambiente: ${clean(process.env.NODE_ENV || 'development', 40)}`,
-    `Hora: ${new Date().toISOString()}`,
+      .map((item) => `• ${clean(item.label, 80)}: ${clean(item.value)}`),
+    `• Ambiente: ${clean(process.env.NODE_ENV || 'development', 40)}`,
   ];
 
   const controller = new AbortController();
