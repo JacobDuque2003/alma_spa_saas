@@ -94,6 +94,7 @@ async function createRoom(actor, data) {
         specialty: data.specialty,
         sortOrder: Number.isInteger(Number(data.sortOrder)) ? Number(data.sortOrder) : 0,
         capacity: normalizeCapacity(data.capacity) || 1,
+        requiresStaff: data.requiresStaff !== false,
         colorHex: normalizeColor(data.colorHex) || '#8C6E50',
         opensAt: data.opensAt || '09:00',
         closesAt: data.closesAt || '20:00',
@@ -127,6 +128,7 @@ async function updateRoom(actor, id, changes) {
     data.sortOrder = n;
   }
   if (changes.capacity !== undefined) data.capacity = normalizeCapacity(changes.capacity);
+  if (changes.requiresStaff !== undefined) data.requiresStaff = changes.requiresStaff !== false;
   if (changes.specialty !== undefined) {
     await assertSpecialtyMatchesActiveCategory(target.tenantId, changes.specialty);
     data.specialty = changes.specialty;

@@ -133,13 +133,26 @@ module.exports = { runBackup, resolvePgDumpBinary };
 
 // CLI entry point — for `npm run backup:run` or Railway Cron.
 if (require.main === module) {
+  const telegramAlerts = require('../../src/services/telegramAlertService');
   runBackup()
     .then((result) => {
       log('info', 'backup OK', result);
-      process.exit(0);
+      return telegramAlerts.sendAlert({
+        severity: 'info',
+        title: 'Backup completado',
+        details: [{ label: 'Archivo', value: result.filename }, { label: 'Tamaño', value: `${result.bytes} bytes` }, { label: 'Destino', value: result.bucket }],
+        dedupeKey: `backup:ok:${result.filename}`,
+        cooldownMs: 0,
+      }).finally(() => process.exit(0));
     })
     .catch((err) => {
       log('error', 'backup FALLIDO', { error: err.message });
-      process.exit(1);
+      return telegramAlerts.sendAlert({
+        severity: 'critical',
+        title: 'Backup fallido',
+        details: [{ label: 'Error', value: err.message }],
+        dedupeKey: `backup:failed:${new Date().toISOString().slice(0, 10)}`,
+        cooldownMs: 0,
+      }).finally(() => process.exit(1));
     });
 }

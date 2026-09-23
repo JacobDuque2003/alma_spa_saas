@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const telegramAlerts = require('./telegramAlertService');
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v20.0';
 const SEND_TIMEOUT_MS = 10_000;
@@ -65,6 +66,12 @@ async function postToMeta(conn, path, body) {
       }
       let detail; try { detail = (await res.json())?.error; } catch (_) { detail = undefined; }
       if (res.status >= 400 && res.status < 500) {
+        telegramAlerts.alertAsync({
+          severity: 'critical',
+          title: 'Meta rechazó un envío de WhatsApp',
+          details: [{ label: 'HTTP', value: res.status }, { label: 'Código Meta', value: detail?.code }, { label: 'Motivo', value: detail?.message }],
+          dedupeKey: `meta:send:${res.status}:${detail?.code || 'unknown'}`,
+        });
         return { ok: false, status: res.status, errorCode: detail?.code, errorTitle: detail?.message };
       }
       lastErr = { name: 'HttpError', message: `Meta 5xx (${res.status})`, status: res.status };
@@ -77,6 +84,12 @@ async function postToMeta(conn, path, body) {
       await new Promise((r) => setTimeout(r, 200 * attempt));
     }
   }
+  telegramAlerts.alertAsync({
+    severity: 'critical',
+    title: 'Meta o la red no respondieron después de reintentos',
+    details: [{ label: 'HTTP', value: lastErr?.status ?? 0 }, { label: 'Motivo', value: lastErr?.message ?? 'Fallo de red' }],
+    dedupeKey: `meta:network:${lastErr?.status || 0}`,
+  });
   return { ok: false, status: lastErr?.status ?? 0, errorTitle: lastErr?.message ?? 'Fallo de red' };
 }
 

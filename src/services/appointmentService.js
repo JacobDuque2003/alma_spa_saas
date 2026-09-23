@@ -316,7 +316,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
     where: { tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
   });
   const staffIds = staff.map((s) => s.id);
-  if (staffIds.length === 0) return [];
+  if (staffIds.length === 0 && rooms.every((room) => room.requiresStaff !== false)) return [];
 
   const tz = getTenantTimezone(tenantConfig);
   const { dayStart, dayEnd } = localDayBoundsUTC(date, tz);
@@ -341,7 +341,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
     for (const slot of generateSlotsForService(date, businessHours, tz, service, { includePastSlots: canIncludePastSlots })) {
       const blockedEnd = addMinutes(slot, totalBlockMins(service));
       const roomFree = isRoomSlotAvailable(appointments, room, service.id, slot, blockedEnd);
-      const staffFree = staffIds.some((id) => isStaffSlotAvailable(appointments, id, {
+      const staffFree = room.requiresStaff === false || staffIds.some((id) => isStaffSlotAvailable(appointments, id, {
         serviceId: service.id,
         roomId: room.id,
         startsAt: slot,
@@ -388,7 +388,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
   }
 
   const selectedStaffId = staffId || appointment.staffId;
-  const staff = await prisma.user.findFirst({
+  const staff = room.requiresStaff === false ? null : await prisma.user.findFirst({
     where: {
       id: selectedStaffId,
       tenantId,
@@ -397,7 +397,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
       canAttendAppointments: true,
     },
   });
-  if (!staff) return [];
+  if (room.requiresStaff !== false && !staff) return [];
 
   const tz = getTenantTimezone(tenantConfig);
   const { dayStart, dayEnd } = localDayBoundsUTC(date, tz);
@@ -408,7 +408,7 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
       startsAt: { lt: dayEnd },
       endsAt: { gt: dayStart },
       status: { in: OPEN_STATUSES },
-      OR: [{ roomId: room.id }, { staffId: staff.id }, { clientId: appointment.clientId }],
+      OR: [{ roomId: room.id }, ...(staff ? [{ staffId: staff.id }] : []), { clientId: appointment.clientId }],
     },
   });
 
@@ -422,12 +422,12 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
     const endsAt = addMinutes(slot, blockMins);
     if (
       isRoomSlotAvailable(appointments, room, service.id, slot, endsAt)
-      && isStaffSlotAvailable(appointments, staff.id, {
+      && (room.requiresStaff === false || isStaffSlotAvailable(appointments, staff.id, {
         serviceId: service.id,
         roomId: room.id,
         startsAt: slot,
         endsAt,
-      })
+      }))
       && isResourceFree(appointments, 'clientId', appointment.clientId, slot, endsAt)
     ) {
       slots.push(slot.toISOString());
@@ -763,8 +763,8 @@ async function createManualAppointment(actor, data) {
   if (!tenantId) {
     throw new BadRequestError('tenantId es requerido');
   }
-  if (!data.clientId || !data.serviceId || !data.staffId || !data.startsAt) {
-    throw new BadRequestError('clientId, serviceId, staffId y startsAt son requeridos');
+  if (!data.clientId || !data.serviceId || !data.startsAt) {
+    throw new BadRequestError('clientId, serviceId y startsAt son requeridos');
   }
 
   // C-1: validar clientId contra tenantId ANTES de crear la cita — sin este
@@ -786,13 +786,6 @@ async function createManualAppointment(actor, data) {
   }
   const modality = 'spa';
 
-  const staff = await prisma.user.findFirst({
-    where: { id: data.staffId, tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
-  });
-  if (!staff) {
-    throw new BadRequestError('staffId invalido: no es personal habilitado para atender citas en este tenant');
-  }
-
   const startsAt = new Date(data.startsAt);
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
   if (Number.isNaN(startsAt.getTime())) {
@@ -808,6 +801,18 @@ async function createManualAppointment(actor, data) {
     throw new SlotUnavailableError();
   }
 
+  const selectedRoom = data.roomId ? roomCandidates.find((room) => room.id === data.roomId) : null;
+  if (data.roomId && !selectedRoom) throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
+  const requiresStaff = selectedRoom ? selectedRoom.requiresStaff !== false : true;
+  let staff = null;
+  if (requiresStaff) {
+    if (!data.staffId) throw new BadRequestError('Selecciona una terapeuta para esta cabina');
+    staff = await prisma.user.findFirst({
+      where: { id: data.staffId, tenantId, role: { in: STAFF_ROLES }, active: true, canAttendAppointments: true },
+    });
+    if (!staff) throw new BadRequestError('staffId invalido: no es personal habilitado para atender citas en este tenant');
+  }
+
   const conflicting = await prisma.appointment.findMany({
     where: {
       tenantId,
@@ -815,7 +820,7 @@ async function createManualAppointment(actor, data) {
       endsAt: { gt: startsAt },
       status: { in: OPEN_STATUSES },
       OR: [
-        { staffId: staff.id },
+        ...(staff ? [{ staffId: staff.id }] : []),
         { roomId: { in: roomCandidates.map((r) => r.id) } },
         { clientId: data.clientId },
       ],
@@ -844,7 +849,7 @@ async function createManualAppointment(actor, data) {
     if (!isRoomSlotAvailable(conflicting, room, service.id, startsAt, endsAt)) {
       throw new SlotUnavailableError('La cabina seleccionada ya no tiene puestos disponibles para ese servicio a esa hora');
     }
-    if (!isStaffSlotAvailable(conflicting, staff.id, {
+    if (room.requiresStaff !== false && !isStaffSlotAvailable(conflicting, staff.id, {
       serviceId: service.id,
       roomId: room.id,
       startsAt,
@@ -908,7 +913,7 @@ async function createManualAppointment(actor, data) {
         modality,
         roomId: resolvedRoomId,
         homeAddress: null,
-        staffId: data.staffId,
+        staffId: roomCandidates.find((room) => room.id === resolvedRoomId)?.requiresStaff === false ? null : data.staffId,
         startsAt,
         endsAt,
         status: 'confirmado',
@@ -946,6 +951,9 @@ async function updateAppointment(actor, id, changes) {
   const requestedEndsAt = changes.endsAt !== undefined ? new Date(changes.endsAt) : null;
   if (changes.roomId !== undefined) data.roomId = changes.roomId;
   if (changes.staffId !== undefined) {
+    if (changes.staffId === null || changes.staffId === '') {
+      data.staffId = null;
+    } else {
     // M-3: validar staffId contra target.tenantId — sin esto, un dueño puede
     // asignar staffId de OTRO tenant y filtrar staff.name al listar.
     const staff = await prisma.user.findFirst({
@@ -960,7 +968,8 @@ async function updateAppointment(actor, id, changes) {
     if (!staff) {
       throw new BadRequestError('staffId invalido: no es personal habilitado para atender citas en este tenant');
     }
-    data.staffId = changes.staffId;
+      data.staffId = changes.staffId;
+    }
   }
   if (changes.indications !== undefined) data.indications = changes.indications ? String(changes.indications).trim() : null;
 
@@ -980,6 +989,10 @@ async function updateAppointment(actor, id, changes) {
     const roomCandidates = await getCompatibleRooms(prisma, target.tenantId, service);
     const room = roomCandidates.find((r) => r.id === roomId);
     if (!room) throw new BadRequestError('La cabina seleccionada no corresponde al servicio');
+    if (room.requiresStaff !== false && !staffId) {
+      throw new BadRequestError('Selecciona una terapeuta para esta cabina');
+    }
+    if (room.requiresStaff === false) data.staffId = null;
     Object.assign(data, resolveOutsideBusinessHoursOverride(actor, {
       tenantConfig: tenant?.config,
       startsAt,
@@ -997,10 +1010,10 @@ async function updateAppointment(actor, id, changes) {
         startsAt: { lt: endsAt },
         endsAt: { gt: startsAt },
         status: { in: OPEN_STATUSES },
-        OR: [{ roomId }, { staffId }, { clientId: target.clientId }],
+        OR: [{ roomId }, ...(staffId && room.requiresStaff !== false ? [{ staffId }] : []), { clientId: target.clientId }],
       },
     });
-    if (!isStaffSlotAvailable(conflicting, staffId, {
+    if (room.requiresStaff !== false && !isStaffSlotAvailable(conflicting, staffId, {
       serviceId: service.id,
       roomId,
       startsAt,

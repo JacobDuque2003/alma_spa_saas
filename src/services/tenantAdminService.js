@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const telegramAlerts = require('./telegramAlertService');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { pickSafe, writeAuditLog } = require('../utils/adminAudit');
 
@@ -96,7 +97,7 @@ async function updateTenantBilling(actor, tenantId, changes) {
   const plan = changes.plan === undefined ? undefined : String(changes.plan || '').trim();
   if (plan !== undefined && !plan) throw new BadRequestError('plan no puede quedar vacío');
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const previous = await tx.tenant.findUnique({
       where: { id: tenantId },
       select: {
@@ -172,6 +173,16 @@ async function updateTenantBilling(actor, tenantId, changes) {
 
     return serializeTenant(updated);
   });
+  if (status !== undefined) {
+    telegramAlerts.alertAsync({
+      severity: status === 'active' ? 'recovery' : status === 'suspended' ? 'critical' : 'warning',
+      title: status === 'active' ? 'Mensualidad activada' : status === 'suspended' ? 'Negocio suspendido por facturación' : 'Estado de facturación actualizado',
+      details: [{ label: 'Negocio', value: result.name }, { label: 'Estado', value: result.billingStatus }, { label: 'Próximo vencimiento', value: result.billingDueAt || 'sin fecha' }],
+      dedupeKey: `billing:status:${tenantId}:${status}:${result.updatedAt || Date.now()}`,
+      cooldownMs: 0,
+    });
+  }
+  return result;
 }
 
 module.exports = {

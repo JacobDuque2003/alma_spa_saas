@@ -1135,6 +1135,20 @@ export default function ConfiguracionPage() {
     }
   }
 
+  async function updateRoomStaffRequirement(room, requiresStaff) {
+    try {
+      const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: { requiresStaff } });
+      setRooms((prev) => {
+        const nextRooms = prev.map((item) => item.id === room.id ? { ...item, ...updated } : item);
+        saveConfigDataCache({ rooms: nextRooms });
+        return nextRooms;
+      });
+      toast.info(requiresStaff ? "La cabina requiere terapeuta." : "La cabina quedó configurada como equipo autónomo.");
+    } catch (err) {
+      toast.error(friendlyConfigError(err.message, "No se pudo guardar el tipo de cabina."));
+    }
+  }
+
   async function deleteService(service) {
     if (!service || deletingService) return;
     setDeletingService(true);
@@ -1259,16 +1273,24 @@ export default function ConfiguracionPage() {
               <div className="alma-card" style={isMobile ? cardPaddingMobile : cardPaddingDesktop}>
                 <div style={{ marginBottom: 16 }}>
                   <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 600, color: "#6B5540", margin: "0 0 4px" }}>Puestos por cabina</h3>
-                  <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Permite agrupar reservas del mismo servicio a la misma hora.</p>
+                  <p style={{ margin: 0, fontSize: 13, color: "#A89A87" }}>Define el cupo y si la atención necesita una terapeuta.</p>
                 </div>
                 <div style={{ display: "grid", gap: 9 }}>
                   {rooms.filter((room) => room.active !== false).map((room) => (
-                    <div key={room.id} style={{ display: "grid", gridTemplateColumns: "1fr 74px", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: "1px solid rgba(168,154,135,0.22)" }}>
+                    <div key={room.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr) 74px" : "minmax(0, 1fr) auto 74px", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: "1px solid rgba(168,154,135,0.22)" }}>
                       <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
                         <span style={{ width: 9, height: 9, borderRadius: "50%", background: room.colorHex || "#8C6E50", boxShadow: "0 0 0 3px rgba(201,168,118,0.14)", flexShrink: 0 }} />
                         <span style={{ color: "#6B5540", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{room.name}</span>
                       </div>
-                      <label style={{ display: "grid", gap: 3 }}>
+                      <button
+                        type="button"
+                        disabled={!canModifyServices}
+                        onClick={() => updateRoomStaffRequirement(room, room.requiresStaff === false)}
+                        style={{ gridColumn: isMobile ? "1 / -1" : "auto", gridRow: isMobile ? 2 : "auto", justifySelf: isMobile ? "start" : "auto", padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(168,154,135,0.34)", background: room.requiresStaff === false ? "rgba(85,107,47,0.12)" : "#FDFCFA", color: room.requiresStaff === false ? "#556B2F" : "#8C6E50", fontSize: 11, fontWeight: 700, cursor: canModifyServices ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
+                      >
+                        {room.requiresStaff === false ? "Equipo · sin terapeuta" : "Requiere terapeuta"}
+                      </button>
+                      <label style={{ display: "grid", gap: 3, gridColumn: isMobile ? 2 : "auto", gridRow: isMobile ? 1 : "auto" }}>
                         <span style={{ fontSize: 10, color: "#A89A87" }}>Puestos</span>
                         <input
                           type="number"

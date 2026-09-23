@@ -2445,6 +2445,8 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
   const appointmentDefaultDuration = appt ? appointmentBlockMins(appt) : 45;
   const editingService = services.find((service) => service.id === editServiceId);
+  const editingRoom = rooms.find((room) => room.id === editRoomId);
+  const editingRequiresStaff = editingRoom?.requiresStaff !== false;
   const editingDefaultDuration = editingService ? totalServiceBlockMins(editingService) : appointmentDefaultDuration;
   const appointmentStartIso = appt?.startsAt ? new Date(appt.startsAt).toISOString() : "";
   const appointmentLocalDate = appt?.startsAt ? toLocalDate(new Date(appt.startsAt)) : "";
@@ -2570,7 +2572,8 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
       if (new Date(editSlot).getTime() !== new Date(appt.startsAt).getTime()) body.startsAt = editSlot;
       if (new Date(editEndSlot).getTime() !== new Date(appt.endsAt).getTime()) body.endsAt = editEndSlot;
       if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
-      if (editStaffId && editStaffId !== appt.staff?.id) body.staffId = editStaffId;
+      if (!editingRequiresStaff && appt.staff?.id) body.staffId = null;
+      else if (editingRequiresStaff && editStaffId !== (appt.staff?.id || "")) body.staffId = editStaffId || null;
       if (editServiceId && editServiceId !== (appt.service?.id || appt.serviceId)) body.serviceId = editServiceId;
       if (canScheduleOutside) {
         body.allowOutsideBusinessHours = true;
@@ -2654,7 +2657,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
                   <span style={{ color: "#A89A87" }}>Cliente</span>
                   <div style={{ textAlign: "right" }}>
                     <div>{appt.client.fullName}</div>
-                    {appt.client.whatsapp && <div style={{ fontSize: 12, color: "#A89A87" }}>{formatEcuadorPhone(appt.client.whatsapp)}</div>}
+                    <div style={{ fontSize: 12, color: "#A89A87" }}>{appt.client.recordNumber ? `Ficha ${appt.client.recordNumber}` : "Ficha sin asignar"}</div>
                   </div>
                 </div>
               )}
@@ -2664,12 +2667,10 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
                   <span>{appt.room.name}</span>
                 </div>
               )}
-              {appt.staff && (
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
-                  <span style={{ color: "#A89A87" }}>Terapeuta</span>
-                  <span>{appt.staff.name}</span>
-                </div>
-              )}
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
+                <span style={{ color: "#A89A87" }}>Terapeuta</span>
+                <span>{appt.staff?.name || "Sin terapeuta · equipo"}</span>
+              </div>
               {appt.priceUsd != null && (
                 <div style={{ textAlign: "right", fontWeight: 600, fontSize: 16, color: "#6B5540", marginTop: 4 }}>
                   ${Number(appt.priceUsd).toFixed(2)}
@@ -2841,15 +2842,15 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
             )}
             <div>
               <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Cabina</label>
-              <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+              <select value={editRoomId} onChange={(e) => { const next = e.target.value; setEditRoomId(next); if (rooms.find((room) => room.id === next)?.requiresStaff === false) setEditStaffId(""); }} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 <option value="">Sin cambio</option>
                 {(services.find((service) => service.id === editServiceId)?.rooms || rooms).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
             <div>
               <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Terapeuta</label>
-              <select value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
-                <option value="">Sin cambio</option>
+              <select disabled={!editingRequiresStaff} value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: editingRequiresStaff ? "pointer" : "not-allowed", opacity: editingRequiresStaff ? 1 : 0.65 }}>
+                <option value="">{editingRequiresStaff ? "Seleccionar terapeuta" : "Sin terapeuta · equipo"}</option>
                 {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -3056,6 +3057,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     () => staff.find((person) => person.id === staffId) || null,
     [staff, staffId]
   );
+  const selectedRoom = useMemo(
+    () => rooms.find((room) => room.id === roomId) || null,
+    [roomId, rooms]
+  );
+  const selectedRoomRequiresStaff = selectedRoom?.requiresStaff !== false;
   const quickRoom = useMemo(
     () => quickRoomId ? rooms.find((room) => room.id === quickRoomId) || null : null,
     [quickRoomId, rooms]
@@ -3202,7 +3208,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     ];
   }, [busyRoomIds, compatibleRooms, dayAppointments, freeCompatibleRooms.length, selectedEnd, selectedService, selectedStart]);
   const staffOptions = useMemo(
-    () => staff.map((person) => {
+    () => selectedRoomRequiresStaff ? staff.map((person) => {
       const busy = busyStaffIds.has(person.id);
       return {
         value: person.id,
@@ -3210,8 +3216,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         caption: busy ? "Ocupada en este horario" : "Libre en este horario",
         disabled: busy,
       };
-    }),
-    [busyStaffIds, staff]
+    }) : [{ value: "", label: "Sin terapeuta", caption: "Esta cabina funciona como equipo autónomo" }],
+    [busyStaffIds, selectedRoomRequiresStaff, staff]
   );
 
   useEffect(() => {
@@ -3280,6 +3286,10 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     if (roomId && busyRoomIds.has(roomId)) setRoomId("");
     if (staffId && busyStaffIds.has(staffId)) setStaffId("");
   }, [busyRoomIds, busyStaffIds, roomId, staffId]);
+
+  useEffect(() => {
+    if (selectedRoom?.requiresStaff === false) setStaffId("");
+  }, [selectedRoom]);
 
   useEffect(() => {
     if (!quickCreatePrefill || !onDraftChange) return;
@@ -3371,11 +3381,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
       if (!time) { setValidation("Selecciona un horario disponible"); setSubmitting(false); return; }
-      if (!staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
+      if (selectedRoomRequiresStaff && !staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
       if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene cabina compatible activa"); setSubmitting(false); return; }
       const selectedStaff = staff.find((person) => person.id === staffId);
       const selectedRoom = compatibleRooms.find((room) => room.id === roomId);
-      if (busyStaffIds.has(staffId)) {
+      if (selectedRoomRequiresStaff && busyStaffIds.has(staffId)) {
         toast.error(`${selectedStaff?.name || "La terapeuta seleccionada"} ya está ocupada en ese horario`);
         setSubmitting(false);
         return;
@@ -3402,7 +3412,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         body: {
           clientId,
           serviceId,
-          staffId,
+          staffId: selectedRoomRequiresStaff ? staffId : null,
           roomId: roomId || undefined,
           startsAt: time,
           modality: "presencial",
@@ -3610,9 +3620,9 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                 label="Terapeuta"
                 value={staffId}
                 options={staffOptions}
-                placeholder="Seleccionar terapeuta"
-                emptyLabel="Sin terapeutas activas"
-                disabled={!time}
+                placeholder={selectedRoomRequiresStaff ? "Seleccionar terapeuta" : "Sin terapeuta · equipo"}
+                emptyLabel={selectedRoomRequiresStaff ? "Sin terapeutas activas" : "Sin terapeuta · equipo"}
+                disabled={!time || !selectedRoomRequiresStaff}
                 onChange={setStaffId}
               />
             </div>

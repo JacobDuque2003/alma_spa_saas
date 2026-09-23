@@ -6,6 +6,7 @@ const { previewOf } = require('../../services/whatsappInboxService');
 const { waIdToPhone } = require('../../utils/phone');
 const bot = require('../../services/whatsappBot');
 const crmEvents = require('../../services/crmEventBus');
+const telegramAlerts = require('../../services/telegramAlertService');
 
 const router = express.Router({ mergeParams: true });
 
@@ -115,11 +116,15 @@ router.post('/', async (req, res) => {
 
   const appSecret = transport.getAppSecretForVerify();
   if (typeof appSecret !== 'string' || appSecret === '') {
+    telegramAlerts.alertAsync({ severity: 'critical', title: 'Webhook de WhatsApp sin App Secret', dedupeKey: 'webhook:missing-secret' });
     return res.sendStatus(500);
   }
 
   const header = req.get('x-hub-signature-256');
-  if (typeof header !== 'string' || !SIG_RE.test(header)) return res.sendStatus(401);
+  if (typeof header !== 'string' || !SIG_RE.test(header)) {
+    telegramAlerts.alertAsync({ severity: 'warning', title: 'Webhook de WhatsApp recibió una firma inválida', dedupeKey: 'webhook:invalid-signature' });
+    return res.sendStatus(401);
+  }
   const raw = req.rawBody;
   if (!Buffer.isBuffer(raw) || raw.length === 0) return res.sendStatus(400);
 
@@ -145,6 +150,7 @@ router.post('/', async (req, res) => {
   setImmediate(() => {
     processWebhookPayload(tenant, connection, req.body).catch((err) => {
       console.error('[WA-WEBHOOK] fallo procesando payload:', transport.sanitizeError(err));
+      telegramAlerts.alertAsync({ severity: 'critical', title: 'Falló el procesamiento del webhook de WhatsApp', details: [{ label: 'Negocio', value: safeTenant(tenant) }, { label: 'Error', value: err?.message }], dedupeKey: `webhook:processing:${err?.name || 'unknown'}` });
     });
   });
 });
@@ -182,6 +188,7 @@ async function processWebhookPayload(tenant, connection, body) {
           metaPhoneNumberId: phoneId,
           envPhoneNumberId: envPhoneId,
         });
+        telegramAlerts.alertAsync({ severity: 'critical', title: 'Webhook recibido para otro número de WhatsApp', details: [{ label: 'Negocio', value: safeTenant(tenant) }], dedupeKey: 'webhook:phone-id-mismatch' });
         continue;
       }
 
@@ -192,6 +199,7 @@ async function processWebhookPayload(tenant, connection, body) {
             phoneNumberConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
             tokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
           });
+          telegramAlerts.alertAsync({ severity: 'critical', title: 'WhatsApp recibió mensajes pero la conexión está incompleta', details: [{ label: 'Negocio', value: safeTenant(tenant) }], dedupeKey: 'webhook:connection-incomplete' });
         }
         for (const message of value.messages) {
           try { await processInboundMessage(tenant, message, value.contacts); }

@@ -70,6 +70,20 @@ test('createRoom guarda capacidad de puestos de la cabina', async () => {
   assert.equal(result.capacity, 2);
 });
 
+test('createRoom permite configurar una cabina como equipo sin terapeuta', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'pies', active: true }) },
+    room: { create: async (args) => ({ id: 'room1', ...args.data }) },
+  });
+
+  const result = await roomService.createRoom(
+    { role: 'dueno', tenantId: 't1', id: 'a1', email: 'a@test.com' },
+    { name: 'Cabina 9 - PIES', specialty: 'pies', requiresStaff: false }
+  );
+
+  assert.equal(result.requiresStaff, false);
+});
+
 test('updateRoom rechaza capacidad fuera de rango', async () => {
   mockPrisma({
     room: { findUnique: async () => ({ id: 'room1', tenantId: 't1', specialty: 'masajes' }) },

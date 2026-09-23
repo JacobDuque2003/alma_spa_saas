@@ -32,6 +32,7 @@ const errorHandler = require('./middleware/errorHandler');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
 const { assertJwtSecretOrExit } = require('./utils/jwt');
+const telegramAlerts = require('./services/telegramAlertService');
 
 const app = express();
 
@@ -87,11 +88,18 @@ app.use(express.json({
   limit: '256kb',
 }));
 
+let databaseWasHealthy = true;
 app.get('/health', async (req, res) => {
   try {
     await require('./utils/prisma').$queryRaw`SELECT 1`;
+    if (!databaseWasHealthy) {
+      databaseWasHealthy = true;
+      telegramAlerts.alertAsync({ severity: 'recovery', title: 'Base de datos recuperada', dedupeKey: 'database:recovered', cooldownMs: 60_000 });
+    }
     res.json({ status: 'ok', db: 'connected' });
   } catch (err) {
+    databaseWasHealthy = false;
+    telegramAlerts.alertAsync({ severity: 'critical', title: 'Base de datos no disponible', details: [{ label: 'Error', value: err?.message }], dedupeKey: 'database:unreachable' });
     res.status(503).json({ status: 'degraded', db: 'unreachable' });
   }
 });
@@ -157,10 +165,12 @@ if (require.main === module) {
 
   process.on('unhandledRejection', (reason) => {
     console.error('[FATAL] unhandledRejection — el proceso seguirá pero esto debe corregirse:', reason);
+    telegramAlerts.alertAsync({ severity: 'critical', title: 'Error no controlado en el backend', details: [{ label: 'Error', value: reason?.message || reason }], dedupeKey: `runtime:rejection:${reason?.name || 'unknown'}` });
   });
   process.on('uncaughtException', (err) => {
     console.error('[FATAL] uncaughtException — cerrando proceso:', err);
-    process.exit(1);
+    telegramAlerts.sendAlert({ severity: 'critical', title: 'El backend se cerrará por un error crítico', details: [{ label: 'Error', value: err?.message }], dedupeKey: 'runtime:uncaught', cooldownMs: 0 })
+      .finally(() => process.exit(1));
   });
 
   const prisma = require('./utils/prisma');
@@ -180,7 +190,52 @@ if (require.main === module) {
   }
 
   const port = process.env.PORT || 3001;
-  const server = app.listen(port, () => console.log(`Alma Spa backend escuchando en :${port}`));
+  const server = app.listen(port, async () => {
+    console.log(`Alma Spa backend escuchando en :${port}`);
+    let dbStatus = 'conectada';
+    try { await prisma.$queryRaw`SELECT 1`; } catch (_) { dbStatus = 'sin conexión'; databaseWasHealthy = false; }
+    telegramAlerts.alertAsync({
+      severity: dbStatus === 'conectada' ? 'info' : 'critical',
+      title: dbStatus === 'conectada' ? 'Sistema iniciado correctamente' : 'Sistema iniciado con problemas',
+      details: [
+        { label: 'Base de datos', value: dbStatus },
+        { label: 'WhatsApp', value: process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? 'configurado' : 'incompleto' },
+        { label: 'IA', value: process.env.ANTHROPIC_API_KEY ? 'configurada' : 'sin configurar' },
+        { label: 'Versión', value: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7) },
+      ],
+      dedupeKey: `startup:${process.env.RAILWAY_DEPLOYMENT_ID || BOOT_TIME}`,
+      cooldownMs: 0,
+    });
+
+    const checkBilling = async () => {
+      try {
+        const now = new Date();
+        const tenants = await prisma.tenant.findMany({
+          where: { active: true, billingDueAt: { lt: now }, billingStatus: { not: 'suspended' } },
+          select: { id: true, name: true, billingStatus: true, billingDueAt: true, billingGraceUntil: true },
+        });
+        for (const tenant of tenants) {
+          telegramAlerts.alertAsync({
+            severity: 'warning',
+            title: 'Mensualidad vencida',
+            details: [
+              { label: 'Negocio', value: tenant.name },
+              { label: 'Venció', value: tenant.billingDueAt?.toISOString() },
+              { label: 'Gracia hasta', value: tenant.billingGraceUntil?.toISOString() || 'sin período de gracia' },
+              { label: 'Estado', value: tenant.billingStatus },
+            ],
+            dedupeKey: `billing:overdue:${tenant.id}:${tenant.billingDueAt?.toISOString()}`,
+            cooldownMs: 24 * 60 * 60_000,
+          });
+        }
+      } catch (err) {
+        telegramAlerts.alertAsync({ severity: 'warning', title: 'No se pudo revisar mensualidades', details: [{ label: 'Error', value: err?.message }], dedupeKey: 'billing:check-failed' });
+      }
+    };
+    checkBilling();
+    const billingTimer = setInterval(checkBilling, 6 * 60 * 60_000);
+    billingTimer.unref();
+  });
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }

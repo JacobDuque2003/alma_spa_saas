@@ -175,6 +175,7 @@ model Room {
   specialty String
   sortOrder Int        @default(0)
   capacity  Int        @default(1)
+  requiresStaff Boolean @default(true)
   colorHex  String     @default("#8C6E50")
   opensAt   String     @default("09:00")
   closesAt  String     @default("20:00")
@@ -295,7 +296,7 @@ model Appointment {
   modality          AppointmentModality @default(spa)
   roomId            String?
   homeAddress       String?
-  staffId           String
+  staffId           String?
   startsAt          DateTime
   endsAt            DateTime
   status            AppointmentStatus   @default(pendiente)
@@ -314,7 +315,7 @@ model Appointment {
   client  Client  @relation(fields: [clientId], references: [id])
   service Service @relation(fields: [serviceId], references: [id])
   room    Room?   @relation(fields: [roomId], references: [id])
-  staff   User    @relation(fields: [staffId], references: [id])
+  staff   User?   @relation(fields: [staffId], references: [id])
   treatmentHistory TreatmentHistory?
 
   @@index([tenantId])
