@@ -2853,16 +2853,22 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
               </select>
             </div>
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
-                <label style={{ fontSize: 12, color: "#A89A87" }}>Terapeuta</label>
-                <button type="button" onClick={() => { setEditWithoutStaff((current) => !current); setEditStaffId(""); }} style={{ border: `1px solid ${editWithoutStaff ? "#8C6E50" : "#D9CDBE"}`, background: editWithoutStaff ? "#8C6E50" : "#FDFCFA", color: editWithoutStaff ? "#fff" : "#8C6E50", borderRadius: 999, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                  Sin terapeuta
-                </button>
-              </div>
+              <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Terapeuta</label>
               <select disabled={editWithoutStaff} value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: editWithoutStaff ? "not-allowed" : "pointer", opacity: editWithoutStaff ? 0.65 : 1 }}>
                 <option value="">{editWithoutStaff ? "Reserva sin terapeuta" : "Seleccionar terapeuta"}</option>
                 {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+              <button
+                type="button"
+                aria-pressed={editWithoutStaff}
+                onClick={() => { setEditWithoutStaff((current) => !current); setEditStaffId(""); }}
+                style={{ width: "100%", marginTop: 7, border: `1px solid ${editWithoutStaff ? "rgba(140,110,80,0.48)" : "rgba(168,154,135,0.3)"}`, background: editWithoutStaff ? "rgba(140,110,80,0.1)" : "transparent", color: editWithoutStaff ? "#6B5540" : "#8C6E50", borderRadius: 8, padding: "7px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+              >
+                <span>Reservar sin terapeuta</span>
+                <span aria-hidden="true" style={{ width: 28, height: 16, padding: 2, borderRadius: 999, background: editWithoutStaff ? "#8C6E50" : "#D9CDBE", display: "flex", justifyContent: editWithoutStaff ? "flex-end" : "flex-start", transition: "background 160ms ease" }}>
+                  <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(80,60,40,0.2)" }} />
+                </span>
+              </button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setEditing(false)} style={{ ...pillBtn("transparent", "#8C6E50", "1px solid #8C6E50"), flex: 1 }}>Cancelar</button>
@@ -3620,13 +3626,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               )}
             </div>
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                <span style={{ ...labelStyle, margin: 0 }}>Terapeuta</span>
-                <button type="button" onClick={() => { setWithoutStaff((current) => !current); setStaffId(""); }} disabled={!time} style={{ border: `1px solid ${withoutStaff ? "#8C6E50" : "#D9CDBE"}`, background: withoutStaff ? "#8C6E50" : "#FDFCFA", color: withoutStaff ? "#fff" : "#8C6E50", borderRadius: 999, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: time ? "pointer" : "not-allowed", opacity: time ? 1 : 0.55 }}>
-                  Sin terapeuta
-                </button>
-              </div>
               <PremiumSelect
+                label="Terapeuta"
                 value={staffId}
                 options={staffOptions}
                 placeholder={withoutStaff ? "Reserva sin terapeuta" : "Seleccionar terapeuta"}
@@ -3634,6 +3635,18 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
                 disabled={!time || withoutStaff}
                 onChange={setStaffId}
               />
+              <button
+                type="button"
+                aria-pressed={withoutStaff}
+                onClick={() => { setWithoutStaff((current) => !current); setStaffId(""); }}
+                disabled={!time}
+                style={{ width: "100%", marginTop: 7, border: `1px solid ${withoutStaff ? "rgba(140,110,80,0.48)" : "rgba(168,154,135,0.3)"}`, background: withoutStaff ? "rgba(140,110,80,0.1)" : "transparent", color: withoutStaff ? "#6B5540" : "#8C6E50", borderRadius: 8, padding: "7px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, fontWeight: 700, cursor: time ? "pointer" : "not-allowed", opacity: time ? 1 : 0.55 }}
+              >
+                <span>Reservar sin terapeuta</span>
+                <span aria-hidden="true" style={{ width: 28, height: 16, padding: 2, borderRadius: 999, background: withoutStaff ? "#8C6E50" : "#D9CDBE", display: "flex", justifyContent: withoutStaff ? "flex-end" : "flex-start", transition: "background 160ms ease" }}>
+                  <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(80,60,40,0.2)" }} />
+                </span>
+              </button>
             </div>
           </div>
 
