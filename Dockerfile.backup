@@ -55,7 +55,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
-# Only the backup module. Nothing else from src/ is required.
+# Keep the image small, but include the shared Telegram notifier used by the
+# CLI entry point to report successful and failed backups.
 COPY scripts/backup ./scripts/backup
+COPY src/services/telegramAlertService.js ./src/services/telegramAlertService.js
 
 CMD ["node", "scripts/backup/run.js"]
