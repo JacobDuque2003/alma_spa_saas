@@ -332,13 +332,13 @@ test('createManualAppointment autoasigna un gabinete compatible libre si no se e
   assert.equal(result.status, 'confirmado');
 });
 
-test('createManualAppointment permite una cabina equipo sin terapeuta y no bloquea personal', async () => {
+test('createManualAppointment permite marcar una reserva sin terapeuta y no bloquea personal', async () => {
   let staffLookupCalled = false;
   mockPrisma({
     client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
     service: { findFirst: async () => ({ id: 'srv-pies', category: 'pies', durationMins: 30, priceUsd: 20 }) },
     user: { findFirst: async () => { staffLookupCalled = true; return null; } },
-    room: { findMany: async () => [{ id: 'room-pies', capacity: 1, requiresStaff: false }] },
+    room: { findMany: async () => [{ id: 'room-pies', capacity: 1, requiresStaff: true }] },
     appointment: {
       findMany: async ({ where }) => {
         assert.equal(where.OR.some((condition) => condition.staffId), false);
@@ -350,10 +350,31 @@ test('createManualAppointment permite una cabina equipo sin terapeuta y no bloqu
 
   const result = await appointmentService.createManualAppointment(
     { role: 'dueno', tenantId: 't1' },
-    { clientId: 'c1', serviceId: 'srv-pies', roomId: 'room-pies', startsAt: '2099-08-01T14:00:00.000Z' }
+    { clientId: 'c1', serviceId: 'srv-pies', roomId: 'room-pies', startsAt: '2099-08-01T14:00:00.000Z', withoutStaff: true }
   );
 
   assert.equal(staffLookupCalled, false);
+  assert.equal(result.staffId, null);
+  assert.equal(result.roomId, 'room-pies');
+});
+
+test('createManualAppointment autoasigna cabina cuando la reserva se marca sin terapeuta', async () => {
+  mockPrisma({
+    client: { findFirst: async () => ({ id: 'c1', tenantId: 't1' }) },
+    service: { findFirst: async () => ({ id: 'srv-pies', category: 'pies', durationMins: 30, priceUsd: 20 }) },
+    user: { findFirst: async () => { throw new Error('no debe buscar terapeuta'); } },
+    room: { findMany: async () => [{ id: 'room-pies', capacity: 1, requiresStaff: true }] },
+    appointment: {
+      findMany: async () => [],
+      create: async (args) => ({ id: 'appt-pies-auto', ...args.data }),
+    },
+  });
+
+  const result = await appointmentService.createManualAppointment(
+    { role: 'dueno', tenantId: 't1' },
+    { clientId: 'c1', serviceId: 'srv-pies', startsAt: '2099-08-01T14:00:00.000Z', withoutStaff: true }
+  );
+
   assert.equal(result.staffId, null);
   assert.equal(result.roomId, 'room-pies');
 });
@@ -726,6 +747,26 @@ test('getAvailability devuelve lista vacía si no hay ningún staff habilitado',
 
   const slots = await appointmentService.getAvailability({ tenantId: 't1', tenantConfig: {}, serviceId: 'srv1', date: '2026-08-01', modality: 'spa' });
   assert.deepEqual(slots, []);
+});
+
+test('getAvailability ofrece horarios sin personal cuando la reserva se marca sin terapeuta', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', category: 'pies', durationMins: 30, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', specialty: 'pies', capacity: 1, requiresStaff: true }] },
+    user: { findMany: async () => [] },
+    appointment: { findMany: async () => [] },
+  });
+
+  const slots = await appointmentService.getAvailability({
+    tenantId: 't1',
+    tenantConfig: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: null } },
+    serviceId: 'srv1',
+    date: '2099-08-01',
+    modality: 'spa',
+    withoutStaff: true,
+  });
+
+  assert.ok(slots.length > 0);
 });
 
 test('getRescheduleAvailability conserva cabina y terapeuta, excluye la cita actual y respeta el bloque completo', async () => {

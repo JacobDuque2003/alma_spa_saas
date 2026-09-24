@@ -116,6 +116,7 @@ function buildClientListWhere(actor, query = {}) {
         { whatsapp: { contains: q } },
         { email: { contains: q, mode: 'insensitive' } },
         { cedula: { contains: q } },
+        { address: { contains: q, mode: 'insensitive' } },
       ];
       // Búsqueda de teléfono tolerante al formato local: si el input es
       // numérico (con o sin +), buscamos también por los últimos dígitos.
@@ -147,6 +148,7 @@ function buildClientListWhereSql(actor, query = {}) {
       Prisma.sql`"whatsapp" LIKE ${contains}`,
       Prisma.sql`"email" ILIKE ${contains}`,
       Prisma.sql`"cedula" LIKE ${contains}`,
+      Prisma.sql`"address" ILIKE ${contains}`,
     ];
     if (phoneDigits.length >= 7) {
       searchClauses.push(Prisma.sql`"whatsapp" LIKE ${`%${phoneDigits}`}`);

@@ -18,7 +18,7 @@ const CABINS = [
     },
   },
   { sortOrder: 8, name: 'Cabina 8 - YOGA', specialty: 'yoga', colorHex: '#C0CA33' },
-  { sortOrder: 9, name: 'Cabina 9 - PIES', specialty: 'pies', colorHex: '#AB47BC', requiresStaff: false },
+  { sortOrder: 9, name: 'Cabina 9 - PIES', specialty: 'pies', colorHex: '#AB47BC', requiresStaff: true },
 ];
 
 // Paleta Google Calendar tomada de la referencia de Alma Spa.

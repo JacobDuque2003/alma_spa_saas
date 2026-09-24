@@ -1346,7 +1346,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
                 </span>
               </div>
               <div style={{ fontSize: 13, color: "#8C6E50", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {appt.staff?.name || "Terapeuta por asignar"}
+                {appt.staff?.name || "Sin terapeuta"}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, color: "#A89A87", lineHeight: 1.25 }}>
                 <span>{time} · bloque {dur} min</span>
@@ -1610,7 +1610,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                       {appt.client?.fullName || "Cliente"}
                     </div>
                     <div style={{ opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {appt.staff?.name || "Terapeuta por asignar"}
+                      {appt.staff?.name || "Sin terapeuta"}
                     </div>
                   </button>
                 );
@@ -1826,7 +1826,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
     return {
       id: appt.id,
       clientName: appt.client?.fullName || "Cliente",
-      staffName: appt.staff?.name || "Terapeuta por asignar",
+      staffName: appt.staff?.name || "Sin terapeuta",
       timeLabel: target.timeLabel,
       color: appointmentColor(appt, roomColorMap),
       target: {
@@ -2017,7 +2017,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                       <span style={{ color, flexShrink: 0, fontWeight: 800 }}>{formatTime(draft.startsAt)}</span>
                     </div>
                     <div style={{ marginTop: 3, color: "#8C6E50", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {draft.staffName || "Terapeuta por asignar"}
+                      {draft.staffName || "Sin terapeuta"}
                     </div>
                     <div style={{ marginTop: 3, color: "#A06F32", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
                       {draft.serviceName || "Selecciona servicio"}
@@ -2108,7 +2108,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         {!isGroup && <span style={{ opacity: noShow ? 0.9 : 0.72, flexShrink: 0 }}>{formatTime(appt.startsAt)}</span>}
                       </div>
                       <div style={{ marginTop: compact ? 1 : 3, opacity: noShow ? 0.85 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {appt.staff?.name || "Terapeuta por asignar"}
+                        {appt.staff?.name || "Sin terapeuta"}
                       </div>
                       {!isGroup && appt.indications && (
                         <div style={{ marginTop: 3, opacity: noShow ? 0.75 : 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
@@ -2335,7 +2335,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                 }}
               >
                 <span style={{ fontWeight: 600 }}>{appt.client?.fullName || "Cliente"}</span>
-                <span style={{ opacity: 0.85 }}>{appt.staff?.name || "Terapeuta por asignar"}</span>
+                <span style={{ opacity: 0.85 }}>{appt.staff?.name || "Sin terapeuta"}</span>
                 <span style={{ opacity: 0.7, marginLeft: "auto" }}>{formatTime(appt.startsAt)}</span>
               </button>
             );
@@ -2438,6 +2438,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const [editEndSlot, setEditEndSlot] = useState("");
   const [editRoomId, setEditRoomId] = useState("");
   const [editStaffId, setEditStaffId] = useState("");
+  const [editWithoutStaff, setEditWithoutStaff] = useState(false);
   const [editServiceId, setEditServiceId] = useState("");
   const [services, setServices] = useState([]);
   const [editIndications, setEditIndications] = useState("");
@@ -2445,8 +2446,6 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
   const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
   const appointmentDefaultDuration = appt ? appointmentBlockMins(appt) : 45;
   const editingService = services.find((service) => service.id === editServiceId);
-  const editingRoom = rooms.find((room) => room.id === editRoomId);
-  const editingRequiresStaff = editingRoom?.requiresStaff !== false;
   const editingDefaultDuration = editingService ? totalServiceBlockMins(editingService) : appointmentDefaultDuration;
   const appointmentStartIso = appt?.startsAt ? new Date(appt.startsAt).toISOString() : "";
   const appointmentLocalDate = appt?.startsAt ? toLocalDate(new Date(appt.startsAt)) : "";
@@ -2458,6 +2457,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     setEditEndSlot(new Date(appt.endsAt).toISOString());
     setEditRoomId(appt.room?.id || "");
     setEditStaffId(appt.staff?.id || "");
+    setEditWithoutStaff(!appt.staff?.id);
     setEditServiceId(appt.service?.id || appt.serviceId || "");
     setEditIndications(appt.indications || "");
   }, [appt]);
@@ -2477,7 +2477,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     let cancelled = false;
     setRescheduleSlotsLoading(true);
     authFetch(`/appointments/${appt.id}/reschedule-availability`, {
-      query: { date: editDate, roomId: editRoomId || undefined, staffId: editStaffId || undefined, serviceId: editServiceId || undefined },
+      query: { date: editDate, roomId: editRoomId || undefined, staffId: editWithoutStaff ? undefined : (editStaffId || undefined), serviceId: editServiceId || undefined, withoutStaff: editWithoutStaff },
     })
       .then((data) => {
         if (cancelled) return;
@@ -2506,7 +2506,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     return () => {
       cancelled = true;
     };
-  }, [appt?.id, appointmentLocalDate, appointmentStartIso, editDate, editRoomId, editServiceId, editStaffId, editing, editingDefaultDuration, toast]);
+  }, [appt?.id, appointmentLocalDate, appointmentStartIso, editDate, editRoomId, editServiceId, editStaffId, editWithoutStaff, editing, editingDefaultDuration, toast]);
 
   if (!appt) return null;
   const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
@@ -2562,6 +2562,10 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
         toast.error("Selecciona una hora de fin");
         return;
       }
+      if (!editWithoutStaff && !editStaffId) {
+        toast.error("Selecciona una terapeuta o marca Sin terapeuta");
+        return;
+      }
       const startDate = new Date(editSlot);
       const endDate = new Date(editEndSlot);
       const customDuration = Math.round((endDate - startDate) / 60000);
@@ -2572,8 +2576,9 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
       if (new Date(editSlot).getTime() !== new Date(appt.startsAt).getTime()) body.startsAt = editSlot;
       if (new Date(editEndSlot).getTime() !== new Date(appt.endsAt).getTime()) body.endsAt = editEndSlot;
       if (editRoomId && editRoomId !== appt.room?.id) body.roomId = editRoomId;
-      if (!editingRequiresStaff && appt.staff?.id) body.staffId = null;
-      else if (editingRequiresStaff && editStaffId !== (appt.staff?.id || "")) body.staffId = editStaffId || null;
+      body.withoutStaff = editWithoutStaff;
+      if (editWithoutStaff) body.staffId = null;
+      else if (editStaffId !== (appt.staff?.id || "")) body.staffId = editStaffId;
       if (editServiceId && editServiceId !== (appt.service?.id || appt.serviceId)) body.serviceId = editServiceId;
       if (canScheduleOutside) {
         body.allowOutsideBusinessHours = true;
@@ -2669,7 +2674,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
               )}
               <div style={{ display: "flex", justifyContent: "space-between", color: "#6B5540" }}>
                 <span style={{ color: "#A89A87" }}>Terapeuta</span>
-                <span>{appt.staff?.name || "Sin terapeuta · equipo"}</span>
+                <span>{appt.staff?.name || "Sin terapeuta"}</span>
               </div>
               {appt.priceUsd != null && (
                 <div style={{ textAlign: "right", fontWeight: 600, fontSize: 16, color: "#6B5540", marginTop: 4 }}>
@@ -2842,15 +2847,20 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
             )}
             <div>
               <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Cabina</label>
-              <select value={editRoomId} onChange={(e) => { const next = e.target.value; setEditRoomId(next); if (rooms.find((room) => room.id === next)?.requiresStaff === false) setEditStaffId(""); }} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+              <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 <option value="">Sin cambio</option>
                 {(services.find((service) => service.id === editServiceId)?.rooms || rooms).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 12, color: "#A89A87", marginBottom: 5 }}>Terapeuta</label>
-              <select disabled={!editingRequiresStaff} value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: editingRequiresStaff ? "pointer" : "not-allowed", opacity: editingRequiresStaff ? 1 : 0.65 }}>
-                <option value="">{editingRequiresStaff ? "Seleccionar terapeuta" : "Sin terapeuta · equipo"}</option>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
+                <label style={{ fontSize: 12, color: "#A89A87" }}>Terapeuta</label>
+                <button type="button" onClick={() => { setEditWithoutStaff((current) => !current); setEditStaffId(""); }} style={{ border: `1px solid ${editWithoutStaff ? "#8C6E50" : "#D9CDBE"}`, background: editWithoutStaff ? "#8C6E50" : "#FDFCFA", color: editWithoutStaff ? "#fff" : "#8C6E50", borderRadius: 999, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                  Sin terapeuta
+                </button>
+              </div>
+              <select disabled={editWithoutStaff} value={editStaffId} onChange={(e) => setEditStaffId(e.target.value)} style={{ ...inputStyle, appearance: "none", cursor: editWithoutStaff ? "not-allowed" : "pointer", opacity: editWithoutStaff ? 0.65 : 1 }}>
+                <option value="">{editWithoutStaff ? "Reserva sin terapeuta" : "Seleccionar terapeuta"}</option>
                 {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -3041,6 +3051,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [dayAppointments, setDayAppointments] = useState([]);
   const [roomId, setRoomId] = useState(quickCreatePrefill?.roomId || "");
   const [staffId, setStaffId] = useState(preSelectedStaffId || "");
+  const [withoutStaff, setWithoutStaff] = useState(false);
   const [indications, setIndications] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [validation, setValidation] = useState(null);
@@ -3057,11 +3068,6 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     () => staff.find((person) => person.id === staffId) || null,
     [staff, staffId]
   );
-  const selectedRoom = useMemo(
-    () => rooms.find((room) => room.id === roomId) || null,
-    [roomId, rooms]
-  );
-  const selectedRoomRequiresStaff = selectedRoom?.requiresStaff !== false;
   const quickRoom = useMemo(
     () => quickRoomId ? rooms.find((room) => room.id === quickRoomId) || null : null,
     [quickRoomId, rooms]
@@ -3208,7 +3214,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     ];
   }, [busyRoomIds, compatibleRooms, dayAppointments, freeCompatibleRooms.length, selectedEnd, selectedService, selectedStart]);
   const staffOptions = useMemo(
-    () => selectedRoomRequiresStaff ? staff.map((person) => {
+    () => staff.map((person) => {
       const busy = busyStaffIds.has(person.id);
       return {
         value: person.id,
@@ -3216,8 +3222,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         caption: busy ? "Ocupada en este horario" : "Libre en este horario",
         disabled: busy,
       };
-    }) : [{ value: "", label: "Sin terapeuta", caption: "Esta cabina funciona como equipo autónomo" }],
-    [busyStaffIds, selectedRoomRequiresStaff, staff]
+    }),
+    [busyStaffIds, staff]
   );
 
   useEffect(() => {
@@ -3247,7 +3253,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       return;
     }
     setSlotsLoading(true);
-    authFetch(`/appointments/availability`, { query: { serviceId, date, modality: "presencial" } })
+    authFetch(`/appointments/availability`, { query: { serviceId, date, modality: "presencial", withoutStaff } })
       .then((data) => {
         const raw = Array.isArray(data?.slots) ? data.slots : Array.isArray(data) ? data : [];
         const slots = raw.map((s) => (typeof s === "string" ? s : new Date(s).toISOString()));
@@ -3261,7 +3267,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         toast.error(err?.message || "No se pudieron cargar los horarios disponibles");
       })
       .finally(() => setSlotsLoading(false));
-  }, [serviceId, date, quickDate, quickStartsAt, toast]);
+  }, [serviceId, date, quickDate, quickStartsAt, withoutStaff, toast]);
 
   useEffect(() => {
     if (!date) {
@@ -3284,12 +3290,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
 
   useEffect(() => {
     if (roomId && busyRoomIds.has(roomId)) setRoomId("");
-    if (staffId && busyStaffIds.has(staffId)) setStaffId("");
-  }, [busyRoomIds, busyStaffIds, roomId, staffId]);
-
-  useEffect(() => {
-    if (selectedRoom?.requiresStaff === false) setStaffId("");
-  }, [selectedRoom]);
+    if (!withoutStaff && staffId && busyStaffIds.has(staffId)) setStaffId("");
+  }, [busyRoomIds, busyStaffIds, roomId, staffId, withoutStaff]);
 
   useEffect(() => {
     if (!quickCreatePrefill || !onDraftChange) return;
@@ -3315,7 +3317,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       anchorX: quickCreatePrefill.anchorX,
       anchorY: quickCreatePrefill.anchorY,
       clientName: selectedClient?.fullName || clientSearch.trim(),
-      staffName: selectedStaff?.name || "",
+      staffName: withoutStaff ? "Sin terapeuta" : (selectedStaff?.name || ""),
       serviceName: selectedService?.name || "",
       colorHex: selectedService?.colorHex || selectedRoom?.colorHex || quickCreatePrefill.roomColor || "#8C6E50",
     });
@@ -3335,6 +3337,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
     selectedService,
     selectedStaff,
     time,
+    withoutStaff,
   ]);
 
   useEffect(() => {
@@ -3381,11 +3384,11 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
       if (!clientId) { setValidation("Selecciona o crea un cliente"); setSubmitting(false); return; }
       if (!serviceId) { setValidation("Selecciona un servicio"); setSubmitting(false); return; }
       if (!time) { setValidation("Selecciona un horario disponible"); setSubmitting(false); return; }
-      if (selectedRoomRequiresStaff && !staffId) { setValidation("Selecciona un terapeuta"); setSubmitting(false); return; }
+      if (!withoutStaff && !staffId) { setValidation("Selecciona una terapeuta o marca Sin terapeuta"); setSubmitting(false); return; }
       if (compatibleRooms.length === 0) { setValidation("Este servicio no tiene cabina compatible activa"); setSubmitting(false); return; }
       const selectedStaff = staff.find((person) => person.id === staffId);
       const selectedRoom = compatibleRooms.find((room) => room.id === roomId);
-      if (selectedRoomRequiresStaff && busyStaffIds.has(staffId)) {
+      if (!withoutStaff && busyStaffIds.has(staffId)) {
         toast.error(`${selectedStaff?.name || "La terapeuta seleccionada"} ya está ocupada en ese horario`);
         setSubmitting(false);
         return;
@@ -3412,7 +3415,8 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
         body: {
           clientId,
           serviceId,
-          staffId: selectedRoomRequiresStaff ? staffId : null,
+          staffId: withoutStaff ? null : staffId,
+          withoutStaff,
           roomId: roomId || undefined,
           startsAt: time,
           modality: "presencial",
@@ -3616,13 +3620,18 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
               )}
             </div>
             <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                <span style={{ ...labelStyle, margin: 0 }}>Terapeuta</span>
+                <button type="button" onClick={() => { setWithoutStaff((current) => !current); setStaffId(""); }} disabled={!time} style={{ border: `1px solid ${withoutStaff ? "#8C6E50" : "#D9CDBE"}`, background: withoutStaff ? "#8C6E50" : "#FDFCFA", color: withoutStaff ? "#fff" : "#8C6E50", borderRadius: 999, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: time ? "pointer" : "not-allowed", opacity: time ? 1 : 0.55 }}>
+                  Sin terapeuta
+                </button>
+              </div>
               <PremiumSelect
-                label="Terapeuta"
                 value={staffId}
                 options={staffOptions}
-                placeholder={selectedRoomRequiresStaff ? "Seleccionar terapeuta" : "Sin terapeuta · equipo"}
-                emptyLabel={selectedRoomRequiresStaff ? "Sin terapeutas activas" : "Sin terapeuta · equipo"}
-                disabled={!time || !selectedRoomRequiresStaff}
+                placeholder={withoutStaff ? "Reserva sin terapeuta" : "Seleccionar terapeuta"}
+                emptyLabel={withoutStaff ? "Reserva sin terapeuta" : "Sin terapeutas activas"}
+                disabled={!time || withoutStaff}
                 onChange={setStaffId}
               />
             </div>

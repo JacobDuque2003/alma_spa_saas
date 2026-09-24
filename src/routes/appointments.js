@@ -39,6 +39,7 @@ router.get('/availability', async (req, res, next) => {
       serviceId: req.query.serviceId,
       date: req.query.date,
       modality: req.query.modality || 'presencial',
+      withoutStaff: req.query.withoutStaff === 'true',
       includeInternalHours: canSeeInternalHours(req.user),
       includePastSlots: true,
     });
@@ -68,6 +69,7 @@ router.get('/:id/reschedule-availability', async (req, res, next) => {
       date: req.query.date,
       roomId: req.query.roomId || undefined,
       staffId: req.query.staffId || undefined,
+      withoutStaff: req.query.withoutStaff === 'true',
       serviceId: req.query.serviceId || undefined,
       includeInternalHours: canSeeInternalHours(req.user),
     });

@@ -48,6 +48,24 @@ test('listClients: búsqueda por nombre no genera cláusula endsWith', async () 
   assert.equal(endsWith, undefined);
 });
 
+test('listClients: el buscador incluye ficha, nombre, teléfono, correo, cédula y dirección', async () => {
+  const originalRaw = prisma.$queryRaw;
+  let whereSeen = null;
+  prisma.$queryRaw = undefined;
+  prisma.client = { findMany: async (args) => { whereSeen = args.where; return []; } };
+  try {
+    await clientService.listClients(actor, { q: 'centro', sortKey: 'fullName' });
+    assert.ok(whereSeen.OR.some((clause) => clause.recordNumber));
+    assert.ok(whereSeen.OR.some((clause) => clause.fullName));
+    assert.ok(whereSeen.OR.some((clause) => clause.whatsapp));
+    assert.ok(whereSeen.OR.some((clause) => clause.email));
+    assert.ok(whereSeen.OR.some((clause) => clause.cedula));
+    assert.ok(whereSeen.OR.some((clause) => clause.address));
+  } finally {
+    prisma.$queryRaw = originalRaw;
+  }
+});
+
 test('createClient: colisión de whatsapp devuelve mensaje con nombre existente', async () => {
   prisma.client = {
     create: async () => {
