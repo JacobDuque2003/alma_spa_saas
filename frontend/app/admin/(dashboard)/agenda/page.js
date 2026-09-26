@@ -17,8 +17,8 @@ const STATUS_COLORS = {
   pendiente: { bg: "rgba(168,154,135,0.2)", border: "#A89A87", text: "#A89A87" },
   pendiente_bot: { bg: "rgba(201,168,118,0.15)", border: "#C9A876", text: "#8C6E50" },
   confirmado: { bg: "rgba(201,168,118,0.2)", border: "transparent", text: "#8C6E50" },
-  cancelado: { bg: "rgba(194,84,80,0.1)", border: "#C25450", text: "#C25450" },
-  no_show: { bg: "rgba(194,84,80,0.10)", border: "#C25450", text: "#B85A56" },
+  cancelado: { bg: "rgba(194,84,80,0.12)", border: "#C25450", text: "#C25450" },
+  no_show: { bg: "rgba(118,112,105,0.12)", border: "#817A72", text: "#6F6962" },
 };
 const STATUS_LABELS = {
   pendiente: "Sin confirmar",
@@ -28,6 +28,8 @@ const STATUS_LABELS = {
   no_show: "No asistió",
 };
 function appointmentColor(appt, roomColorMap) {
+  if (appt.status === "cancelado") return "#C25450";
+  if (appt.status === "no_show") return "#817A72";
   return appt.service?.colorHex || (appt.room ? roomColorMap[appt.room.id] : null) || "#8C6E50";
 }
 
@@ -1297,7 +1299,9 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
       {active.map((appt) => {
-        const color = appointmentColor(appt, roomColorMap);
+        const color = appt.status === "cancelado"
+          ? "#C25450"
+          : appt.status === "no_show" ? "#817A72" : appointmentColor(appt, roomColorMap);
         const statusInfo = STATUS_COLORS[appt.status] || STATUS_COLORS.pendiente;
         const statusLabel = STATUS_LABELS[appt.status] || appt.status;
         const time = formatTime(appt.startsAt);
@@ -2236,7 +2240,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                     }}
                   >
                     {historyItems.map((appt) => {
-                      const noShow = appt.status === "no_show";
+                      const cancelled = appt.status === "cancelado";
                       return (
                         <button
                           key={appt.id}
@@ -2251,9 +2255,9 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                             minWidth: 0,
                             padding: "3px 7px",
                             borderRadius: 7,
-                            border: `1px solid ${noShow ? "rgba(194,84,80,0.72)" : "rgba(168,154,135,0.72)"}`,
-                            background: noShow ? "rgba(194,84,80,0.92)" : "rgba(247,245,240,0.96)",
-                            color: noShow ? "#FFF9F7" : "#9D5D58",
+                            border: `1px solid ${cancelled ? "rgba(194,84,80,0.78)" : "rgba(111,105,98,0.72)"}`,
+                            background: cancelled ? "rgba(194,84,80,0.92)" : "rgba(129,122,114,0.92)",
+                            color: "#FFF9F7",
                             boxShadow: "0 4px 10px rgba(64,51,39,0.12)",
                             display: "flex",
                             alignItems: "center",
@@ -2263,13 +2267,13 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                             textAlign: "left",
                             cursor: "pointer",
                             pointerEvents: "auto",
-                            textDecoration: appt.status === "cancelado" ? "line-through" : "none",
+                            textDecoration: "line-through",
                             overflow: "hidden",
                             transition: "transform 150ms ease, box-shadow 150ms ease",
                           }}
                         >
                           <strong style={{ flexShrink: 0, fontSize: 9, letterSpacing: 0, textTransform: "uppercase" }}>
-                            {noShow ? "No asistio" : "Cancelada"}
+                            {cancelled ? "Cancelada" : "No asistio"}
                           </strong>
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>
                             {appt.client?.fullName || "Cliente"}
@@ -2437,6 +2441,9 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
+                  textDecoration: isHistoricalAppointment(appt) ? "line-through" : "none",
+                  textDecorationThickness: 1.5,
+                  opacity: isHistoricalAppointment(appt) ? 0.78 : 1,
                 }}
               >
                 <span style={{ fontWeight: 600 }}>{appt.client?.fullName || "Cliente"}</span>
