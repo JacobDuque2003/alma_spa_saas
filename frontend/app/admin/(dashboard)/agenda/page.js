@@ -1279,8 +1279,12 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
 
 function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
   const active = appointments
-    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
-    .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
+    .sort((a, b) => {
+      const timeDifference = new Date(a.startsAt) - new Date(b.startsAt);
+      if (timeDifference !== 0) return timeDifference;
+      return Number(isHistoricalAppointment(a)) - Number(isHistoricalAppointment(b));
+    });
 
   if (active.length === 0) {
     return (
@@ -1298,6 +1302,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
         const statusLabel = STATUS_LABELS[appt.status] || appt.status;
         const time = formatTime(appt.startsAt);
         const dur = appointmentBlockMins(appt);
+        const historical = isHistoricalAppointment(appt);
         return (
           <button
             key={appt.id}
@@ -1312,7 +1317,8 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
               cursor: "pointer",
               padding: 0,
               textAlign: "left",
-              minHeight: 82,
+              minHeight: historical ? 58 : 82,
+              opacity: appt.status === "cancelado" ? 0.82 : 1,
               boxShadow: "0 12px 26px rgba(107,85,64,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
               textDecoration: ["no_show", "cancelado"].includes(appt.status) ? "line-through" : "none",
               textDecorationColor: "rgba(194,84,80,0.55)",
@@ -1326,7 +1332,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
                 background: color,
               }}
             />
-            <div style={{ flex: 1, minWidth: 0, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ flex: 1, minWidth: 0, padding: historical ? "9px 12px" : "13px 14px", display: "flex", flexDirection: "column", gap: historical ? 4 : 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                 <span style={{ fontSize: 15, lineHeight: 1.18, fontWeight: 800, color: "#6B5540", minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                   {appt.client?.fullName || "Cliente"}
@@ -1415,6 +1421,26 @@ function groupCabinScheduleEntries(items) {
     if (appointments.length > 1) return [{ type: "cabinGroup", key, appointments }];
     return [{ type: "appointment", key: appointments[0].id, appointment: appointments[0] }];
   });
+}
+
+function isHistoricalAppointment(appt) {
+  return appt?.status === "cancelado" || appt?.status === "no_show";
+}
+
+function groupHistoricalAppointments(items) {
+  const groups = new Map();
+  for (const appt of items) {
+    const key = [appointmentRoomId(appt), new Date(appt.startsAt).toISOString()].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(appt);
+  }
+  return Array.from(groups.entries()).map(([key, appointments]) => ({
+    key,
+    appointments: appointments.sort((a, b) => {
+      if (a.status !== b.status) return a.status === "no_show" ? -1 : 1;
+      return (a.client?.fullName || "").localeCompare(b.client?.fullName || "");
+    }),
+  }));
 }
 
 function lanePosition(lane, inset = 3) {
@@ -1506,7 +1532,6 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
         {days.map((d) => {
           const isToday = d === today;
           const dayAppointments = (appointments || []).filter((a) => {
-            if (a.status === "cancelado") return false;
             return toLocalDate(new Date(a.startsAt)) === d;
           });
           const laneMap = buildSlotLanes(dayAppointments);
@@ -1664,12 +1689,14 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   const [dragState, setDragState] = useState(null);
   const [resizeState, setResizeState] = useState(null);
   const resizeSessionRef = useRef(null);
-  const active = (appointments || [])
-    .filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date)
+  const dayAppointments = (appointments || [])
+    .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  const active = dayAppointments.filter((a) => !isHistoricalAppointment(a));
+  const historical = dayAppointments.filter(isHistoricalAppointment);
   const configuredRooms = (rooms || []).filter((room) => room.active !== false);
   const configuredIds = new Set(configuredRooms.map((room) => room.id));
-  const fallbackRooms = active
+  const fallbackRooms = dayAppointments
     .filter((appt) => appt.room && !configuredIds.has(appt.room.id))
     .map((appt) => appt.room);
   const columns = [...configuredRooms, ...fallbackRooms];
@@ -1946,6 +1973,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
         {visibleColumns.map((room) => {
           const roomEntries = groupCabinScheduleEntries(active.filter((appt) => appointmentRoomId(appt) === room.id));
+          const historicalGroups = groupHistoricalAppointments(historical.filter((appt) => appointmentRoomId(appt) === room.id));
           const draft = draftAppointment?.date === date && draftAppointment?.roomId === room.id ? draftAppointment : null;
           return (
             <div
@@ -2176,6 +2204,83 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                   </div>
                 );
               })}
+              {historicalGroups.map(({ key, appointments: historyItems }) => {
+                const first = historyItems[0];
+                const h = getEcuadorHour(first.startsAt);
+                const m = parseInt(getEcuadorMinutes(first.startsAt), 10) || 0;
+                const topOffset = hourTopOffset(HOURS, h, m, HOUR_HEIGHT);
+                if (topOffset == null) return null;
+
+                const simultaneousActive = active.filter((appt) => (
+                  appointmentRoomId(appt) === room.id
+                  && new Date(appt.startsAt).getTime() === new Date(first.startsAt).getTime()
+                ));
+                const activeHeight = simultaneousActive.reduce((max, appt) => (
+                  Math.max(max, Math.max((appointmentBlockMins(appt) / 60) * HOUR_HEIGHT - 8, MIN_APPOINTMENT_CARD_HEIGHT))
+                ), 0);
+                const compactTop = topOffset + (activeHeight ? Math.max(28, activeHeight - 14) : 4);
+                return (
+                  <div
+                    key={key}
+                    className="alma-agenda-history-stack"
+                    style={{
+                      position: "absolute",
+                      top: compactTop,
+                      left: 8,
+                      right: 2,
+                      zIndex: simultaneousActive.length ? 4 : 2,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 3,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    {historyItems.map((appt) => {
+                      const noShow = appt.status === "no_show";
+                      return (
+                        <button
+                          key={appt.id}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSelect(appt);
+                          }}
+                          title={`${STATUS_LABELS[appt.status]} · ${appt.client?.fullName || "Cliente"} · ${formatTime(appt.startsAt)}`}
+                          style={{
+                            height: 24,
+                            minWidth: 0,
+                            padding: "3px 7px",
+                            borderRadius: 7,
+                            border: `1px solid ${noShow ? "rgba(194,84,80,0.72)" : "rgba(168,154,135,0.72)"}`,
+                            background: noShow ? "rgba(194,84,80,0.92)" : "rgba(247,245,240,0.96)",
+                            color: noShow ? "#FFF9F7" : "#9D5D58",
+                            boxShadow: "0 4px 10px rgba(64,51,39,0.12)",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            fontSize: 10,
+                            lineHeight: 1,
+                            textAlign: "left",
+                            cursor: "pointer",
+                            pointerEvents: "auto",
+                            textDecoration: appt.status === "cancelado" ? "line-through" : "none",
+                            overflow: "hidden",
+                            transition: "transform 150ms ease, box-shadow 150ms ease",
+                          }}
+                        >
+                          <strong style={{ flexShrink: 0, fontSize: 9, letterSpacing: 0, textTransform: "uppercase" }}>
+                            {noShow ? "No asistio" : "Cancelada"}
+                          </strong>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>
+                            {appt.client?.fullName || "Cliente"}
+                          </span>
+                          <span style={{ marginLeft: "auto", flexShrink: 0, opacity: 0.82 }}>{formatTime(appt.startsAt)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           );
         })}
@@ -2218,7 +2323,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
 
 function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGroup }) {
   const HOUR_HEIGHT = 66;
-  const active = appointments.filter((a) => a.status !== "cancelado" && toLocalDate(new Date(a.startsAt)) === date);
+  const active = appointments.filter((a) => toLocalDate(new Date(a.startsAt)) === date);
   const laneMap = buildSlotLanes(active);
   const entries = visibleScheduleEntries(active);
 

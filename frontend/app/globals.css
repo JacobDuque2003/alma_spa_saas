@@ -783,3 +783,13 @@
     }
   }
 }
+.alma-agenda-history-stack:hover {
+  z-index: 12 !important;
+}
+
+.alma-agenda-history-stack > button:hover,
+.alma-agenda-history-stack > button:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(64, 51, 39, 0.2) !important;
+  outline: none;
+}
