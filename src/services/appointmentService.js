@@ -1057,6 +1057,41 @@ async function updateStatus(actor, id, status) {
   return appointment;
 }
 
+async function deleteAppointment(actor, id) {
+  const target = await prisma.appointment.findUnique({ where: { id } });
+  if (!target) return null;
+  assertTenantScope(actor, target.tenantId);
+
+  await prisma.appointment.delete({ where: { id } });
+  if (prisma.adminAuditLog?.create && actor?.id && actor?.email) {
+    try {
+      await prisma.adminAuditLog.create({
+        data: {
+          tenantId: target.tenantId,
+          actorId: actor.id,
+          actorEmail: actor.email,
+          entity: 'appointment',
+          entityId: target.id,
+          action: 'delete',
+          detail: {
+            clientId: target.clientId,
+            serviceId: target.serviceId,
+            roomId: target.roomId,
+            staffId: target.staffId,
+            startsAt: target.startsAt,
+            endsAt: target.endsAt,
+            status: target.status,
+          },
+        },
+      });
+    } catch (err) {
+      console.error('[appointment-audit] No se pudo registrar la eliminación', { appointmentId: target.id, error: err.message });
+    }
+  }
+  notifyAgenda(target.tenantId, 'appointment.deleted', target);
+  return target;
+}
+
 module.exports = {
   getAvailability,
   getAvailableStaffForSlot,
@@ -1072,4 +1107,5 @@ module.exports = {
   createManualAppointment,
   updateAppointment,
   updateStatus,
+  deleteAppointment,
 };

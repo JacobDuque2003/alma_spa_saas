@@ -1147,3 +1147,55 @@ test('updateAppointment permite mover internamente una cita a una hora pasada de
 
   assert.equal(updateData.startsAt.toISOString(), '2099-08-01T15:00:00.000Z');
 });
+
+test('deleteAppointment elimina dentro del tenant y conserva una auditoría con la referencia', async () => {
+  let deletedId = null;
+  let auditData = null;
+  mockPrisma({
+    appointment: {
+      findUnique: async () => ({
+        id: 'appt1', tenantId: 't1', clientId: 'c1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1',
+        startsAt: new Date('2099-08-01T14:00:00.000Z'), endsAt: new Date('2099-08-01T15:00:00.000Z'), status: 'pendiente',
+      }),
+      delete: async ({ where }) => {
+        deletedId = where.id;
+        return { id: where.id };
+      },
+    },
+    adminAuditLog: {
+      create: async ({ data }) => {
+        auditData = data;
+        return data;
+      },
+    },
+  });
+
+  const result = await appointmentService.deleteAppointment(
+    { id: 'owner1', email: 'owner@alma.test', role: 'dueno', tenantId: 't1' },
+    'appt1'
+  );
+
+  assert.equal(result.id, 'appt1');
+  assert.equal(deletedId, 'appt1');
+  assert.equal(auditData.action, 'delete');
+  assert.equal(auditData.detail.clientId, 'c1');
+});
+
+test('deleteAppointment impide eliminar una cita de otro tenant', async () => {
+  let deleted = false;
+  mockPrisma({
+    appointment: {
+      findUnique: async () => ({ id: 'appt2', tenantId: 't2' }),
+      delete: async () => { deleted = true; },
+    },
+  });
+
+  await assert.rejects(
+    () => appointmentService.deleteAppointment(
+      { id: 'owner1', email: 'owner@alma.test', role: 'dueno', tenantId: 't1' },
+      'appt2'
+    ),
+    (err) => err.status === 403
+  );
+  assert.equal(deleted, false);
+});

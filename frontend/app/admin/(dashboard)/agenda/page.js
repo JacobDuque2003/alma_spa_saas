@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/lib/auth-context";
-import { Loader2, Menu, X, Search } from "lucide-react";
+import { CalendarPlus, Loader2, Menu, Pencil, Search, Trash2, X } from "lucide-react";
 import { useIsMobile } from "@/lib/use-mobile";
 import { useAnimatedMount } from "@/lib/use-animated-mount";
 import { useGridTransition } from "@/lib/use-grid-transition";
@@ -416,6 +416,8 @@ export default function AgendaPage() {
   const [tenantConfig, setTenantConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [selectedInitialMode, setSelectedInitialMode] = useState(null);
+  const [appointmentMenu, setAppointmentMenu] = useState(null);
   const [slotGroup, setSlotGroup] = useState(null);
   const [showNewForm, setShowNewForm] = useState(!!preClientId);
   // Follow-up prefill: cuando el usuario aprieta "Agendar seguimiento" en el
@@ -443,6 +445,23 @@ export default function AgendaPage() {
   useEffect(() => {
     if (selected) setLastSelected(selected);
   }, [selected]);
+  useEffect(() => {
+    if (!appointmentMenu) return undefined;
+    const closeMenu = () => setAppointmentMenu(null);
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") closeMenu();
+    };
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [appointmentMenu]);
   useEffect(() => {
     if (slotGroup) setLastSlotGroup(slotGroup);
   }, [slotGroup]);
@@ -585,6 +604,48 @@ export default function AgendaPage() {
     setQuickCreatePrefill(null);
     setQuickDraft(null);
     setShowNewForm(true);
+  }
+
+  function selectAppointment(appt, initialMode = null) {
+    setAppointmentMenu(null);
+    setSelectedInitialMode(initialMode);
+    setSelected(appt);
+  }
+
+  function openAppointmentMenu(event, appt) {
+    if (!canCreateMoveAppointments || !appt) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 220;
+    const menuHeight = 144;
+    setAppointmentMenu({
+      appt,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+    });
+  }
+
+  function startFollowUp(appt) {
+    setAppointmentMenu(null);
+    setSelected(null);
+    setQuickCreatePrefill(null);
+    setQuickDraft(null);
+    setFollowUpPrefill({ client: appt.client, service: appt.service, staff: appt.staff });
+    setShowNewForm(true);
+  }
+
+  async function deleteAppointment(appt) {
+    setAppointmentMenu(null);
+    const clientName = appt?.client?.fullName || "esta clienta";
+    if (!window.confirm(`¿Eliminar definitivamente la cita de ${clientName}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await authFetch(`/appointments/${appt.id}`, { method: "DELETE" });
+      setAppointments((prev) => prev.filter((item) => item.id !== appt.id));
+      setSelected((current) => current?.id === appt.id ? null : current);
+      toast.success("Cita eliminada");
+    } catch (err) {
+      toast.error(err?.message || "No se pudo eliminar la cita");
+    }
   }
 
   function openQuickCreate(prefill) {
@@ -1005,7 +1066,8 @@ export default function AgendaPage() {
               date={selectedDate}
               roomColorMap={roomColorMap}
               rooms={rooms}
-              onSelect={setSelected}
+              onSelect={selectAppointment}
+              onContextMenu={openAppointmentMenu}
               onSelectGroup={setSlotGroup}
             />
           ) : effectiveView === "week" ? (
@@ -1014,7 +1076,8 @@ export default function AgendaPage() {
               selectedDate={selectedDate}
               today={today}
               roomColorMap={roomColorMap}
-              onSelect={setSelected}
+              onSelect={selectAppointment}
+              onContextMenu={openAppointmentMenu}
               onSelectGroup={setSlotGroup}
             />
           ) : (
@@ -1025,7 +1088,8 @@ export default function AgendaPage() {
               today={today}
               roomColorMap={roomColorMap}
               tenantConfig={tenantConfig}
-              onSelect={setSelected}
+              onSelect={selectAppointment}
+              onContextMenu={openAppointmentMenu}
               onSelectGroup={setSlotGroup}
               onCreateFromSlot={canCreateMoveAppointments ? openQuickCreate : null}
               onMoveAppointment={moveAppointment}
@@ -1037,26 +1101,56 @@ export default function AgendaPage() {
         </div>
       </div>
 
+      {appointmentMenu && (
+        <div
+          role="menu"
+          aria-label="Acciones de la cita"
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: appointmentMenu.x,
+            top: appointmentMenu.y,
+            zIndex: 120,
+            width: 220,
+            padding: 6,
+            border: "1px solid rgba(140,110,80,0.24)",
+            borderRadius: 8,
+            background: "#FFFDFC",
+            boxShadow: "0 16px 38px rgba(64,51,39,0.20)",
+          }}
+        >
+          <ContextMenuAction icon={Pencil} label="Editar" onClick={() => selectAppointment(appointmentMenu.appt, "edit")} />
+          <ContextMenuAction icon={CalendarPlus} label="Agendar seguimiento" onClick={() => startFollowUp(appointmentMenu.appt)} />
+          <div style={{ height: 1, background: "rgba(168,154,135,0.22)", margin: "5px 4px" }} />
+          <ContextMenuAction icon={Trash2} label="Eliminar" danger onClick={() => deleteAppointment(appointmentMenu.appt)} />
+        </div>
+      )}
+
       {slotGroupAnim.shouldRender && (
         <SlotGroupModal
           appointments={slotGroup || lastSlotGroup || []}
           phase={slotGroupAnim.phase}
           onClose={() => setSlotGroup(null)}
+          onContextMenu={openAppointmentMenu}
           onSelect={(appt) => {
             setSlotGroup(null);
-            setSelected(appt);
+            selectAppointment(appt);
           }}
         />
       )}
       {detailAnim.shouldRender && (
         <AppointmentDetail
           appt={selected || lastSelected}
+          initialMode={selectedInitialMode}
           phase={detailAnim.phase}
           rooms={rooms}
           staffList={staffList}
           canScheduleOutside={canScheduleOutside}
           canManageAppointments={canCreateMoveAppointments}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            setSelected(null);
+            setSelectedInitialMode(null);
+          }}
           onUpdated={(updated, options = {}) => {
             const merged = (source) => (source?.id === updated.id ? { ...source, ...updated } : source);
             setAppointments((prev) => prev.map((a) => merged(a)));
@@ -1103,6 +1197,37 @@ export default function AgendaPage() {
         />
       )}
     </div>
+  );
+}
+
+function ContextMenuAction({ icon: Icon, label, danger = false, onClick }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      style={{
+        width: "100%",
+        minHeight: 38,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 10px",
+        border: "none",
+        borderRadius: 6,
+        background: "transparent",
+        color: danger ? "#C25450" : "#6B5540",
+        fontSize: 13,
+        fontWeight: 600,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(event) => { event.currentTarget.style.background = danger ? "rgba(194,84,80,0.09)" : "rgba(140,110,80,0.09)"; }}
+      onMouseLeave={(event) => { event.currentTarget.style.background = "transparent"; }}
+    >
+      <Icon size={16} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -1279,7 +1404,7 @@ function AgendaSidePanel({ selectedDate, monthDate, services, onSelectDate, onMo
   );
 }
 
-function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
+function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect, onContextMenu }) {
   const active = appointments
     .filter((a) => toLocalDate(new Date(a.startsAt)) === date)
     .sort((a, b) => {
@@ -1311,6 +1436,7 @@ function MobileCardList({ appointments, date, roomColorMap, rooms, onSelect }) {
           <button
             key={appt.id}
             onClick={() => onSelect(appt)}
+            onContextMenu={(event) => onContextMenu?.(event, appt)}
             style={{
               display: "flex",
               alignItems: "stretch",
@@ -1459,7 +1585,7 @@ function hourTopOffset(hours, hour, minutes, hourHeight) {
   return index * hourHeight + (minutes / 60) * hourHeight;
 }
 
-function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, onSelectGroup }) {
+function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, onSelectGroup, onContextMenu }) {
   const days = getWeekDays(selectedDate);
   const HOUR_HEIGHT = 66;
 
@@ -1578,6 +1704,10 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                     <button
                       key={entry.key}
                       onClick={() => onSelectGroup(entry.appointments)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        onSelectGroup(entry.appointments);
+                      }}
                       style={{
                         position: "absolute",
                         top: topOffset + 3,
@@ -1613,6 +1743,7 @@ function WeekGrid({ appointments, selectedDate, today, roomColorMap, onSelect, o
                   <button
                     key={appt.id}
                     onClick={() => onSelect(appt)}
+                    onContextMenu={(event) => onContextMenu?.(event, appt)}
                     style={{
                       position: "absolute",
                       top: topOffset + 1,
@@ -1686,7 +1817,7 @@ function isHourOpenForRoom(hour, room, tenantConfig, dateStr) {
   return hourInWindow(hour, morning) || hourInWindow(hour, afternoon);
 }
 
-function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onCreateFromSlot, onMoveAppointment, onResizeAppointment, canMoveAppointments, draftAppointment }) {
+function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantConfig, onSelect, onContextMenu, onCreateFromSlot, onMoveAppointment, onResizeAppointment, canMoveAppointments, draftAppointment }) {
   const HOUR_HEIGHT = 72;
   const HEADER_HEIGHT = 78;
   const [draggingId, setDraggingId] = useState(null);
@@ -2108,6 +2239,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                         event.stopPropagation();
                         onSelect(appt);
                       }}
+                      onContextMenu={(event) => onContextMenu?.(event, appt)}
                       style={{
                         position: isGroup ? "relative" : "absolute",
                         top: isGroup ? undefined : topOffset + 4,
@@ -2249,6 +2381,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
                             event.stopPropagation();
                             onSelect(appt);
                           }}
+                          onContextMenu={(event) => onContextMenu?.(event, appt)}
                           title={`${STATUS_LABELS[appt.status]} · ${appt.client?.fullName || "Cliente"} · ${formatTime(appt.startsAt)}`}
                           style={{
                             height: 24,
@@ -2325,7 +2458,7 @@ function CabinDayGrid({ appointments, rooms, date, today, roomColorMap, tenantCo
   );
 }
 
-function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGroup }) {
+function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGroup, onContextMenu }) {
   const HOUR_HEIGHT = 66;
   const active = appointments.filter((a) => toLocalDate(new Date(a.startsAt)) === date);
   const laneMap = buildSlotLanes(active);
@@ -2388,6 +2521,10 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
                 <button
                   key={entry.key}
                   onClick={() => onSelectGroup(entry.appointments)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    onSelectGroup(entry.appointments);
+                  }}
                   style={{
                     position: "absolute",
                     top: topOffset + 4,
@@ -2423,6 +2560,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
               <button
                 key={appt.id}
                 onClick={() => onSelect(appt)}
+                onContextMenu={(event) => onContextMenu?.(event, appt)}
                 style={{
                   position: "absolute",
                   top: topOffset + 1,
@@ -2458,7 +2596,7 @@ function DayGrid({ appointments, date, today, roomColorMap, onSelect, onSelectGr
   );
 }
 
-function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
+function SlotGroupModal({ appointments, phase, onClose, onSelect, onContextMenu }) {
   const list = appointments || [];
   const first = list[0];
   if (!first) return null;
@@ -2510,6 +2648,7 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
               <button
                 key={appt.id}
                 onClick={() => onSelect(appt)}
+                onContextMenu={(event) => onContextMenu?.(event, appt)}
                 style={{
                   width: "100%",
                   border: "none",
@@ -2541,7 +2680,7 @@ function SlotGroupModal({ appointments, phase, onClose, onSelect }) {
     </div>
   );
 }
-function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, canManageAppointments, onClose, onUpdated, onFollowUp }) {
+function AppointmentDetail({ appt, initialMode, phase, rooms, staffList, canScheduleOutside, canManageAppointments, onClose, onUpdated, onFollowUp }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2564,6 +2703,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
 
   useEffect(() => {
     if (!appt) return;
+    setEditing(initialMode === "edit");
     setEditDate(toLocalDate(new Date(appt.startsAt)));
     setEditSlot(new Date(appt.startsAt).toISOString());
     setEditEndSlot(new Date(appt.endsAt).toISOString());
@@ -2572,7 +2712,7 @@ function AppointmentDetail({ appt, phase, rooms, staffList, canScheduleOutside, 
     setEditWithoutStaff(!appt.staff?.id);
     setEditServiceId(appt.service?.id || appt.serviceId || "");
     setEditIndications(appt.indications || "");
-  }, [appt]);
+  }, [appt, initialMode]);
 
   useEffect(() => {
     if (!editing) return;

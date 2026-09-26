@@ -118,4 +118,14 @@ router.patch('/:id/status', requirePermission('agendaCrearMover'), async (req, r
   }
 });
 
+router.delete('/:id', requirePermission('agendaCrearMover'), async (req, res, next) => {
+  try {
+    const appointment = await appointmentService.deleteAppointment(req.user, req.params.id);
+    if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
