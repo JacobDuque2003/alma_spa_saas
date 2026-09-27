@@ -1100,7 +1100,7 @@ export default function CRMPage() {
         key={c.id}
         onClick={() => selectConversation(c.id)}
         className={`
-          alma-no-press-scale relative w-full p-3 pr-10 rounded-xl text-left
+          alma-no-press-scale relative w-full px-2.5 py-2 pr-9 rounded-lg text-left
           transition-colors duration-150
           ${isSelected
             ? "bg-glow/40"
@@ -1108,9 +1108,9 @@ export default function CRMPage() {
           }
         `}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-2.5">
         <span className={`
-          w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center
+          w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center
           text-xs font-semibold
           ${isSelected ? "bg-gold text-white" : "bg-gold/30 text-bronze"}
         `}>
@@ -1124,13 +1124,13 @@ export default function CRMPage() {
           <p className="text-xs text-bronze truncate mt-0.5">
             {c.lastMessagePreview || "Sin mensajes"}
           </p>
-          <div className="mt-1.5" />
+          <div className="mt-1" />
         </div>
         </div>
         {(c.status === "open" || c.manuallyMarkedUnread || c.assignedTo?.name || c.botActive === false || c.botStatus === "escalated" || labels.length > 0) && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-left">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-left">
             {c.status === "open" && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-semibold uppercase text-sky-700">
                 <CircleDot size={11} /> ABIERTO
               </span>
             )}
@@ -1198,7 +1198,7 @@ export default function CRMPage() {
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
-          min-w-0 max-w-[78%] select-text break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed shadow-sm
+          min-w-0 max-w-[76%] select-text break-words [overflow-wrap:anywhere] rounded-lg px-3 py-2 text-[13px] leading-relaxed shadow-sm
           ${isOutbound
             ? "rounded-tr-md border border-emerald-200 bg-[#dcf8c6] text-slate-800"
             : "rounded-tl-md border border-slate-200 bg-white text-slate-800"
@@ -1242,19 +1242,19 @@ export default function CRMPage() {
     return (
       <div className={`
         flex flex-col h-full bg-[rgba(247,245,240,0.6)]
-        ${isMobile ? "w-full" : "w-[360px] flex-shrink-0 border-r border-border"}
+        ${isMobile ? "w-full" : "w-[clamp(276px,18vw,324px)] flex-shrink-0 border-r border-border"}
       `}>
-        <div className="p-5 pb-3">
-          <h1 className="font-heading text-2xl font-semibold text-bronze-deep mb-3">
+        <div className="px-3 py-3 pb-2">
+          <h1 className="font-heading text-xl font-semibold text-bronze-deep mb-2">
             Bandeja
           </h1>
-          <div className="relative mb-3">
+          <div className="relative mb-2">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-warm-gray" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Buscar nombre o teléfono…"
-              className="w-full pl-9 pr-4 py-2 rounded-full border border-border bg-white text-sm text-bronze-deep
+              className="w-full pl-9 pr-4 py-1.5 rounded-full border border-border bg-white text-[13px] text-bronze-deep
                          placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40"
             />
           </div>
@@ -1264,7 +1264,7 @@ export default function CRMPage() {
                 key={f.id}
                 onClick={() => setFilter(f.id)}
                 className={`
-                  px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap
+                  px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap
                   transition-colors duration-150
                   ${filter === f.id
                     ? "bg-gold text-white"
@@ -1314,8 +1314,8 @@ export default function CRMPage() {
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-cream/40">
         {/* Chat header */}
-        <div className="relative z-[100] flex items-center justify-between gap-2 overflow-visible border-b border-border bg-white/90 px-4 py-3 shadow-sm backdrop-blur-sm">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="relative z-[100] flex items-center justify-between gap-2 overflow-visible border-b border-border bg-white/90 px-3 py-2 shadow-sm backdrop-blur-sm">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             {isMobile && (
               <button
                 onClick={() => setMobileView("list")}
@@ -1324,7 +1324,7 @@ export default function CRMPage() {
                 <ArrowLeft size={20} />
               </button>
             )}
-            <span className="w-9 h-9 rounded-full bg-gold text-white flex items-center justify-center text-xs font-semibold flex-shrink-0">
+            <span className="w-8 h-8 rounded-full bg-gold text-white flex items-center justify-center text-[11px] font-semibold flex-shrink-0">
               {initials(name)}
             </span>
             <div className="min-w-0">
@@ -1342,7 +1342,7 @@ export default function CRMPage() {
           <div ref={headerMenuRef} className="relative z-[120] flex flex-shrink-0 items-center gap-2">
             <button
               onClick={selected.botActive ? pauseBot : reactivateBot}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold shadow-sm transition-colors duration-150 ${
+              className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold shadow-sm transition-colors duration-150 ${
                 selected.botActive
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                   : "border-border bg-white text-bronze-deep hover:bg-cream"
@@ -1357,7 +1357,7 @@ export default function CRMPage() {
                   setShowAssignees((v) => !v);
                   setChatSearchOpen(false);
                 }}
-                className="inline-flex h-8 min-w-[112px] items-center justify-center gap-1.5 rounded-full border border-border bg-white px-3 text-[12px] font-semibold text-bronze-deep shadow-sm transition-colors hover:bg-cream"
+                className="inline-flex h-7 min-w-[96px] items-center justify-center gap-1.5 rounded-full border border-border bg-white px-2.5 text-[11px] font-semibold text-bronze-deep shadow-sm transition-colors hover:bg-cream"
               >
                 <UserCheck size={12} />
                 {selected.assignedTo?.name?.split(" ")[0] || "Asignar"}
@@ -1393,7 +1393,7 @@ export default function CRMPage() {
                   setChatSearchOpen((v) => !v);
                   setShowAssignees(false);
                 }}
-                className={`flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors ${
+                className={`flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition-colors ${
                   chatSearchOpen ? "border-gold bg-gold text-white" : "border-border bg-white text-bronze hover:bg-cream"
                 }`}
                 title="Buscar en esta conversación"
@@ -1453,7 +1453,7 @@ export default function CRMPage() {
             onScroll={handleMessagesScroll}
             onWheel={stopFollowingOpeningMedia}
             onTouchStart={stopFollowingOpeningMedia}
-            className="h-full overflow-y-auto overscroll-contain p-4 flex flex-col gap-3"
+            className="h-full overflow-y-auto overscroll-contain px-3 py-2.5 flex flex-col gap-2"
           >
             {messages.map((m, index) => renderMessageBubble(m, index))}
             <div ref={messagesEndRef} />
@@ -1599,7 +1599,7 @@ export default function CRMPage() {
         )}
 
         {/* Input */}
-        <div className={`relative flex items-center gap-2 border-t border-border px-4 py-3 backdrop-blur-sm ${selected.withinWindow ? "bg-white/80" : "bg-slate-50"}`}>
+        <div className={`relative flex items-center gap-1.5 border-t border-border px-3 py-2 backdrop-blur-sm ${selected.withinWindow ? "bg-white/80" : "bg-slate-50"}`}>
           <input
             ref={fileInputRef}
             type="file"
@@ -1643,7 +1643,7 @@ export default function CRMPage() {
               setChatSearchOpen(false);
             }}
             className={`
-              w-9 h-9 rounded-full flex items-center justify-center text-sm flex-shrink-0
+              w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0
               transition-colors duration-150
               ${showQuickReplies ? "bg-gold text-white" : "bg-gold/20 text-bronze"}
               ${!canReplyInWindow ? "cursor-not-allowed opacity-40" : ""}
@@ -1656,13 +1656,13 @@ export default function CRMPage() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={!canReplyInWindow}
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze transition-colors hover:bg-glow/40 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-cream text-bronze transition-colors hover:bg-glow/40 disabled:cursor-not-allowed disabled:opacity-40"
             title={selected.withinWindow ? "Adjuntar archivo" : "No puedes adjuntar fuera de la ventana de 24 horas"}
           >
             <Paperclip size={16} />
           </button>
           <input
-            className="flex-1 px-4 py-2.5 rounded-full border border-border bg-white text-sm text-bronze-deep
+            className="flex-1 px-3.5 py-2 rounded-full border border-border bg-white text-[13px] text-bronze-deep
                        placeholder:text-warm-gray focus:outline-none focus:ring-2 focus:ring-gold/40
                        disabled:opacity-50"
             placeholder={selected.withinWindow ? "Escribe tu respuesta…" : "Mensajes bloqueados: la ventana de 24 horas terminó"}
@@ -1675,7 +1675,7 @@ export default function CRMPage() {
           <button
             onClick={sendText}
             disabled={!canReplyInWindow || (!body.trim() && !draftAttachment)}
-            className="w-9 h-9 rounded-full bg-bronze text-white flex items-center justify-center flex-shrink-0
+            className="w-8 h-8 rounded-full bg-bronze text-white flex items-center justify-center flex-shrink-0
                        hover:bg-bronze-deep transition-colors duration-150 disabled:opacity-40"
           >
             <Send size={15} />
@@ -1697,7 +1697,7 @@ export default function CRMPage() {
     return (
       <div className={`
         flex flex-col h-full bg-[#f8fbff]
-        ${isMobile ? "w-full" : "w-[370px] flex-shrink-0 border-l border-border"}
+        ${isMobile ? "w-full" : "w-[clamp(284px,19vw,332px)] flex-shrink-0 border-l border-border"}
       `}>
         {isMobile && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
@@ -1709,19 +1709,19 @@ export default function CRMPage() {
         )}
 
         {/* Client card */}
-        <div className="mx-3 mt-3 rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gold text-base font-semibold text-white shadow-sm">
+        <div className="mx-2.5 mt-2.5 rounded-lg border border-border/60 bg-white p-2.5 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gold text-sm font-semibold text-white shadow-sm">
               {initials(name)}
             </span>
             <div className="min-w-0">
-              <div className="text-base font-semibold text-bronze-deep truncate">{name}</div>
+              <div className="text-sm font-semibold text-bronze-deep truncate">{name}</div>
               <div className="flex items-center gap-1 text-xs text-warm-gray">
                 <Phone size={11} /> {selected.customerWaId}
               </div>
             </div>
           </div>
-          <div className="mt-3 grid gap-1.5 text-xs text-warm-gray">
+          <div className="mt-2 grid gap-1 text-[11px] text-warm-gray">
             {linkedClient ? (
               <>
                 <span className="flex items-center gap-1">
@@ -1743,33 +1743,33 @@ export default function CRMPage() {
         </div>
 
         {/* Status actions */}
-        <div className="mx-3 mt-2 rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-warm-gray">Acciones</p>
+        <div className="mx-2.5 mt-2 rounded-lg border border-border/60 bg-white p-2.5 shadow-sm">
+          <p className="mb-1.5 text-[10px] font-bold uppercase text-warm-gray">Acciones</p>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => changeStatus(isResolved ? "open" : "resolved")}
-              className={`flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition-colors duration-150 ${
+              className={`flex h-10 items-center justify-center gap-1.5 rounded-lg border px-2 text-[11px] font-semibold transition-colors duration-150 ${
                 isResolved
                   ? "bg-emerald-500 border-emerald-500 text-white shadow-sm"
                   : "bg-[#f7f9fe] border-[#e6edf7] text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
               }`}
             >
-              <CheckCircle2 size={18} />
+              <CheckCircle2 size={15} />
               <span>Resolver</span>
             </button>
             <button
               onClick={markUnread}
-              className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-[#e6edf7] bg-[#f7f9fe] px-2 text-[11px] font-semibold text-slate-500 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#e6edf7] bg-[#f7f9fe] px-2 text-[11px] font-semibold text-slate-500 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700"
               title="Marcar la conversación como no leída"
             >
-              <RefreshCw size={18} />
+              <RefreshCw size={15} />
               <span>No leído</span>
             </button>
           </div>
           <button
             onClick={sendReminder}
             disabled={sending}
-            className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-bronze px-3 text-sm font-semibold text-white
+            className="mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-bronze px-3 text-xs font-semibold text-white
                        shadow-sm transition-colors duration-150 hover:bg-bronze-deep disabled:opacity-50"
           >
             <Send size={14} /> Enviar recordatorio
@@ -1777,9 +1777,9 @@ export default function CRMPage() {
         </div>
 
         {/* Panel content */}
-        <div className="flex-1 overflow-y-auto p-3">
-          <div className="space-y-2.5">
-            <section className="rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
+        <div className="flex-1 overflow-y-auto p-2.5">
+          <div className="space-y-2">
+            <section className="rounded-lg border border-border/60 bg-white p-2.5 shadow-sm">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
                   <Tag size={12} /> Etiquetas
@@ -1802,7 +1802,7 @@ export default function CRMPage() {
                 </button>}
               </div>
 
-              <div className="rounded-2xl border border-border bg-cream/35">
+              <div className="rounded-lg border border-border bg-cream/35">
                 <button
                   onClick={() => setLabelDropdownOpen((v) => !v)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
@@ -1939,7 +1939,7 @@ export default function CRMPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-border/60 bg-white p-3 shadow-sm">
+            <section className="rounded-lg border border-border/60 bg-white p-2.5 shadow-sm">
               <p className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-warm-gray">
                 <StickyNote size={12} /> Notas internas
               </p>
