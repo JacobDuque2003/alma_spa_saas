@@ -1198,14 +1198,21 @@ export default function CRMPage() {
     return (
       <div id={`crm-msg-${m.id}`} key={m.id} className={`flex scroll-mt-24 ${isOutbound ? "justify-end" : "justify-start"}`}>
         <div className={`
-          min-w-0 max-w-[76%] select-text break-words [overflow-wrap:anywhere] rounded-lg px-3 py-2 text-[13px] leading-relaxed shadow-sm
+          relative min-w-[84px] max-w-[76%] select-text break-words [overflow-wrap:anywhere] rounded-[10px] px-3 py-1.5 text-[13px] leading-relaxed shadow-sm
           ${isOutbound
-            ? "rounded-tr-md border border-emerald-200 bg-[#dcf8c6] text-slate-800"
-            : "rounded-tl-md border border-slate-200 bg-white text-slate-800"
+            ? "rounded-tr-[3px] bg-[#d9fdd3] text-slate-800"
+            : "rounded-tl-[3px] bg-white text-slate-800"
           }
         `}>
+          <span
+            aria-hidden="true"
+            className={`absolute top-0 h-0 w-0 ${isOutbound
+              ? "right-[-7px] border-l-[8px] border-t-[8px] border-l-[#d9fdd3] border-t-transparent"
+              : "left-[-7px] border-r-[8px] border-t-[8px] border-r-white border-t-transparent"
+            }`}
+          />
           {isOutbound && (
-            <div className="flex items-center gap-1.5 mb-1">
+            <div className="mb-0.5 flex items-center gap-1.5">
               {isBot ? (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
                   <Bot size={11} /> Almita
@@ -1229,7 +1236,7 @@ export default function CRMPage() {
               {renderHighlightedText(m.body || mediaLabels[m.type] || "Mensaje recibido")}
             </p>
           )}
-          <p className="text-right text-[10px] text-slate-500 mt-1.5">
+          <p className="mt-0.5 text-right text-[9px] leading-none text-slate-500">
             {timeStr(m.createdAt)} {isOutbound && m.status ? `· ${m.status}` : ""}
           </p>
         </div>
