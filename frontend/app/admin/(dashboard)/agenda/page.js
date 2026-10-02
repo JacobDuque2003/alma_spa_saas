@@ -630,7 +630,12 @@ export default function AgendaPage() {
     setSelected(null);
     setQuickCreatePrefill(null);
     setQuickDraft(null);
-    setFollowUpPrefill({ client: appt.client, service: appt.service, staff: appt.staff });
+    setFollowUpPrefill({
+      client: appt.client,
+      service: appt.service,
+      staff: appt.staff,
+      indications: appt.indications || "",
+    });
     setShowNewForm(true);
   }
 
@@ -1189,6 +1194,7 @@ export default function AgendaPage() {
           }
           preSelectedServiceId={followUpPrefill?.service?.id || null}
           preSelectedStaffId={followUpPrefill?.staff?.id || null}
+          preSelectedIndications={followUpPrefill?.indications || ""}
           followUpMode={!!followUpPrefill}
           canScheduleOutside={canScheduleOutside}
           quickCreatePrefill={quickCreatePrefill}
@@ -2991,7 +2997,12 @@ function AppointmentDetail({ appt, initialMode, phase, rooms, staffList, canSche
                   {canFollowUp && (
                     <button
                       disabled={saving}
-                      onClick={() => onFollowUp({ client: appt.client, service: appt.service, staff: appt.staff })}
+                      onClick={() => onFollowUp({
+                        client: appt.client,
+                        service: appt.service,
+                        staff: appt.staff,
+                        indications: editIndications.trim(),
+                      })}
                       style={pillBtn("rgba(85,107,47,0.12)", "#556B2F", "1px solid rgba(85,107,47,0.4)")}
                     >
                       Agendar seguimiento
@@ -3288,7 +3299,7 @@ function PremiumSelect({
   );
 }
 
-function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, followUpMode, canScheduleOutside, quickCreatePrefill, quickPanelFrameSource, onDraftChange }) {
+function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelectedClient, preSelectedServiceId, preSelectedStaffId, preSelectedIndications, followUpMode, canScheduleOutside, quickCreatePrefill, quickPanelFrameSource, onDraftChange }) {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -3310,7 +3321,7 @@ function NewAppointmentForm({ defaultDate, phase, onClose, onCreated, preSelecte
   const [roomId, setRoomId] = useState(quickCreatePrefill?.roomId || "");
   const [staffId, setStaffId] = useState(preSelectedStaffId || "");
   const [withoutStaff, setWithoutStaff] = useState(false);
-  const [indications, setIndications] = useState("");
+  const [indications, setIndications] = useState(preSelectedIndications || "");
   const [submitting, setSubmitting] = useState(false);
   const [validation, setValidation] = useState(null);
   const toast = useToast();
