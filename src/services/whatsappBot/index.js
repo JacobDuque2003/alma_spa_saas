@@ -19,6 +19,7 @@ const serviceService = require('../serviceService');
 const appointmentService = require('../appointmentService');
 const clientService = require('../clientService');
 const aiClient = require('../aiClient');
+const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
 const menus = require('./menus');
@@ -1166,6 +1167,20 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText });
   }
 
+  const numberedSelection = textChoiceSelection(bodyText, flowState);
+  if (numberedSelection) {
+    return handleSelection({ tenant, connection, conv, waId, tone, selectionId: numberedSelection });
+  }
+
+  const menuSelection = mainMenuSelectionFromText(bodyText, flowState);
+  if (menuSelection) {
+    return handleSelection({ tenant, connection, conv, waId, tone, selectionId: menuSelection });
+  }
+
+  if (flowState.flow === 'service_detail' && flowState.lastServiceId && hasExplicitBookingLanguage(bodyText)) {
+    return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: flowState.lastServiceId });
+  }
+
   // Meta normalmente entrega el id de una lista interactiva. Si un cliente o
   // un reenvío sólo conserva el título visible, mantenemos la paginación del
   // catálogo en lugar de responder como si fuera una consulta libre.
@@ -1367,7 +1382,12 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   const client = await lookupClientByWaId(tenant.id, waId);
   const clientName = client?.fullName || flowState.clientName || null;
   const services = await loadServicesForAI(tenant.id);
-  const history = state.getHistory(waId);
+  const persistedHistory = await conversationMemory.loadConversationHistory({
+    tenantId: tenant.id,
+    conversationId: conv.id,
+    currentUserMessage: bodyText,
+  });
+  const history = persistedHistory.length ? persistedHistory : state.getHistory(waId);
 
   const t0 = Date.now();
   const aiResult = await aiClient.chat(bodyText, {
@@ -1465,7 +1485,7 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
         conv,
         waId,
         tone,
-        asText: wantsCatalogInText(userMessage, state.getFlowState(waId) || {}),
+        asText: true,
       });
 
     case 'book':
@@ -1717,30 +1737,83 @@ async function sendMainMenu({ tenant, connection, conv, waId, tone, compact = fa
     : await lookupClientByWaId(tenant.id, waId);
   const clientName = stateOrConversationName || knownClient?.fullName || null;
   state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0, clientName });
-  const payload = menus.mainMenu({ tone, clientName, compact });
-  logBot('info', 'enviando menú principal', {
+  const body = menus.mainMenuText({ tone, clientName, compact });
+  logBot('info', 'enviando opciones principales en texto', {
     tenant: tenant.slug,
     conversationId: conv.id,
     waIdTail: safeTail(waId),
   });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  if (r.ok) {
-    await recordBotMessage(tenant.id, conv, r, {
-      type: 'interactive',
-      body: '[menú principal]',
-    });
-    return;
-  }
+  const result = await transport.sendText(connection, waId, body);
+  await recordBotMessage(tenant.id, conv, result, { body });
+}
 
-  const fallback = menus.mainMenuText({ tone, clientName, compact });
-  logBot('warn', 'menú interactivo rechazado; enviando menú de texto', {
-    tenant: tenant.slug,
-    conversationId: conv.id,
-    status: r.status ?? null,
-    errorCode: r.errorCode ?? null,
+function mainMenuSelectionFromText(text, flowState = {}) {
+  if (flowState.flow !== 'menu') return null;
+  const value = normalizeSearchText(text).replace(/[.!?]+$/g, '').trim();
+  const options = {
+    '1': menus.MAIN_MENU_IDS.LIST_SERVICES,
+    'ver servicios': menus.MAIN_MENU_IDS.LIST_SERVICES,
+    servicios: menus.MAIN_MENU_IDS.LIST_SERVICES,
+    '2': menus.MAIN_MENU_IDS.BOOK,
+    'reservar cita': menus.MAIN_MENU_IDS.BOOK,
+    'agendar cita': menus.MAIN_MENU_IDS.BOOK,
+    '3': menus.MAIN_MENU_IDS.BOOK_FOR_OTHER,
+    'reservar para otra persona': menus.MAIN_MENU_IDS.BOOK_FOR_OTHER,
+    '4': menus.MAIN_MENU_IDS.RECOMMEND,
+    'no se que elegir': menus.MAIN_MENU_IDS.RECOMMEND,
+    '5': menus.MAIN_MENU_IDS.PROMOTIONS,
+    promociones: menus.MAIN_MENU_IDS.PROMOTIONS,
+    'promociones y catalogo': menus.MAIN_MENU_IDS.PROMOTIONS,
+    '6': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
+    'consultar mi cita': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
+    'mi cita': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
+    '7': menus.MAIN_MENU_IDS.ESCALATE,
+    'hablar con recepcion': menus.MAIN_MENU_IDS.ESCALATE,
+    recepcion: menus.MAIN_MENU_IDS.ESCALATE,
+  };
+  return options[value] || null;
+}
+
+function textChoiceSelection(text, flowState = {}) {
+  const choices = Array.isArray(flowState.textChoices) ? flowState.textChoices : [];
+  if (!choices.length || flowState.textChoicesFor !== flowStepKey(flowState)) return null;
+  const value = normalizeSearchText(text).replace(/[.!?]+$/g, '').trim();
+  if (!value) return null;
+  const exact = choices.find((choice) => normalizeSearchText(choice.label) === value);
+  return exact?.id || null;
+}
+
+function flowStepKey(flowState = {}) {
+  const step = flowState.booking?.step || flowState.reschedule?.step || flowState.bookingForOther?.step || '';
+  return `${flowState.flow || ''}:${step}`;
+}
+
+async function sendTextChoices({ tenant, connection, conv, waId, body, choices }) {
+  const safeChoices = (choices || [])
+    .filter((choice) => choice?.id && choice?.label)
+    .slice(0, 20)
+    .map((choice) => ({ id: String(choice.id), label: String(choice.label).slice(0, 80) }));
+  const lines = safeChoices.map((choice) => `${textChoiceEmoji(choice.id)} ${choice.label}`);
+  const message = [body, lines.join('\n')].filter(Boolean).join('\n\n');
+  const current = state.getFlowState(waId) || {};
+  state.setFlowState(waId, {
+    ...current,
+    textChoices: safeChoices,
+    textChoicesFor: flowStepKey(current),
   });
-  const textResult = await transport.sendText(connection, waId, fallback);
-  await recordBotMessage(tenant.id, conv, textResult, { body: fallback });
+  const result = await transport.sendText(connection, waId, message);
+  await recordBotMessage(tenant.id, conv, result, { body: message });
+}
+
+function textChoiceEmoji(id) {
+  if (id.startsWith(menus.BOOK_TIME_PREFIX)) return '🕐';
+  if (id === menus.BOOK_PERIOD_MORNING) return '🌅';
+  if (id === menus.BOOK_PERIOD_AFTERNOON) return '🌆';
+  if (id === menus.BOOK_STAFF_ANY || id.startsWith(menus.BOOK_STAFF_PREFIX)) return '👤';
+  if (id.startsWith(menus.RESCHEDULE_APPOINTMENT_PREFIX)) return '📅';
+  if (id === menus.BOOK_RECIPIENT_SELF) return '🙋';
+  if (id === menus.BOOK_RECIPIENT_OTHER) return '👥';
+  return '🌿';
 }
 
 async function handleSelection({ tenant, connection, conv, waId, tone, selectionId }) {
@@ -1904,7 +1977,7 @@ async function handleSelection({ tenant, connection, conv, waId, tone, selection
   state.setFlowState(waId, { flow: 'selection', tone, unclearCount: 0 });
 
   if (selectionId === menus.MAIN_MENU_IDS.LIST_SERVICES) {
-    return handleListServices({ tenant, connection, conv, waId, tone });
+    return handleListServices({ tenant, connection, conv, waId, tone, asText: true });
   }
   if (selectionId === menus.MAIN_MENU_IDS.BOOK) {
     return handleBook({ tenant, connection, conv, waId, tone });
@@ -1941,15 +2014,8 @@ async function handleListServices({ tenant, connection, conv, waId, tone, asText
   state.setFlowState(waId, { flow: 'listing_services', servicesPage: Math.max(0, Number(page) || 0), tone, unclearCount: 0 });
 
   const visible = svcs;
-  if (asText) {
-    const text = buildServicesCatalogText(visible, { tone });
-    await sendTextChunks({ tenant, connection, conv, waId, text });
-    return;
-  }
-
-  const payload = menus.servicesList(visible, { tone, page });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[servicios página ${Number(page) + 1}]` });
+  const text = buildServicesCatalogText(visible, { tone });
+  await sendTextChunks({ tenant, connection, conv, waId, text });
 }
 
 async function handleCategoryServices({ tenant, connection, conv, waId, tone, categoryName }) {
@@ -1963,9 +2029,8 @@ async function handleCategoryServices({ tenant, connection, conv, waId, tone, ca
     return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
   }
   state.setFlowState(waId, { flow: 'category_services', category: categoryName, tone, unclearCount: 0 });
-  const payload = menus.servicesInCategory(svcs, categoryName, { tone });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[${svcs.length} servicios de ${categoryName}]` });
+  const text = buildServicesCatalogText(svcs, { tone });
+  await sendTextChunks({ tenant, connection, conv, waId, text });
 }
 
 async function handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId }) {
@@ -1985,11 +2050,15 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
   if (!svc.parentServiceId) {
     const subservices = await loadVisibleSubservicesForBot(tenant.id, svc.id);
     if (subservices.length > 0) {
-      const payload = menus.servicesInCategory(subservices, svc.name, { tone });
-      const r = await transport.sendInteractive(connection, waId, payload);
-      await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[subservicios de ${svc.name}]` });
       state.setFlowState(waId, { flow: 'service_subcategories', parentServiceId: svc.id, tone, unclearCount: 0 });
-      return;
+      return sendTextChoices({
+        tenant, connection, conv, waId,
+        body: `Estas son las opciones de *${svc.name}*. Escribe el nombre de la que prefieres:`,
+        choices: subservices.map((service) => ({
+          id: `${menus.SERVICE_PREFIX}${service.id}`,
+          label: `${service.name} · ${serviceCatalogMeta(service)}`,
+        })),
+      });
     }
   }
 
@@ -2014,9 +2083,11 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
     await recordBotMessage(tenant.id, conv, r, { body: caption });
   }
 
-  const actions = menus.serviceDetailActions(svc, { tone });
-  const r2 = await transport.sendInteractive(connection, waId, actions);
-  await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: `[acciones de ${svc.name}]` });
+  const invitation = tone === 'tu'
+    ? 'Si quieres reservarlo, escríbeme “quiero reservar este servicio”.'
+    : 'Si desea reservarlo, escríbame “quiero reservar este servicio”.';
+  const r2 = await transport.sendText(connection, waId, invitation);
+  await recordBotMessage(tenant.id, conv, r2, { body: invitation });
   state.setFlowState(waId, { flow: 'service_detail', lastServiceId: serviceId, tone, unclearCount: 0 });
 }
 
@@ -2103,9 +2174,13 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
     ? '✨ *¡Qué lindo que quieres darte un momento!*\n\nElige tu servicio:'
     : '✨ *¡Qué lindo que desea darse un momento!*\n\nElija su servicio:');
 
-  const payload = menus.servicesList(visible, { tone, body: intro, page });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de servicio para reserva]' });
+  return sendTextChoices({
+    tenant, connection, conv, waId, body: `${intro}\nTambién puedes escribir el nombre del servicio.`,
+    choices: visible.map((service) => ({
+      id: `${menus.BOOK_SERVICE_PREFIX}${service.id}`,
+      label: `${service.name} · ${serviceCatalogMeta(service)}`,
+    })),
+  });
 }
 
 async function handleSmartBooking({ tenant, connection, conv, waId, tone, service, date, time, aiReply }) {
@@ -2136,10 +2211,9 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
       tone,
       unclearCount: 0,
     });
-    const body = `😔 *No hay horarios ese día* para _${service.name}_\n\n¿Probamos otro día?`;
-    const payload = menus.datePicker({ tone, body });
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[sin horarios, elegir otro día]' });
+    const body = `😔 *No hay horarios ese día* para _${service.name}_.\n\nDime qué otro día te queda bien; por ejemplo, “el martes” o “10 de octubre”.`;
+    const r = await transport.sendText(connection, waId, body);
+    await recordBotMessage(tenant.id, conv, r, { body });
     return;
   }
 
@@ -2215,10 +2289,13 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
       const body = tone === 'tu'
         ? `✨ *${svc.name}*\n\nElige el tipo de tratamiento que quieres reservar:`
         : `✨ *${svc.name}*\n\nElija el tipo de tratamiento que desea reservar:`;
-      const payload = menus.servicesInCategory(subservices, svc.name, { tone, body });
-      const r = await transport.sendInteractive(connection, waId, payload);
-      await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[selección de subservicio de ${svc.name}]` });
-      return;
+      return sendTextChoices({
+        tenant, connection, conv, waId, body,
+        choices: subservices.map((service) => ({
+          id: `${menus.BOOK_SERVICE_PREFIX}${service.id}`,
+          label: `${service.name} · ${serviceCatalogMeta(service)}`,
+        })),
+      });
     }
   }
 
@@ -2264,9 +2341,8 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
     });
   }
 
-  const payload = menus.datePicker({ tone, body });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[fecha para ${svc.name}]` });
+  const r = await transport.sendText(connection, waId, `${body}\n\nPuedes decir “mañana”, “el martes” o una fecha.`);
+  await recordBotMessage(tenant.id, conv, r, { body });
 }
 
 async function handleBookingDateSelected({ tenant, connection, conv, waId, tone, date, requestedTime = null, introBody = null }) {
@@ -2303,10 +2379,16 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
         tone,
         unclearCount: 0,
       });
-      const payload = menus.bookingRecipientPicker({ tone });
-      const r = await transport.sendInteractive(connection, waId, payload);
-      await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reserva: misma fecha, elegir persona]' });
-      return;
+      return sendTextChoices({
+        tenant, connection, conv, waId,
+        body: tone === 'tu'
+          ? 'Ya tienes una cita ese día. ¿Esta nueva reserva es para ti o para otra persona?'
+          : 'Ya tiene una cita ese día. ¿Esta nueva reserva es para usted o para otra persona?',
+        choices: [
+          { id: menus.BOOK_RECIPIENT_SELF, label: tone === 'tu' ? 'Para mí' : 'Para mí' },
+          { id: menus.BOOK_RECIPIENT_OTHER, label: 'Para otra persona' },
+        ],
+      });
     }
   }
 
@@ -2322,22 +2404,16 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
     });
   } catch (err) {
     logBot('warn', 'error al buscar disponibilidad', { error: err.message });
-    const msg = '😅 *Hubo un problema al buscar horarios*\n\nProbemos de nuevo:';
+    const msg = '😅 *Hubo un problema al buscar horarios.*\n\nDime nuevamente qué día te queda bien.';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    const dp = menus.datePicker({ tone });
-    const r2 = await transport.sendInteractive(connection, waId, dp);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
     return;
   }
 
   if (slots.length === 0) {
-    const msg = '😔 *No hay horarios ese día*\n\n¿Probamos otro?';
+    const msg = '😔 *No hay horarios ese día.*\n\nDime qué otro día te queda bien.';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    const dp = menus.datePicker({ tone });
-    const r2 = await transport.sendInteractive(connection, waId, dp);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
     return;
   }
 
@@ -2377,9 +2453,8 @@ async function showBookingDatePicker({ tenant, connection, conv, waId, tone }) {
   const body = tone === 'tu'
     ? `📅 ¿Qué otro día te queda bien para _${fs.booking?.serviceName || 'tu servicio'}_?`
     : `📅 ¿Qué otro día le queda bien para _${fs.booking?.serviceName || 'su servicio'}_?`;
-  const payload = menus.datePicker({ tone, body });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[volver a elegir fecha]' });
+  const r = await transport.sendText(connection, waId, `${body}\n\nPuedes escribir “mañana”, “el martes” o una fecha.`);
+  await recordBotMessage(tenant.id, conv, r, { body });
 }
 
 async function showBookingPeriodPicker({ tenant, connection, conv, waId, tone, body }) {
@@ -2390,11 +2465,14 @@ async function showBookingPeriodPicker({ tenant, connection, conv, waId, tone, b
   const hasAfternoon = slotsForPeriod(slots, 'afternoon').length > 0;
 
   if (hasMorning && hasAfternoon) {
-    const payload = menus.timePeriodPicker({ tone });
-    if (body) payload.body = { text: body };
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[elegir mañana o tarde]' });
-    return;
+    return sendTextChoices({
+      tenant, connection, conv, waId,
+      body: body || (tone === 'tu' ? '¿Te queda mejor en la mañana o en la tarde?' : '¿Le queda mejor en la mañana o en la tarde?'),
+      choices: [
+        { id: menus.BOOK_PERIOD_MORNING, label: 'Mañana' },
+        { id: menus.BOOK_PERIOD_AFTERNOON, label: 'Tarde' },
+      ],
+    });
   }
 
   return handleBookingPeriodSelected({
@@ -2425,14 +2503,15 @@ async function showBookingTimeSlots({ tenant, connection, conv, waId, tone, page
   if (!booking?.serviceId || !booking?.availableSlots?.length) {
     return handleBook({ tenant, connection, conv, waId, tone });
   }
-  const periodLabel = booking.period === 'morning' ? '🌅 Mañana' : '🌆 Tarde';
-  const payload = menus.timeSlotList(booking.availableSlots, booking.serviceName, {
-    tone,
-    page,
-    body: body || `${periodLabel} · *Horarios para* _${booking.serviceName}_`,
+  const periodLabel = booking.period === 'morning' ? 'Mañana' : 'Tarde';
+  return sendTextChoices({
+    tenant, connection, conv, waId,
+    body: body || `${periodLabel} · horarios disponibles para _${booking.serviceName}_. ¿Cuál te queda bien?`,
+    choices: booking.availableSlots.slice(0, 20).map((slot, index) => ({
+      id: `${menus.BOOK_TIME_PREFIX}${index}`,
+      label: formatHora12(formatAppointmentTime(slot)),
+    })),
   });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[horarios ${booking.period || 'disponibles'} página ${Number(page) + 1}]` });
 }
 
 async function showBookingTherapistPicker({ tenant, connection, conv, waId, tone }) {
@@ -2473,9 +2552,14 @@ async function showBookingTherapistPicker({ tenant, connection, conv, waId, tone
     return handleBookingStaffSelected({ tenant, connection, conv, waId, tone, staffId: staff[0].id });
   }
 
-  const payload = menus.therapistPicker(staff, { tone });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[selección de terapeuta]' });
+  return sendTextChoices({
+    tenant, connection, conv, waId,
+    body: tone === 'tu' ? '¿Tienes preferencia de terapeuta?' : '¿Tiene preferencia de terapeuta?',
+    choices: [
+      { id: menus.BOOK_STAFF_ANY, label: 'Sin preferencia' },
+      ...staff.map((person) => ({ id: `${menus.BOOK_STAFF_PREFIX}${person.id}`, label: person.name })),
+    ],
+  });
 }
 
 async function handleBookingStaffSelected({ tenant, connection, conv, waId, tone, staffId }) {
@@ -2536,10 +2620,7 @@ async function handleBookingTimeSelected({ tenant, connection, conv, waId, tone,
       : '😅 *Ese horario ya no está disponible*\n\nElija otro:';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    const payload = menus.timeSlotList(fs.booking.availableSlots, fs.booking.serviceName, { tone });
-    const r2 = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[horarios]' });
-    return;
+    return showBookingTimeSlots({ tenant, connection, conv, waId, tone });
   }
 
   state.setFlowState(waId, {
@@ -2688,9 +2769,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
         tone,
         unclearCount: 0,
       });
-      const dp = menus.datePicker({ tone });
-      const r2 = await transport.sendInteractive(connection, waId, dp);
-      await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[selección de fecha]' });
+      await showBookingDatePicker({ tenant, connection, conv, waId, tone });
     } else {
       const msg = tone === 'tu'
         ? '😅 *Tuve un problema con tu reserva*\n\nTe paso con recepción 💛'
@@ -2755,10 +2834,14 @@ async function handleReschedule({ tenant, connection, conv, waId, tone, date = n
       tone,
       unclearCount: 0,
     });
-    const payload = menus.rescheduleAppointmentPicker(appointments, { tone });
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reprogramar: elegir cita]' });
-    return;
+    return sendTextChoices({
+      tenant, connection, conv, waId,
+      body: tone === 'tu' ? '¿Cuál cita quieres cambiar?' : '¿Cuál cita desea cambiar?',
+      choices: appointments.map((appointment) => ({
+        id: `${menus.RESCHEDULE_APPOINTMENT_PREFIX}${appointment.id}`,
+        label: `${appointment.service?.name || 'Servicio'} · ${formatAppointmentDate(appointment.startsAt)} · ${formatHora12(formatAppointmentTime(appointment.startsAt))}`,
+      })),
+    });
   }
 
   const appointment = appointmentId
@@ -2768,12 +2851,13 @@ async function handleReschedule({ tenant, connection, conv, waId, tone, date = n
     const msg = tone === 'tu'
       ? '😅 Esa cita ya no está disponible. Elige una de tus citas próximas:'
       : '😅 Esa cita ya no está disponible. Elija una de sus citas próximas:';
-    const r = await transport.sendText(connection, waId, msg);
-    await recordBotMessage(tenant.id, conv, r, { body: msg });
-    const payload = menus.rescheduleAppointmentPicker(appointments, { tone });
-    const listResult = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, listResult, { type: 'interactive', body: '[reprogramar: elegir cita]' });
-    return;
+    return sendTextChoices({
+      tenant, connection, conv, waId, body: msg,
+      choices: appointments.map((candidate) => ({
+        id: `${menus.RESCHEDULE_APPOINTMENT_PREFIX}${candidate.id}`,
+        label: `${candidate.service?.name || 'Servicio'} · ${formatAppointmentDate(candidate.startsAt)} · ${formatHora12(formatAppointmentTime(candidate.startsAt))}`,
+      })),
+    });
   }
 
   state.setFlowState(waId, {
@@ -2802,9 +2886,8 @@ async function handleReschedule({ tenant, connection, conv, waId, tone, date = n
   const body = tone === 'tu'
     ? `📅 *Vamos a reprogramar tu espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\nTu cita actual es el ${currentDate} a las ${formatHora12(currentTime)}.\n\n¿Qué día te queda bien? También puedes decir “el miércoles a la misma hora”.`
     : `📅 *Vamos a reprogramar su espacio de* _${appointment.service?.name || 'Alma Spa'}_\n\nSu cita actual es el ${currentDate} a las ${formatHora12(currentTime)}.\n\n¿Qué día le queda bien? También puede decir “el miércoles a la misma hora”.`;
-  const payload = menus.datePicker({ tone, body });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reprogramar: selección de fecha]' });
+  const r = await transport.sendText(connection, waId, body);
+  await recordBotMessage(tenant.id, conv, r, { body });
 }
 
 async function sendRescheduleCurrentAppointment({ tenant, connection, conv, waId, tone, reschedule }) {
@@ -2833,12 +2916,9 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
     });
   } catch (err) {
     logBot('warn', 'error al buscar horarios para reprogramar', { error: err.message, date });
-    const msg = '😅 *Hubo un problema al buscar horarios*\n\nProbemos de nuevo:';
+    const msg = '😅 *Hubo un problema al buscar horarios.*\n\nDime nuevamente qué día te queda bien.';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    const payload = menus.datePicker({ tone });
-    const r2 = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[reprogramar: selección de fecha]' });
     return;
   }
 
@@ -2848,9 +2928,6 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
       : '😔 *No hay horarios ese día para su espacio*\n\n¿Probamos otro?';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
-    const payload = menus.datePicker({ tone });
-    const r2 = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r2, { type: 'interactive', body: '[reprogramar: otro día]' });
     return;
   }
 
@@ -2882,11 +2959,14 @@ async function showReschedulePeriodPicker({ tenant, connection, conv, waId, tone
   const hasMorning = slotsForPeriod(slots, 'morning').length > 0;
   const hasAfternoon = slotsForPeriod(slots, 'afternoon').length > 0;
   if (hasMorning && hasAfternoon) {
-    const payload = menus.timePeriodPicker({ tone });
-    if (body) payload.body = { text: body };
-    const r = await transport.sendInteractive(connection, waId, payload);
-    await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: '[reprogramar: elegir mañana o tarde]' });
-    return;
+    return sendTextChoices({
+      tenant, connection, conv, waId,
+      body: body || (tone === 'tu' ? '¿Te queda mejor en la mañana o en la tarde?' : '¿Le queda mejor en la mañana o en la tarde?'),
+      choices: [
+        { id: menus.BOOK_PERIOD_MORNING, label: 'Mañana' },
+        { id: menus.BOOK_PERIOD_AFTERNOON, label: 'Tarde' },
+      ],
+    });
   }
   return handleReschedulePeriodSelected({
     tenant, connection, conv, waId, tone,
@@ -2914,14 +2994,15 @@ async function showRescheduleTimeSlots({ tenant, connection, conv, waId, tone, p
   const fs = state.getFlowState(waId) || {};
   const reschedule = fs.reschedule;
   if (!reschedule?.availableSlots?.length) return handleReschedule({ tenant, connection, conv, waId, tone });
-  const periodLabel = reschedule.period === 'morning' ? '🌅 Mañana' : '🌆 Tarde';
-  const payload = menus.timeSlotList(reschedule.availableSlots, reschedule.serviceName, {
-    tone,
-    page,
-    body: `${periodLabel} · *Horarios para* _${reschedule.serviceName}_`,
+  const periodLabel = reschedule.period === 'morning' ? 'Mañana' : 'Tarde';
+  return sendTextChoices({
+    tenant, connection, conv, waId,
+    body: `${periodLabel} · horarios disponibles para _${reschedule.serviceName}_. ¿Cuál te queda bien?`,
+    choices: reschedule.availableSlots.slice(0, 20).map((slot, index) => ({
+      id: `${menus.BOOK_TIME_PREFIX}${index}`,
+      label: formatHora12(formatAppointmentTime(slot)),
+    })),
   });
-  const r = await transport.sendInteractive(connection, waId, payload);
-  await recordBotMessage(tenant.id, conv, r, { type: 'interactive', body: `[reprogramar: horarios ${reschedule.period} página ${Number(page) + 1}]` });
 }
 
 async function handleRescheduleTimeSelected({ tenant, connection, conv, waId, tone, slotIndex }) {
@@ -3038,10 +3119,12 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
     : `📋 *Sus citas próximas en Alma Spa*\n\n${appointmentsSummary}\n\nSi necesita cambiar alguna, avísenos 💛`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
-  const actions = menus.appointmentActions({ tone });
-  const actionResult = await transport.sendInteractive(connection, waId, actions);
-  await recordBotMessage(tenant.id, conv, actionResult, { type: 'interactive', body: '[acciones de mi cita]' });
-  state.setFlowState(waId, { flow: 'menu', clientName: client.fullName, tone, unclearCount: 0 });
+  const guidance = tone === 'tu'
+    ? 'Puedes escribir “reagendar mi cita”, “cancelar mi cita” o “hablar con recepción”.'
+    : 'Puede escribir “reagendar mi cita”, “cancelar mi cita” o “hablar con recepción”.';
+  const actionResult = await transport.sendText(connection, waId, guidance);
+  await recordBotMessage(tenant.id, conv, actionResult, { body: guidance });
+  state.setFlowState(waId, { flow: 'menu', clientName: client.fullName, tone, unclearCount: 0, textChoices: null });
 }
 
 async function handleEscalate({ tenant, connection, conv, waId, tone }) {

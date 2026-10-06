@@ -2,6 +2,28 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [Sin publicar]
+
+### Agregado
+- Memoria reciente durable para Almita, reconstruida desde mensajes reales de PostgreSQL y aislada por tenant y conversación.
+- Detección de solicitudes como “¿qué te dije?” para ampliar de forma controlada el contexto recuperado.
+- Pruebas de aislamiento, límites de contexto y degradación segura ante fallos de base de datos.
+
+### Cambiado
+- El menú principal y el catálogo general de servicios se envían en texto; el menú comprende nombres e intenciones escritos naturalmente.
+- El flujo completo de reserva y reprogramación usa preguntas breves y opciones de texto con emojis, sin índices que puedan confundirse con horas; únicamente las confirmaciones finales conservan botones.
+- Las respuestas numéricas se vinculan al paso que mostró las opciones para impedir selecciones tardías o ambiguas.
+- Se eliminaron los constructores interactivos obsoletos de menú, catálogo, categorías, fechas, horarios, terapeutas y citas; se conservaron tono, categorías, identificadores compatibles y confirmaciones finales.
+- El contexto de IA aumenta de 6 a un máximo de 16 mensajes normales, con límites por mensaje y por conversación.
+- Almita recibe la regla explícita de no inventar recuerdos cuando el historial no contiene la información.
+
+### Seguridad
+- Las consultas de memoria exigen simultáneamente `tenantId` y `conversationId` y no registran el contenido de los mensajes.
+- El contexto se limita a 500 caracteres por mensaje y 6000 caracteres totales para controlar exposición, costo y abuso.
+
+### Verificado
+- Backend: `npm test` -> 555/555 tests.
+
 ## [0.10.1] - 2026-08-28
 
 ### Agregado

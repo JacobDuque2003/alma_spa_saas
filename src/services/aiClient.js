@@ -204,6 +204,7 @@ REGLAS INQUEBRANTABLES:
 - Si pregunta por medicamentos, dosis, inyecciones o diagnósticos: explica con calidez que no puedes orientar sobre eso y recomienda consultar a un profesional de salud. Si describe señales de urgencia (dolor de pecho, dificultad para respirar, desmayo, sangrado, reacción alérgica o debilidad repentina), indícale que contacte emergencias o acuda a urgencias de inmediato.
 - Si describe dolor, molestia o un síntoma: no diagnostiques. Puedes sugerir un servicio solo como bienestar, con lenguaje condicional, y si es intenso, nuevo o persistente recomienda consultar a un profesional de salud. Nunca inicies ni cambies una reserva por esa sugerencia: espera una petición explícita de reservar.
 - Resuelve lo que sí pertenece al negocio: información real del catálogo, ubicación, horario, promociones, citas, reservas, reprogramaciones y atención humana. Usa el contexto de la conversación y pide únicamente el dato que falte; no repitas una pregunta ni vuelvas a mostrar un menú si la clienta ya respondió.
+- Si pregunta “¿qué te dije?” o “¿qué habíamos quedado?”, responde únicamente con información presente en el historial proporcionado. Si no aparece allí, dilo con claridad y no inventes recuerdos.
 - No inventes que realizaste una acción. Cuando la acción depende de disponibilidad, confirmación o pago, deja que el sistema la gestione.
 - Si pregunta por citas, horarios o espacios disponibles pero no dice servicio ni día, usa intent book_start: el sistema debe pedir el servicio para consultar disponibilidad real. No respondas con el horario general.
 - Si pide una recomendación por una molestia, usa suggest_service con params.service_query de un servicio existente; no devuelvas list_services.
@@ -243,8 +244,9 @@ async function chat(userMessage, context = {}) {
   const messages = [];
 
   if (Array.isArray(context.history)) {
-    for (const m of context.history.slice(-6)) {
-      messages.push({ role: m.role, content: m.content });
+    for (const m of context.history.slice(-16)) {
+      if (!['user', 'assistant'].includes(m?.role) || typeof m?.content !== 'string') continue;
+      messages.push({ role: m.role, content: m.content.slice(0, 500) });
     }
   }
   messages.push({ role: 'user', content: userMessage });

@@ -207,6 +207,21 @@ Diseño completo hecho con 3 agentes (Backend Architect, Security Architect, App
 
 - [ ] **RT1**: Migrar polling 30s de la bandeja CRM a SSE o WebSocket si el negocio reporta latencia perceptible en uso real. Decisión consciente de v1: 30s es imperceptible para ~38 msgs/día; migración limpia a `GET /crm/conversations/stream` (SSE) sin cambios de UI. Anotado en diseño de Etapa 5.
 
+## Almita v2 — conversación natural y memoria por cliente
+
+- [x] **A2-1 Texto primero**: menú, catálogo, servicio, variante, fecha, jornada, hora, terapeuta, cita y reprogramación usan texto con emojis y aceptan nombre, fecha, hora o lenguaje natural sin mostrar índices numéricos.
+- [x] **A2-2 Botones solo para confirmar**: las únicas respuestas interactivas restantes confirman la reserva o la reprogramación; el backend vuelve a validar disponibilidad antes de ejecutar la acción.
+- [x] **A2-3 Memoria reciente durable**: reconstruir el contexto desde `WhatsAppMessage` en PostgreSQL en vez de depender solo del historial corto de `botState`; incluye mensajes del bot y del personal humano, con límites de mensajes y caracteres.
+- [ ] **A2-4 Resumen progresivo**: guardar por conversación un resumen actualizado y hechos relevantes separados (preferencias, servicio consultado y solicitudes pendientes), con referencia al último mensaje resumido para evitar duplicados.
+- [x] **A2-5 Recuperación explícita (memoria reciente)**: responder preguntas como “¿qué te dije?” o “¿qué habíamos quedado?” consultando mensajes reales; no inventar recuerdos cuando no exista evidencia. El resumen progresivo de largo plazo continúa en A2-4.
+- [ ] **A2-6 Privacidad de memoria**: no convertir automáticamente síntomas, datos médicos ni secretos en memoria permanente; aplicar aislamiento por tenant, retención definida y eliminación a petición del cliente.
+- [ ] **A2-7 Base de conocimiento**: completar servicios, precios, duración, sinónimos, preparación, cuidados posteriores, restricciones, horarios, ubicación, pagos, anticipos y políticas. Priorizar datos estructurados sobre texto libre.
+- [ ] **A2-8 Tono aprobado**: biblioteca de ejemplos revisados por Gianella para que Almita responda breve, cálida y natural sin inventar acciones, disponibilidad, precios ni resultados médicos.
+- [ ] **A2-9 Aprendizaje supervisado**: controles internos de respuesta correcta/incorrecta, corrección sugerida, preguntas no comprendidas y aprobación humana antes de incorporar ejemplos a la base de conocimiento.
+- [ ] **A2-10 Evaluación**: conjunto anonimizado de conversaciones de prueba para reservas, cambios, cancelaciones, preguntas ambiguas, errores ortográficos, seguridad y traspaso a recepción; medir exactitud, derivaciones y acciones incorrectas.
+- [ ] **A2-11 Multimedia**: transcribir audios con consentimiento y límites de tamaño; después evaluar comprensión de imágenes/documentos con revisión humana y protección de datos.
+- [ ] **A2-12 Confirmaciones y recordatorios**: emitir una sola confirmación después de que el backend cree la cita, incluir resumen, ubicación y política; programar recordatorios y permitir responder para reagendar o cancelar.
+
 ## Fase 7 — pendiente
 
 - [ ] Import/Export Excel
