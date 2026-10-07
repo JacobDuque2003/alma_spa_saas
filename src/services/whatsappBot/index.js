@@ -1095,9 +1095,8 @@ async function handleInboundMessageCore({ tenant, connection, conv, incoming }, 
       await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { clientId } });
     }
   }
-  if (!clientId) {
-    return handleNewClientOnboarding({ tenant, connection, conv, waId, tone, bodyText });
-  }
+  // Un contacto nuevo también debe poder consultar y escoger su cita. Los
+  // datos de ficha se solicitan al final, después de elegir la cita.
 
   // Tier 1: interactive button/list reply → deterministic
   const interactive = incoming.interactive;
@@ -1296,6 +1295,14 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   if (flowState.booking?.step === 'ask_name') {
     return handleNameCapture({ tenant, connection, conv, waId, tone, name: bodyText });
+  }
+
+  if (flowState.booking?.step === 'ask_address') {
+    return handleBookingAddressCapture({ tenant, connection, conv, waId, tone, address: bodyText });
+  }
+
+  if (flowState.booking?.step === 'ask_cedula') {
+    return handleBookingCedulaCapture({ tenant, connection, conv, waId, tone, cedula: bodyText });
   }
 
   if (flowState.booking?.step === 'confirm') {
@@ -2171,6 +2178,7 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
       requestedDate: preservedDate,
       requestedTime: preservedTime,
     },
+    newClient: null,
     clientName: prev.clientName,
     tone,
     unclearCount: 0,
@@ -2641,8 +2649,8 @@ async function handleBookingTimeSelected({ tenant, connection, conv, waId, tone,
 }
 
 async function handleNameCapture({ tenant, connection, conv, waId, tone, name }) {
-  const trimmed = String(name).trim();
-  if (trimmed.length < 2 || trimmed.length > 100) {
+  const fullName = extractRecipientName(name);
+  if (!fullName) {
     const msg = tone === 'tu'
       ? '💛 *Escribe tu nombre completo*, por favor'
       : '💛 *Escriba su nombre completo*, por favor';
@@ -2651,8 +2659,63 @@ async function handleNameCapture({ tenant, connection, conv, waId, tone, name })
     return;
   }
 
-  state.setFlowState(waId, { clientName: trimmed });
-  return showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName: trimmed });
+  const fs = state.getFlowState(waId) || {};
+  state.setFlowState(waId, {
+    ...fs,
+    flow: 'booking',
+    booking: { ...fs.booking, step: 'ask_address', clientName: fullName },
+    clientName: fullName,
+    tone,
+    unclearCount: 0,
+  });
+  const msg = tone === 'tu'
+    ? `Mucho gusto, *${fullName}* 💛\n\nAhora, ¿me compartes tu dirección? Puedes escribir *Omitir*.`
+    : `Mucho gusto, *${fullName}* 💛\n\nAhora, ¿me comparte su dirección? Puede escribir *Omitir*.`;
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
+async function handleBookingAddressCapture({ tenant, connection, conv, waId, tone, address }) {
+  const answer = String(address || '').replace(/\s+/g, ' ').trim();
+  if (!answer) return;
+  const fs = state.getFlowState(waId) || {};
+  const omitted = /^(omitir|prefiero no|no deseo)$/i.test(answer);
+  state.setFlowState(waId, {
+    ...fs,
+    flow: 'booking',
+    booking: { ...fs.booking, step: 'ask_cedula', address: omitted ? null : answer },
+    tone,
+    unclearCount: 0,
+  });
+  const msg = tone === 'tu'
+    ? 'Gracias 💛 ¿Me compartes tu número de cédula? También puedes escribir *Omitir*.'
+    : 'Gracias 💛 ¿Me comparte su número de cédula? También puede escribir *Omitir*.';
+  const r = await transport.sendText(connection, waId, msg);
+  await recordBotMessage(tenant.id, conv, r, { body: msg });
+}
+
+async function handleBookingCedulaCapture({ tenant, connection, conv, waId, tone, cedula }) {
+  const answer = String(cedula || '').replace(/\s+/g, ' ').trim();
+  if (!answer) return;
+  const omitted = /^(omitir|prefiero no|no deseo|no tengo)$/i.test(answer);
+  if (!omitted && (answer.length < 6 || answer.length > 32)) {
+    const msg = tone === 'tu'
+      ? '¿Puedes revisar el número de cédula? También puedes escribir *Omitir*. 🌿'
+      : '¿Puede revisar el número de cédula? También puede escribir *Omitir*. 🌿';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+  const fs = state.getFlowState(waId) || {};
+  const clientName = fs.booking?.clientName || fs.clientName;
+  state.setFlowState(waId, {
+    ...fs,
+    flow: 'booking',
+    booking: { ...fs.booking, step: 'confirm', cedula: omitted ? null : answer },
+    tone,
+    unclearCount: 0,
+  });
+  return showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName });
 }
 
 async function showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName }) {
@@ -2711,13 +2774,17 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
 
   try {
     let appointment;
+    let bookedClient;
     await prisma.$transaction(async (tx) => {
       const client = booking.clientId
         ? { id: booking.clientId }
         : await clientService.upsertClient(tx, tenant.id, {
           fullName: booking.clientName,
           whatsapp: waIdToPhone(waId),
+          address: booking.address,
+          cedula: booking.cedula,
         });
+      bookedClient = client;
 
       const tenantData = await tx.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
 
@@ -2737,6 +2804,13 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
 
     if (!appointment?.id) {
       throw new Error('No se pudo crear la cita');
+    }
+
+    if (!conv.clientId && bookedClient?.id) {
+      await prisma.whatsAppConversation.update({
+        where: { id: conv.id },
+        data: { clientId: bookedClient.id, customerName: booking.clientName },
+      });
     }
 
     const slotDate = new Date(booking.timeSlot);

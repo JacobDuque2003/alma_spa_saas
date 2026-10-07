@@ -118,40 +118,25 @@ test('primer mensaje texto muestra opciones con emojis y sin índices numéricos
   assert.equal(messageCreates[0].interactivePayload, null);
 });
 
-test('número nuevo completa nombre, dirección y cédula antes de crear la ficha', async () => {
+test('número nuevo puede elegir su cita antes de completar la ficha', async () => {
   resetState();
   const sent = installTransportMocks();
-  const { clientCreates, conversationUpdates } = installPrismaMocks();
+  installPrismaMocks({ services: [{ id: 's1', name: 'Masaje relajante', category: 'masajes', durationMins: 60, active: true }] });
   const unknownConv = { ...CONV, clientId: null, labels: [] };
 
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'hola' } } });
-  assert.match(sent.at(-1).body, /nombre completo/i);
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Hola Almita, quiero reservar un masaje relajante' } } });
 
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'María Pérez' } } });
-  assert.match(sent.at(-1).body, /dirección/i);
-
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Av. Amazonas y Naciones Unidas' } } });
-  assert.match(sent.at(-1).body, /cédula/i);
-
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: '1101234567' } } });
-  assert.deepEqual(clientCreates[0], {
-    tenantId: TENANT.id,
-    fullName: 'María Pérez',
-    whatsapp: '+593999111222',
-    address: 'Av. Amazonas y Naciones Unidas',
-    cedula: '1101234567',
-  });
-  assert.ok(conversationUpdates.some((data) => data.labels?.includes('nueva_clienta')));
-  assert.equal(sent.at(-1).kind, 'text');
-  assert.match(sent.at(-1).body, /🌿 Ver servicios/);
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_service');
+  assert.match(sent.at(-1).body, /elige tu servicio/i);
+  assert.doesNotMatch(sent.at(-1).body, /nombre completo|dirección|cédula/i);
 });
 
-test('número nuevo no confunde una solicitud de reserva con el nombre', async () => {
+test('una reserva nueva reemplaza el onboarding antiguo persistido', async () => {
   resetState();
   const sent = installTransportMocks();
+  installPrismaMocks({ services: [{ id: 's1', name: 'Masaje relajante', category: 'masajes', durationMins: 60, active: true }] });
   const unknownConv = { ...CONV, clientId: null, labels: [] };
-
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'hola' } } });
+  state.setFlowState(CONV.customerWaId, { flow: 'new_client', newClient: { step: 'address', fullName: 'Texto incorrecto' }, tone: 'tu' });
   await bot.handleInboundMessage({
     tenant: TENANT,
     connection: CONN,
@@ -159,12 +144,10 @@ test('número nuevo no confunde una solicitud de reserva con el nombre', async (
     incoming: { type: 'text', text: { body: 'Hola Almita, quiero reservar un masaje relajante' } },
   });
 
-  assert.match(sent.at(-1).body, /ayudo con tu reserva/i);
-  assert.match(sent.at(-1).body, /nombre completo/i);
-
-  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Jacob Duque Regalado' } } });
-  assert.match(sent.at(-1).body, /Mucho gusto, \*Jacob Duque Regalado\*/);
-  assert.match(sent.at(-1).body, /dirección/i);
+  const flow = state.getFlowState(CONV.customerWaId);
+  assert.equal(flow.booking?.step, 'select_service');
+  assert.equal(flow.newClient, null);
+  assert.doesNotMatch(sent.at(-1).body, /cédula/i);
 });
 
 test('ver servicios muestra el catálogo completo en texto', async () => {
@@ -942,6 +925,27 @@ test('name capture → nombre corto rechazado, nombre válido aceptado', async (
     incoming: { type: 'text', text: { body: 'A' } },
   });
   assert.ok(sent.some(s => s.kind === 'text' && /nombre completo/.test(s.body)));
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'Ana Pérez' } },
+  });
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'ask_address');
+  assert.match(sent.at(-1).body, /dirección/i);
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'Omitir' } },
+  });
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'ask_cedula');
+  assert.match(sent.at(-1).body, /cédula/i);
+
+  await bot.handleInboundMessage({
+    tenant: TENANT, connection: CONN, conv: CONV,
+    incoming: { type: 'text', text: { body: 'Omitir' } },
+  });
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'confirm');
+  assert.equal(sent.at(-1).kind, 'interactive');
 });
 
 test('después del día pide mañana o tarde y muestra todos los horarios de esa franja', async () => {
