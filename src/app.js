@@ -28,6 +28,7 @@ const searchRoutes = require('./routes/search');
 const systemStatusRoutes = require('./routes/systemStatus');
 const backupRoutes = require('./routes/admin/backup');
 const adminTenantRoutes = require('./routes/admin/tenants');
+const almitaCenterRoutes = require('./routes/almitaCenter');
 const errorHandler = require('./middleware/errorHandler');
 const { assertEncryptionKeyOrExit } = require('./utils/intakeCrypto');
 const { assertWhatsappKeyOrExit } = require('./utils/whatsappCredentialCrypto');
@@ -134,6 +135,7 @@ app.use('/search', searchRoutes);
 app.use('/system', systemStatusRoutes);
 app.use('/admin/backup', backupRoutes);
 app.use('/admin/tenants', adminTenantRoutes);
+app.use('/almita-center', almitaCenterRoutes);
 
 app.use(errorHandler);
 

@@ -9,6 +9,7 @@ import {
   Activity,
   BarChart3,
   Building2,
+  Bot,
   CalendarDays,
   ClipboardList,
   Inbox,
@@ -48,6 +49,7 @@ const NAV_ITEMS = [
   { href: "/admin/configuracion", label: "Configuración", enabled: true, permission: "configuracion", icon: Settings },
   { href: "/admin/logs", label: "Registros", enabled: true, roles: ["superadmin", "dueno"], icon: ClipboardList },
   { href: "/admin/estado", label: "Estado", enabled: true, roles: ["superadmin"], icon: Activity },
+  { href: "/admin/almita", label: "Centro de Almita", enabled: true, roles: ["superadmin"], icon: Bot },
   { href: "/admin/sistema", label: "Sistema", enabled: true, roles: ["superadmin"], icon: Building2 },
 ];
 

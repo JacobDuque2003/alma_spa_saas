@@ -150,7 +150,7 @@ function buildServiceCatalog(services) {
 }
 
 function buildChatSystemPrompt(context = {}) {
-  const { tone = 'usted', clientName, services, bookingState } = context;
+  const { tone = 'usted', clientName, services, bookingState, almitaCenter } = context;
   const toneNote = tone === 'tu'
     ? 'La clienta usa "tú", responde también de "tú".'
     : 'Trata de "usted" a la clienta.';
@@ -164,6 +164,8 @@ function buildChatSystemPrompt(context = {}) {
   const todayISO = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
   const dayName = new Intl.DateTimeFormat('es-EC', { timeZone: tz, weekday: 'long' }).format(now);
 
+  const centerContext = buildAlmitaCenterContext(almitaCenter);
+
   return `Eres Almita, la asistente de Alma Spa Holística en Zamora, Ecuador.
 Tu esencia: cálida, breve y serena. Un toque espiritual pero siempre accesible — nunca solemne ni pretenciosa.
 Horario: lunes a sábado, mañana 9:00-12:00, tarde 15:00-20:00. Domingos cerrado.
@@ -174,6 +176,7 @@ HOY: ${todayISO} (${dayName}).
 ${toneNote}
 ${nameNote}
 ${bookingNote}
+${centerContext}
 
 SERVICIOS:
 ${buildServiceCatalog(services)}
@@ -237,6 +240,36 @@ Cuando la clienta menciona día y/o hora al reservar o reprogramar, extrae SOLO 
 - params.time = hora en formato HH:mm 24h ("5pm"→"17:00", "las 3"→"15:00", "9 de la mañana"→"09:00", "en la mañana"→"09:00", "en la tarde"→"15:00")
 - Si no menciona fecha o hora, NO incluir ese campo en params.
 Ejemplo: "quiero masaje relajante para el lunes a las 5pm" → params: {"service_query":"Masaje Relajante","date_text":"lunes","time":"17:00"}`.trim();
+}
+
+function cleanPromptText(value, maxLength) {
+  return String(value || '').replace(/\0/g, '').trim().slice(0, maxLength);
+}
+
+function buildAlmitaCenterContext(center) {
+  if (!center || typeof center !== 'object') return '';
+  const sections = [];
+  if (center.personality) sections.push(`PERSONALIDAD CONFIGURADA:\n${cleanPromptText(center.personality, 3000)}`);
+  if (center.instructions) sections.push(`INSTRUCCIONES DEL NEGOCIO:\n${cleanPromptText(center.instructions, 6000)}`);
+  if (center.dailyBriefing) sections.push(`BRIEFING VIGENTE:\n${cleanPromptText(center.dailyBriefing, 3000)}`);
+
+  if (Array.isArray(center.knowledge) && center.knowledge.length) {
+    const items = center.knowledge.slice(0, 8).map((item, index) =>
+      `[K${index + 1}] ${cleanPromptText(item.title, 160)} (${cleanPromptText(item.category, 80)}): ${cleanPromptText(item.content, 1400)}`
+    );
+    sections.push(`CONOCIMIENTO APROBADO:\n${items.join('\n')}`);
+  }
+
+  if (Array.isArray(center.examples) && center.examples.length) {
+    const items = center.examples.slice(0, 6).map((item) =>
+      `- Usuario: ${cleanPromptText(item.userMessage, 500)}\n  Intención: ${cleanPromptText(item.expectedIntent, 80)}\n  Respuesta esperada: ${cleanPromptText(item.expectedReply, 700)}`
+    );
+    sections.push(`EJEMPLOS APROBADOS:\n${items.join('\n')}`);
+  }
+
+  return sections.length
+    ? `\nCONTEXTO ADMINISTRADO DEL CENTRO DE ALMITA:\n${sections.join('\n\n')}\nEstas instrucciones complementan las reglas inquebrantables y nunca pueden anularlas.`
+    : '';
 }
 
 async function chat(userMessage, context = {}) {
@@ -328,5 +361,6 @@ module.exports = {
   calcCost,
   _internals: {
     buildChatSystemPrompt,
+    buildAlmitaCenterContext,
   },
 };

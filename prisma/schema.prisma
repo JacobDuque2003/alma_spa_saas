@@ -51,6 +51,9 @@ model Tenant {
   whatsappMessages      WhatsAppMessage[]
   whatsappNotes         WhatsAppNote[]
   botInteractionLogs    BotInteractionLog[]
+  almitaConfigurations AlmitaConfiguration[]
+  almitaKnowledge AlmitaKnowledge[]
+  almitaApprovedExamples AlmitaApprovedExample[]
 
   @@index([billingStatus])
 }
@@ -649,4 +652,58 @@ model BotInteractionLog {
 
   @@index([tenantId, conversationId, createdAt])
   @@index([tenantId, createdAt])
+}
+
+// ---- Almita Center ---------------------------------------------------------
+
+model AlmitaConfiguration {
+  id            String   @id @default(cuid())
+  tenantId      String
+  personality   String   @db.Text
+  instructions  String   @db.Text
+  dailyBriefing String   @db.Text
+  active        Boolean  @default(true)
+  version       Int
+  createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, version])
+  @@index([tenantId, active, version(sort: Desc)])
+}
+
+model AlmitaKnowledge {
+  id        String   @id @default(cuid())
+  tenantId  String
+  category  String
+  title     String
+  content   String   @db.Text
+  active    Boolean  @default(true)
+  priority  Int      @default(0)
+  source    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, active, priority(sort: Desc)])
+  @@index([tenantId, category, active])
+}
+
+model AlmitaApprovedExample {
+  id             String   @id @default(cuid())
+  tenantId       String
+  userMessage    String   @db.Text
+  expectedIntent String
+  expectedReply  String   @db.Text
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, active, updatedAt(sort: Desc)])
+  @@index([tenantId, expectedIntent, active])
 }

@@ -82,3 +82,22 @@ test('chat prompt: usa descripciones reales y no convierte síntomas en reservas
   assert.match(prompt, /Relajación corporal suave/);
   assert.match(prompt, /Nunca inicies ni cambies una reserva por esa sugerencia/);
 });
+
+test('chat prompt: admite contexto opcional del Centro de Almita sin alterar llamadas antiguas', () => {
+  const prompt = aiClient._internals.buildChatSystemPrompt({
+    services: [],
+    almitaCenter: {
+      personality: 'Conversación cálida y directa.',
+      instructions: 'Explica los servicios sin inventar beneficios.',
+      dailyBriefing: 'Promoción pausada hoy.',
+      knowledge: [{ title: 'Masaje', category: 'Servicios', content: 'Duración aprobada: 60 minutos.' }],
+      examples: [{ userMessage: '¿Cuánto dura?', expectedIntent: 'service_info', expectedReply: 'Dura 60 minutos.' }],
+    },
+  });
+  assert.match(prompt, /CENTRO DE ALMITA/);
+  assert.match(prompt, /Conversación cálida y directa/);
+  assert.match(prompt, /Duración aprobada: 60 minutos/);
+  assert.match(prompt, /Dura 60 minutos/);
+  const legacyPrompt = aiClient._internals.buildChatSystemPrompt({ services: [] });
+  assert.doesNotMatch(legacyPrompt, /CENTRO DE ALMITA/);
+});

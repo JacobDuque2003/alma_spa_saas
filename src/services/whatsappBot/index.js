@@ -19,6 +19,7 @@ const serviceService = require('../serviceService');
 const appointmentService = require('../appointmentService');
 const clientService = require('../clientService');
 const aiClient = require('../aiClient');
+const almitaCenter = require('../almitaCenterService');
 const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
@@ -1448,6 +1449,42 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   });
   const history = persistedHistory.length ? persistedHistory : state.getHistory(waId);
 
+  let centerContext = { configuration: null, knowledge: [], examples: [] };
+  try {
+    centerContext = await almitaCenter.loadRuntimeContext(tenant.id, bodyText);
+  } catch (err) {
+    // La configuración editorial es complementaria: una falla no debe detener WhatsApp.
+    logBot('warn', 'Centro de Almita no disponible', { tenant: tenant.slug, error: err.message });
+  }
+
+  const directlyReusableIntents = new Set(['greeting', 'chitchat', 'farewell', 'unclear']);
+  const approvedExample = centerContext.examples.find((example) => (
+    directlyReusableIntents.has(example.expectedIntent)
+    && almitaCenter.normalizeSearch(example.userMessage) === almitaCenter.normalizeSearch(bodyText)
+  ));
+  if (approvedExample) {
+    logBot('info', 'respuesta aprobada reutilizada', {
+      tenant: tenant.slug,
+      conversationId: conv.id,
+      intent: approvedExample.expectedIntent,
+    });
+    await logBotInteraction(tenant.id, conv, {
+      userMessage: bodyText,
+      intent: approvedExample.expectedIntent,
+      reply: approvedExample.expectedReply,
+    });
+    return routeIntent({
+      tenant,
+      connection,
+      conv,
+      waId,
+      tone,
+      intent: approvedExample.expectedIntent,
+      aiReply: approvedExample.expectedReply,
+      userMessage: bodyText,
+    });
+  }
+
   const t0 = Date.now();
   const aiResult = await aiClient.chat(bodyText, {
     tone,
@@ -1455,6 +1492,16 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     services,
     history,
     bookingState: flowState.booking || null,
+    almitaCenter: centerContext.configuration ? {
+      personality: centerContext.configuration.personality,
+      instructions: centerContext.configuration.instructions,
+      dailyBriefing: centerContext.configuration.dailyBriefing,
+      knowledge: centerContext.knowledge,
+      examples: centerContext.examples,
+    } : {
+      knowledge: centerContext.knowledge,
+      examples: centerContext.examples,
+    },
   });
   const latencyMs = Date.now() - t0;
 
