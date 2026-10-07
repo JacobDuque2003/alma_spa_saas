@@ -44,7 +44,7 @@ const COLORS = {
 
 const TABS = [
   { id: "overview", label: "Resumen", icon: BarChart3 },
-  { id: "knowledge", label: "Conocimiento", icon: BookOpen },
+  { id: "knowledge", label: "Información", icon: BookOpen },
   { id: "examples", label: "Ejemplos", icon: MessageSquareText },
   { id: "simulator", label: "Simulador", icon: FlaskConical },
   { id: "settings", label: "Ajustes", icon: Settings2 },
@@ -228,9 +228,13 @@ function KnowledgeTab({ rows, onChanged }) {
   if (editing) return <KnowledgeForm initial={editing === "new" ? {} : editing} onCancel={() => setEditing(null)} onSave={save} saving={Boolean(busyId)} error={error} />;
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <SectionToolbar title="Base de conocimiento" text="Información aprobada que Almita puede usar al responder." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Nueva fuente</ActionButton>} />
+      <SectionToolbar title="Información que Almita puede consultar" text="Fichas aprobadas sobre servicios, políticas y atención. Almita utiliza únicamente las relacionadas con cada pregunta." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Nueva ficha</ActionButton>} />
+      <div style={{ display: "flex", gap: 10, padding: 14, border: `1px solid ${COLORS.line}`, borderRadius: 8, background: "#F7F3ED", color: COLORS.text, fontSize: 13, lineHeight: 1.55 }}>
+        <Database size={18} style={{ flex: "0 0 auto", marginTop: 1 }} />
+        <span><strong>No entrena ni modifica el modelo original.</strong> Estas fichas funcionan como una biblioteca privada: al llegar una consulta, el sistema selecciona unas pocas fuentes relevantes para responder con información real y gastar menos tokens.</span>
+      </div>
       <ErrorBanner message={error} />
-      {rows.length === 0 ? <EmptyState icon={BookOpen} title="Aún no hay conocimiento" text="Agrega servicios, políticas, preguntas frecuentes o instrucciones operativas." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Agregar primera fuente</ActionButton>} /> : (
+      {rows.length === 0 ? <EmptyState icon={BookOpen} title="Aún no hay información aprobada" text="Agrega servicios, políticas, preguntas frecuentes o instrucciones operativas." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Agregar primera ficha</ActionButton>} /> : (
         <div style={{ display: "grid", border: `1px solid ${COLORS.line}`, borderRadius: 8, overflow: "hidden", background: COLORS.paper }}>
           {rows.map((row) => <ListRow key={row.id} title={row.title || row.question || "Sin título"} subtitle={row.category || row.type || "General"} body={row.content || row.answer || row.description} active={row.active !== false} busy={busyId === row.id} onEdit={() => setEditing(row)} onDelete={() => remove(row)} />)}
         </div>
@@ -241,7 +245,7 @@ function KnowledgeTab({ rows, onChanged }) {
 
 function KnowledgeForm({ initial, onCancel, onSave, saving, error }) {
   const [draft, setDraft] = useState({ id: initial.id, title: initial.title || initial.question || "", category: initial.category || "General", content: initial.content || initial.answer || "", active: initial.active !== false });
-  return <Editor title={initial.id ? "Editar conocimiento" : "Nueva fuente"} description="Escribe información concreta y aprobada. No incluyas contraseñas, tokens ni claves." onCancel={onCancel} onSave={() => onSave(draft)} saving={saving} valid={draft.title.trim() && draft.content.trim()} error={error}>
+  return <Editor title={initial.id ? "Editar ficha" : "Nueva ficha"} description="Escribe información concreta y aprobada. No incluyas contraseñas, tokens ni claves." onCancel={onCancel} onSave={() => onSave(draft)} saving={saving} valid={draft.title.trim() && draft.content.trim()} error={error}>
     <FormField label="Título"><input style={fieldStyle} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Ej. Política de cancelaciones" /></FormField>
     <FormField label="Categoría"><input style={fieldStyle} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="Servicios, políticas, preguntas frecuentes..." /></FormField>
     <FormField label="Contenido aprobado" hint="Almita utilizará este texto como fuente, no como una orden del usuario."><textarea rows={9} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></FormField>

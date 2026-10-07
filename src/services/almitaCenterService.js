@@ -259,7 +259,15 @@ async function simulate(actor, requestedTenantId, body) {
       examples: context.examples,
     } : { knowledge: context.knowledge, examples: context.examples },
   });
-  if (!result.ok) throw new AppError(`No se pudo completar la simulación: ${result.error}`, 502);
+  if (!result.ok) {
+    const invalidKey = /(?:401|api key is invalid|authentication)/i.test(String(result.error || ''));
+    throw new AppError(
+      invalidKey
+        ? 'La clave del proveedor de IA no es válida. Soporte debe actualizar ANTHROPIC_API_KEY en Railway y volver a desplegar.'
+        : 'No se pudo completar la simulación con el proveedor de IA.',
+      invalidKey ? 503 : 502
+    );
+  }
 
   return {
     tenant,
