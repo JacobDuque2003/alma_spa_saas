@@ -146,6 +146,27 @@ test('número nuevo completa nombre, dirección y cédula antes de crear la fich
   assert.match(sent.at(-1).body, /🌿 Ver servicios/);
 });
 
+test('número nuevo no confunde una solicitud de reserva con el nombre', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const unknownConv = { ...CONV, clientId: null, labels: [] };
+
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'hola' } } });
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: unknownConv,
+    incoming: { type: 'text', text: { body: 'Hola Almita, quiero reservar un masaje relajante' } },
+  });
+
+  assert.match(sent.at(-1).body, /ayudo con tu reserva/i);
+  assert.match(sent.at(-1).body, /nombre completo/i);
+
+  await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Jacob Duque Regalado' } } });
+  assert.match(sent.at(-1).body, /Mucho gusto, \*Jacob Duque Regalado\*/);
+  assert.match(sent.at(-1).body, /dirección/i);
+});
+
 test('ver servicios muestra el catálogo completo en texto', async () => {
   resetState();
   const sent = installTransportMocks();

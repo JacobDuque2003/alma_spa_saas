@@ -674,18 +674,24 @@ async function handleNewClientOnboarding({ tenant, connection, conv, waId, tone,
   if (!answer) return;
 
   if (onboarding.step === 'name') {
-    if (answer.length < 3) {
-      const retry = tone === 'tu'
-        ? '¿Me compartes tu nombre completo, por favor? 🌿'
-        : '¿Me comparte su nombre completo, por favor? 🌿';
+    const fullName = extractRecipientName(answer);
+    if (!fullName) {
+      const mentionsBooking = /\b(reserv|agend|cita|masaje|servicio|tratamiento)\w*/i.test(answer);
+      const retry = mentionsBooking
+        ? (tone === 'tu'
+          ? 'Claro, te ayudo con tu reserva 💛 Antes necesito tu nombre completo, por favor.'
+          : 'Claro, le ayudo con su reserva 💛 Antes necesito su nombre completo, por favor.')
+        : (tone === 'tu'
+          ? '¿Me compartes tu nombre completo, por favor? 🌿'
+          : '¿Me comparte su nombre completo, por favor? 🌿');
       const r = await transport.sendText(connection, waId, retry);
       await recordBotMessage(tenant.id, conv, r, { body: retry });
       return;
     }
-    state.setFlowState(waId, { flow: 'new_client', newClient: { step: 'address', fullName: answer }, tone, unclearCount: 0 });
+    state.setFlowState(waId, { flow: 'new_client', newClient: { step: 'address', fullName }, tone, unclearCount: 0 });
     const prompt = tone === 'tu'
-      ? 'Mucho gusto, *' + answer + '* 💛\n\nAhora, ¿me compartes tu dirección?'
-      : 'Mucho gusto, *' + answer + '* 💛\n\nAhora, ¿me comparte su dirección?';
+      ? 'Mucho gusto, *' + fullName + '* 💛\n\nAhora, ¿me compartes tu dirección?'
+      : 'Mucho gusto, *' + fullName + '* 💛\n\nAhora, ¿me comparte su dirección?';
     const r = await transport.sendText(connection, waId, prompt);
     await recordBotMessage(tenant.id, conv, r, { body: prompt });
     return;
