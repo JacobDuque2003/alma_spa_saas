@@ -295,6 +295,12 @@ function asksForAvailableAppointments(text) {
     || /\b(citas?|horarios?|espacios?)\b.*\b(disponibles?|libres?)\b/.test(t);
 }
 
+function asksForAvailableDates(text) {
+  const t = normalizeSearchText(text);
+  return /\b(que|cuales|ver|mostrar|tiene|tienen|hay)\b.*\b(fechas?|dias?)\b.*\b(disponibles?|libres?)\b/.test(t)
+    || /\b(fechas?|dias?)\b.*\b(disponibles?|libres?)\b/.test(t);
+}
+
 function serviceListPaginationDirection(text) {
   const normalized = normalizeSearchText(text);
   if (/^(ver|mostrar) mas servicios$/.test(normalized)) return 'next';
@@ -974,8 +980,7 @@ async function matchServiceByQuery(tenantId, query) {
   if (!q) return null;
   const services = await loadVisibleServicesForBot(tenantId);
   const direct = services.find(s => normalizeSearchText(s.name).includes(q))
-    || services.find(s => q.includes(normalizeSearchText(s.name)))
-    || services.find(s => q.includes(normalizeSearchText(s.name).slice(0, 6)));
+    || services.find(s => q.includes(normalizeSearchText(s.name)));
   if (direct) return direct;
 
   const scored = services
@@ -1206,6 +1211,10 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
       ? currentPage + 1
       : Math.max(currentPage - 1, 0);
     return handleListServices({ tenant, connection, conv, waId, tone, page });
+  }
+
+  if (flowState.booking?.step === 'select_date' && asksForAvailableDates(bodyText)) {
+    return showNextAvailableBookingDates({ tenant, connection, conv, waId, tone });
   }
 
   if (asksForAvailableAppointments(bodyText)) {
@@ -1868,6 +1877,7 @@ async function sendTextChoices({ tenant, connection, conv, waId, body, choices }
 }
 
 function textChoiceEmoji(id) {
+  if (id.startsWith(menus.BOOK_DATE_PREFIX)) return '📅';
   if (id.startsWith(menus.BOOK_TIME_PREFIX)) return '🕐';
   if (id === menus.BOOK_PERIOD_MORNING) return '🌅';
   if (id === menus.BOOK_PERIOD_AFTERNOON) return '🌆';
@@ -2521,6 +2531,54 @@ async function showBookingDatePicker({ tenant, connection, conv, waId, tone }) {
     : `📅 ¿Qué otro día le queda bien para _${fs.booking?.serviceName || 'su servicio'}_?`;
   const r = await transport.sendText(connection, waId, `${body}\n\nPuedes escribir “mañana”, “el martes” o una fecha.`);
   await recordBotMessage(tenant.id, conv, r, { body });
+}
+
+async function showNextAvailableBookingDates({ tenant, connection, conv, waId, tone }) {
+  const fs = state.getFlowState(waId) || {};
+  if (!fs.booking?.serviceId) return handleBook({ tenant, connection, conv, waId, tone });
+
+  const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
+  const bookingClient = fs.booking.clientId
+    ? { id: fs.booking.clientId }
+    : await lookupClientByWaId(tenant.id, waId);
+  const todayParts = localDateParts(new Date(), menus.SPA_TZ);
+  const today = isoFromParts(todayParts.year, todayParts.month, todayParts.day);
+  const availableDates = [];
+
+  for (let offset = 0; offset < 14 && availableDates.length < 5; offset++) {
+    const date = addDaysToISO(today, offset);
+    try {
+      const slots = await appointmentService.getAvailability({
+        tenantId: tenant.id,
+        tenantConfig: tenantData?.config,
+        serviceId: fs.booking.serviceId,
+        date,
+        modality: 'spa',
+        clientId: bookingClient?.id || null,
+      });
+      if (slots.length > 0) availableDates.push({ date, slots: slots.length });
+    } catch (err) {
+      logBot('warn', 'error al buscar próximos días disponibles', { date, error: err.message });
+    }
+  }
+
+  if (!availableDates.length) {
+    const msg = tone === 'tu'
+      ? 'Por ahora no encontré espacios en los próximos 14 días. Te comunico con un asesor para ayudarte.'
+      : 'Por ahora no encontré espacios en los próximos 14 días. Le comunico con un asesor para ayudarle.';
+    const r = await transport.sendText(connection, waId, msg);
+    await recordBotMessage(tenant.id, conv, r, { body: msg });
+    return;
+  }
+
+  const body = `Estas son las próximas fechas disponibles para _${fs.booking.serviceName}_:`;
+  return sendTextChoices({
+    tenant, connection, conv, waId, body,
+    choices: availableDates.map(({ date, slots }) => ({
+      id: `${menus.BOOK_DATE_PREFIX}${date}`,
+      label: `${formatAppointmentDate(`${date}T12:00:00-05:00`)} · ${slots} ${slots === 1 ? 'horario' : 'horarios'}`,
+    })),
+  });
 }
 
 async function showBookingPeriodPicker({ tenant, connection, conv, waId, tone, body }) {

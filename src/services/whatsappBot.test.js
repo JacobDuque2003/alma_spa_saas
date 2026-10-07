@@ -144,7 +144,7 @@ test('reserva escrita en singular reconoce la familia plural del catálogo', asy
     id: 'child-massage', tenantId: 't1', name: 'Masaje con piedras calientes',
     category: 'masajes', parentServiceId: parent.id, priceUsd: 45, durationMins: 120, active: true,
   };
-  installPrismaMocks({ services: [parent, child], serviceById: { [parent.id]: parent } });
+  installPrismaMocks({ services: [child, parent], serviceById: { [parent.id]: parent } });
 
   await bot.handleInboundMessage({
     tenant: TENANT,
@@ -156,6 +156,40 @@ test('reserva escrita en singular reconoce la familia plural del catálogo', asy
   assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_subservice');
   assert.match(sent.at(-1).body, /Masajes relajantes/);
   assert.match(sent.at(-1).body, /Masaje con piedras calientes/);
+  assert.doesNotMatch(sent.at(-1).body, /Contactar a un asesor/);
+});
+
+test('preguntar por fechas disponibles conserva el servicio y consulta disponibilidad real', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  installPrismaMocks();
+  const originalGetAvailability = appointmentService.getAvailability;
+  let availabilityCalls = 0;
+  appointmentService.getAvailability = async ({ date }) => {
+    availabilityCalls += 1;
+    return availabilityCalls <= 2 ? [`${date}T15:00:00.000Z`] : [];
+  };
+  state.setFlowState(CONV.customerWaId, {
+    flow: 'booking',
+    booking: { step: 'select_date', serviceId: 's1', serviceName: 'Masaje relajante' },
+    tone: 'tu',
+  });
+
+  try {
+    await bot.handleInboundMessage({
+      tenant: TENANT,
+      connection: CONN,
+      conv: CONV,
+      incoming: { type: 'text', text: { body: '¿Qué fechas tiene disponible?' } },
+    });
+  } finally {
+    appointmentService.getAvailability = originalGetAvailability;
+  }
+
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_date');
+  assert.ok(availabilityCalls > 0);
+  assert.match(sent.at(-1).body, /próximas fechas disponibles/i);
+  assert.match(sent.at(-1).body, /Masaje relajante/);
   assert.doesNotMatch(sent.at(-1).body, /Contactar a un asesor/);
 });
 
