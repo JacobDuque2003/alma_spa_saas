@@ -279,6 +279,16 @@ function isGenericBookingRequest(text) {
   return /^(quiero |quisiera |deseo |necesito )?(hacer |agendar |reservar )?(una )?(cita|reserva|reservacion|espacio)$/.test(t);
 }
 
+function extractServiceQueryFromBookingText(text) {
+  return normalizeSearchText(text)
+    .replace(/\b(yo|hola|almita|quiero|quisiera|deseo|necesito|me gustaria|por favor)\b/g, ' ')
+    .replace(/\b(hacer|agendar|reservar|separar)\b/g, ' ')
+    .replace(/\b(una?|mi|la|el)\b/g, ' ')
+    .replace(/\b(cita|reserva|reservacion|espacio|turno)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function asksForAvailableAppointments(text) {
   const t = normalizeSearchText(text);
   return /\b(hay|tienen|tengo|quiero ver|mostrar)\b.*\b(citas?|horarios?|espacios?)\b.*\b(disponibles?|libres?|para hoy|para manana)\b/.test(t)
@@ -1229,14 +1239,15 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   const priorityIntent = detectDeterministicIntent(bodyText);
   if (priorityIntent === 'book_start') {
     const normalizedMessage = normalizeSearchText(bodyText);
+    const serviceQuery = extractServiceQueryFromBookingText(bodyText);
     const visibleServices = await loadVisibleServicesForBot(tenant.id);
     const mentionedService = visibleServices.find((service) => {
       const serviceName = normalizeSearchText(service.name);
       return serviceName && normalizedMessage.includes(serviceName);
     });
-    const requestedService = mentionedService || await matchServiceByQuery(tenant.id, bodyText);
-    const normalizedService = normalizeSearchText(requestedService?.name);
-    if (requestedService && normalizedService && normalizedMessage.includes(normalizedService)) {
+    const requestedService = mentionedService
+      || (serviceQuery ? await matchServiceByQuery(tenant.id, serviceQuery) : null);
+    if (requestedService) {
       const requestedDate = resolveBookingDate({}, bodyText);
       const requestedTime = parseRequestedTime(bodyText);
       if (requestedDate) {
@@ -2375,14 +2386,15 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
   });
 
   const description = serviceCatalogDescription(svc);
+  const serviceMeta = serviceCatalogMeta(svc);
   const body = tone === 'tu'
-    ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n¿Qué día te queda bien?'
-    : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n¿Qué día le queda bien?';
+    ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n💰 ' + serviceMeta + '\n\n¿Qué día te queda bien?'
+    : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n💰 ' + serviceMeta + '\n\n¿Qué día le queda bien?';
 
   if (requestedDate) {
     const availabilityBody = tone === 'tu'
-      ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n📅 Ya anoté el día que elegiste. Revisemos los horarios disponibles:'
-      : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n📅 Ya anoté el día que eligió. Revisemos los horarios disponibles:';
+      ? '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n💰 ' + serviceMeta + '\n\n📅 Ya anoté el día que elegiste. Revisemos los horarios disponibles:'
+      : '✨ *_' + svc.name + '_ — excelente elección*\n\n' + description + '\n\n💰 ' + serviceMeta + '\n\n📅 Ya anoté el día que eligió. Revisemos los horarios disponibles:';
     return handleBookingDateSelected({
       tenant,
       connection,

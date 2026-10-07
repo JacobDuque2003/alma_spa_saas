@@ -129,7 +129,34 @@ test('número nuevo puede elegir su cita antes de completar la ficha', async () 
 
   assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_date');
   assert.match(sent.at(-1).body, /qué día/i);
+  assert.match(sent.at(-1).body, /\$30\.00 · 60 min/);
   assert.doesNotMatch(sent.at(-1).body, /nombre completo|dirección|cédula/i);
+});
+
+test('reserva escrita en singular reconoce la familia plural del catálogo', async () => {
+  resetState();
+  const sent = installTransportMocks();
+  const parent = {
+    id: 'parent-massage', tenantId: 't1', name: 'Masajes relajantes',
+    category: 'masajes', priceUsd: 40, durationMins: 120, active: true,
+  };
+  const child = {
+    id: 'child-massage', tenantId: 't1', name: 'Masaje con piedras calientes',
+    category: 'masajes', parentServiceId: parent.id, priceUsd: 45, durationMins: 120, active: true,
+  };
+  installPrismaMocks({ services: [parent, child], serviceById: { [parent.id]: parent } });
+
+  await bot.handleInboundMessage({
+    tenant: TENANT,
+    connection: CONN,
+    conv: CONV,
+    incoming: { type: 'text', text: { body: 'Quiero reservar un masaje relajante' } },
+  });
+
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_subservice');
+  assert.match(sent.at(-1).body, /Masajes relajantes/);
+  assert.match(sent.at(-1).body, /Masaje con piedras calientes/);
+  assert.doesNotMatch(sent.at(-1).body, /Contactar a un asesor/);
 });
 
 test('una reserva nueva reemplaza el onboarding antiguo persistido', async () => {
