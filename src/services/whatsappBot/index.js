@@ -1227,6 +1227,31 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   const priorityIntent = detectDeterministicIntent(bodyText);
+  if (priorityIntent === 'book_start') {
+    const normalizedMessage = normalizeSearchText(bodyText);
+    const visibleServices = await loadVisibleServicesForBot(tenant.id);
+    const mentionedService = visibleServices.find((service) => {
+      const serviceName = normalizeSearchText(service.name);
+      return serviceName && normalizedMessage.includes(serviceName);
+    });
+    const requestedService = mentionedService || await matchServiceByQuery(tenant.id, bodyText);
+    const normalizedService = normalizeSearchText(requestedService?.name);
+    if (requestedService && normalizedService && normalizedMessage.includes(normalizedService)) {
+      const requestedDate = resolveBookingDate({}, bodyText);
+      const requestedTime = parseRequestedTime(bodyText);
+      if (requestedDate) {
+        return handleSmartBooking({
+          tenant, connection, conv, waId, tone,
+          service: requestedService,
+          date: requestedDate,
+          time: requestedTime,
+        });
+      }
+      return handleBookingServiceSelected({
+        tenant, connection, conv, waId, tone, serviceId: requestedService.id,
+      });
+    }
+  }
   // Un mensaje libre de reserva puede traer servicio, fecha y hora. Si la IA
   // está disponible, debe extraer esos datos para llevar la clienta directo a
   // la disponibilidad real, en vez de devolverla al selector inicial.
@@ -1351,7 +1376,8 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   // Tier 2: intent cache lookup
   const canUseIntentCache = !flowState.booking && !flowState.reschedule && flowState.flow !== 'service_detail';
-  const cached = canUseIntentCache ? intentCache.get(bodyText) : null;
+  const cacheKey = `${tenant.id}:${tone}:${bodyText}`;
+  const cached = canUseIntentCache ? intentCache.get(cacheKey) : null;
   if (cached) {
     logBot('info', 'intención resuelta por caché', {
       tenant: tenant.slug,
@@ -1440,7 +1466,13 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     costUsd: Number((aiResult.costUsd || 0).toFixed(4)),
   });
 
-  if (canUseIntentCache) intentCache.set(bodyText, aiResult.intent, aiResult.replyText);
+  if (canUseIntentCache) {
+    const reusableReplyIntents = new Set(['chitchat', 'farewell', 'unclear']);
+    const reusableReply = !clientName && reusableReplyIntents.has(aiResult.intent)
+      ? aiResult.replyText
+      : null;
+    intentCache.set(cacheKey, aiResult.intent, reusableReply);
+  }
 
   await logBotInteraction(tenant.id, conv, {
     userMessage: bodyText,
@@ -1623,15 +1655,15 @@ function serviceInfoFallback(service) {
   if (name.includes('depil')) return 'Sesión de depilación con tecnología láser para una reducción progresiva del vello; requiere valoración según piel, vello y antecedentes.';
   if (name.includes('detox')) return 'Baño de pies de bienestar para una pausa de relajación. No sustituye atención médica ni elimina toxinas del organismo.';
   if (name.includes('drenaje post')) return 'Acompañamiento de bienestar posterior a un procedimiento, únicamente con autorización del cirujano y valoración profesional; no reemplaza el seguimiento médico.';
-  if (name.includes('emo vacuna')) return 'Sesión de bienestar con orientación previa de recepción para explicarle el protocolo y confirmar si es adecuada para usted.';
+  if (name.includes('emo vacuna')) return 'Sesión de bienestar con orientación previa de un asesor para explicarle el protocolo y confirmar si es adecuada para usted.';
   if (name.includes('masaje')) return 'Masaje de bienestar orientado a la relajación y al descanso. No sustituye una valoración médica ante dolor intenso, nuevo o persistente.';
   if (name.includes('reflex')) return 'Práctica complementaria de presión y masaje en los pies, pensada para relajación. No trata ni cura enfermedades.';
-  if (name.includes('sueroterapia')) return 'Atención clínica que requiere valoración y administración por un profesional de salud habilitado. Recepción coordina la orientación previa.';
-  if (name.includes('terapia neural')) return 'Atención clínica que requiere valoración y aplicación exclusivamente por un profesional de salud habilitado. Recepción coordina la orientación previa.';
+  if (name.includes('sueroterapia')) return 'Atención clínica que requiere valoración y administración por un profesional de salud habilitado. Un asesor coordina la orientación previa.';
+  if (name.includes('terapia neural')) return 'Atención clínica que requiere valoración y aplicación exclusivamente por un profesional de salud habilitado. Un asesor coordina la orientación previa.';
   if (name.includes('energet')) return 'Práctica complementaria de bienestar enfocada en relajación y presencia. No sustituye atención médica ni trata enfermedades.';
   if (name.includes('facial')) return 'Cuidado estético facial para limpiar, renovar e hidratar la piel, adaptado a sus necesidades tras una valoración profesional.';
   if (name.includes('yoga')) return 'Práctica guiada de movimiento y bienestar. La profesional adapta la sesión a su experiencia y condición física.';
-  return 'Es un servicio de bienestar de Alma Spa. Recepción puede ampliarte los detalles específicos.';
+  return 'Es un servicio de bienestar de Alma Spa. Un asesor puede ampliarte los detalles específicos.';
 }
 
 function findSlotIndexByTime(slots, requestedTime) {
@@ -1706,8 +1738,8 @@ async function handleUnclear({ tenant, connection, conv, waId, tone, aiReply }) 
 
   if (unclearCount >= MAX_UNCLEAR_BEFORE_ESCALATE) {
     const msg = tone === 'tu'
-      ? '😅 *Te paso con recepción* — para ayudarte mejor 💛'
-      : '😅 *Le paso con recepción* — para ayudarle mejor 💛';
+      ? '😅 *Te contacto con un asesor* — para ayudarte mejor 💛'
+      : '😅 *Le contacto con un asesor* — para ayudarle mejor 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return handleEscalate({ tenant, connection, conv, waId, tone });
@@ -1764,25 +1796,31 @@ function mainMenuSelectionFromText(text, flowState = {}) {
   if (flowState.flow !== 'menu') return null;
   const value = normalizeSearchText(text).replace(/[.!?]+$/g, '').trim();
   const options = {
-    '1': menus.MAIN_MENU_IDS.LIST_SERVICES,
+    '1': menus.MAIN_MENU_IDS.BOOK,
     'ver servicios': menus.MAIN_MENU_IDS.LIST_SERVICES,
     servicios: menus.MAIN_MENU_IDS.LIST_SERVICES,
-    '2': menus.MAIN_MENU_IDS.BOOK,
+    '2': menus.MAIN_MENU_IDS.RECOMMEND,
     'reservar cita': menus.MAIN_MENU_IDS.BOOK,
     'agendar cita': menus.MAIN_MENU_IDS.BOOK,
-    '3': menus.MAIN_MENU_IDS.BOOK_FOR_OTHER,
+    '3': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
     'reservar para otra persona': menus.MAIN_MENU_IDS.BOOK_FOR_OTHER,
-    '4': menus.MAIN_MENU_IDS.RECOMMEND,
+    '4': menus.MAIN_MENU_IDS.ESCALATE,
     'no se que elegir': menus.MAIN_MENU_IDS.RECOMMEND,
+    'ayudame a elegir': menus.MAIN_MENU_IDS.RECOMMEND,
     '5': menus.MAIN_MENU_IDS.PROMOTIONS,
     promociones: menus.MAIN_MENU_IDS.PROMOTIONS,
     'promociones y catalogo': menus.MAIN_MENU_IDS.PROMOTIONS,
     '6': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
     'consultar mi cita': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
+    'consultar o cambiar mi cita': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
     'mi cita': menus.MAIN_MENU_IDS.MY_APPOINTMENT,
     '7': menus.MAIN_MENU_IDS.ESCALATE,
     'hablar con recepcion': menus.MAIN_MENU_IDS.ESCALATE,
     recepcion: menus.MAIN_MENU_IDS.ESCALATE,
+    'contactar a un asesor': menus.MAIN_MENU_IDS.ESCALATE,
+    'contactar con un asesor': menus.MAIN_MENU_IDS.ESCALATE,
+    asesor: menus.MAIN_MENU_IDS.ESCALATE,
+    asesora: menus.MAIN_MENU_IDS.ESCALATE,
   };
   return options[value] || null;
 }
@@ -2077,7 +2115,7 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
 
   const descLine = `\n\n${serviceCatalogDescription(svc) || serviceInfoFallback(svc)}`;
   const icon = menus.serviceEmoji(svc);
-  const caption = `${icon} *_${svc.name}_*\n💰 $${Number(svc.priceUsd).toFixed(2)} · ${svc.durationMins || 60} min${descLine}`;
+  const caption = `${icon} *_${svc.name}_*\n💰 ${serviceCatalogMeta(svc)}${descLine}`;
 
   const imgRes = await serviceService.getServiceImage(botActor, serviceId);
   const image = imgRes?.image;
@@ -2145,8 +2183,8 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
   const visible = (await loadVisibleServicesForBot(tenant.id)).filter((service) => !service.parentServiceId);
   if (visible.length === 0) {
     const msg = tone === 'tu'
-      ? '😅 *Aún no tenemos servicios disponibles*\n\nComunícate con recepción 💛'
-      : '😅 *Aún no tenemos servicios disponibles*\n\nComuníquese con recepción 💛';
+      ? '😅 *Aún no tenemos servicios disponibles*\n\nContacta a un asesor 💛'
+      : '😅 *Aún no tenemos servicios disponibles*\n\nContacte a un asesor 💛';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return sendMainMenu({
@@ -2296,6 +2334,7 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
           parentServiceId: svc.id,
           parentServiceName: svc.name,
         },
+        newClient: null,
         clientName: prev.clientName,
         tone,
         unclearCount: 0,
@@ -2329,6 +2368,7 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
       requestedDate,
       requestedTime,
     },
+    newClient: null,
     clientName: prev.clientName,
     tone,
     unclearCount: 0,
@@ -2743,7 +2783,8 @@ async function showBookingConfirmation({ tenant, connection, conv, waId, tone, c
   }).format(slotDate);
 
   const therapistLine = booking.staffName ? `\n👩‍⚕️ ${booking.staffName}` : '';
-  const summary = `🌿 _${booking.serviceName}_\n📅 ${capitalize(fechaStr)}\n🕐 ${formatHora12(horaStr)}\n👤 ${clientName}${therapistLine}${depositLine(depositPolicy, tone)}`;
+  const priceLine = service ? `\n💰 ${serviceCatalogMeta(service)}` : '';
+  const summary = `🌿 _${booking.serviceName}_\n📅 ${capitalize(fechaStr)}\n🕐 ${formatHora12(horaStr)}\n👤 ${clientName}${therapistLine}${priceLine}${depositLine(depositPolicy, tone)}`;
 
   state.setFlowState(waId, {
     flow: 'booking',
@@ -2852,8 +2893,8 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
       await showBookingDatePicker({ tenant, connection, conv, waId, tone });
     } else {
       const msg = tone === 'tu'
-        ? '😅 *Tuve un problema con tu reserva*\n\nTe paso con recepción 💛'
-        : '😅 *Tuve un problema con su reserva*\n\nLe paso con recepción 💛';
+        ? '😅 *Tuve un problema con tu reserva*\n\nTe contacto con un asesor 💛'
+        : '😅 *Tuve un problema con su reserva*\n\nLe contacto con un asesor 💛';
       const r = await transport.sendText(connection, waId, msg);
       await recordBotMessage(tenant.id, conv, r, { body: msg });
 
@@ -3200,8 +3241,8 @@ async function handleMyAppointment({ tenant, connection, conv, waId, tone }) {
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
   const guidance = tone === 'tu'
-    ? 'Puedes escribir “reagendar mi cita”, “cancelar mi cita” o “hablar con recepción”.'
-    : 'Puede escribir “reagendar mi cita”, “cancelar mi cita” o “hablar con recepción”.';
+    ? 'Puedes escribir “reagendar mi cita”, “cancelar mi cita” o “contactar a un asesor”.'
+    : 'Puede escribir “reagendar mi cita”, “cancelar mi cita” o “contactar a un asesor”.';
   const actionResult = await transport.sendText(connection, waId, guidance);
   await recordBotMessage(tenant.id, conv, actionResult, { body: guidance });
   state.setFlowState(waId, { flow: 'menu', clientName: client.fullName, tone, unclearCount: 0, textChoices: null });
@@ -3233,8 +3274,8 @@ async function handleEscalate({ tenant, connection, conv, waId, tone }) {
     state.markEscalated(waId);
     state.clearFlowState(waId);
     const msg = tone === 'tu'
-      ? '👋 *Te conecto con recepción.*\n\nPor favor, espera un momento; una persona del equipo te atenderá lo antes posible 🌿'
-      : '👋 *Le conecto con recepción.*\n\nPor favor, espere un momento; una persona del equipo le atenderá lo antes posible 🌿';
+      ? '👋 *Te conecto con un asesor.*\n\nPor favor, espera un momento; una persona del equipo te atenderá lo antes posible 🌿'
+      : '👋 *Le conecto con un asesor.*\n\nPor favor, espere un momento; una persona del equipo le atenderá lo antes posible 🌿';
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return;
@@ -3243,8 +3284,8 @@ async function handleEscalate({ tenant, connection, conv, waId, tone }) {
   // Fuera de horario se conserva la etiqueta para que recepción vea el caso,
   // pero Almita sigue disponible si la persona decide continuar por el bot.
   const msg = tone === 'tu'
-    ? '🌙 *En este momento recepción está fuera de horario.*\n\nPuedes seguir usando Almita para ver servicios, consultar horarios disponibles o reservar. Si prefieres atención humana, déjanos tu requerimiento y recepción lo revisará en el próximo horario de atención 💛'
-    : '🌙 *En este momento recepción está fuera de horario.*\n\nPuede seguir usando Almita para ver servicios, consultar horarios disponibles o reservar. Si prefiere atención humana, déjenos su requerimiento y recepción lo revisará en el próximo horario de atención 💛';
+    ? '🌙 *En este momento nuestros asesores están fuera de horario.*\n\nPuedes seguir usando Almita para ver servicios, consultar horarios disponibles o reservar. Si prefieres atención humana, déjanos tu requerimiento y un asesor lo revisará en el próximo horario de atención 💛'
+    : '🌙 *En este momento nuestros asesores están fuera de horario.*\n\nPuede seguir usando Almita para ver servicios, consultar horarios disponibles o reservar. Si prefiere atención humana, déjenos su requerimiento y un asesor lo revisará en el próximo horario de atención 💛';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }

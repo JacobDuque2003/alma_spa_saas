@@ -71,20 +71,15 @@ function verbYouCan(tone) {
 }
 
 function mainMenuText({ tone, clientName, compact = false } = {}) {
-  const instruction = tone === 'tu' ? 'Escríbeme qué te gustaría hacer:' : 'Escríbame qué le gustaría hacer:';
   const intro = compact
-    ? (tone === 'tu' ? '🌿 ¿Qué te gustaría hacer hoy?' : '🌿 ¿Qué le gustaría explorar ahora?')
-    : `${greeting(tone, clientName)}\n${verbYouCan(tone)}`;
+    ? (tone === 'tu' ? '🌿 ¿Qué necesitas?' : '🌿 ¿Qué necesita?')
+    : greeting(tone, clientName);
   return `${intro}
 
-${instruction}
-🌿 Ver servicios
 📅 Reservar cita
-👤 Reservar para otra persona
-✨ No sé qué elegir
-🌸 Promociones y catálogo
-📋 Consultar mi cita
-💬 Hablar con recepción`;
+✨ Ayúdame a elegir
+🗓️ Consultar o cambiar mi cita
+💬 Contactar a un asesor`;
 }
 
 function serviceEmoji(service) {

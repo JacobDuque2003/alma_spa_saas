@@ -112,8 +112,8 @@ test('primer mensaje texto muestra opciones con emojis y sin índices numéricos
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'text');
   assert.match(sent[0].body, /Almita/);
-  assert.match(sent[0].body, /🌿 Ver servicios/);
-  assert.match(sent[0].body, /💬 Hablar con recepción/);
+  assert.match(sent[0].body, /📅 Reservar cita/);
+  assert.match(sent[0].body, /💬 Contactar a un asesor/);
   assert.doesNotMatch(sent[0].body, /^\d+\./m);
   assert.equal(messageCreates[0].interactivePayload, null);
 });
@@ -121,20 +121,22 @@ test('primer mensaje texto muestra opciones con emojis y sin índices numéricos
 test('número nuevo puede elegir su cita antes de completar la ficha', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ services: [{ id: 's1', name: 'Masaje relajante', category: 'masajes', durationMins: 60, active: true }] });
+  const massage = { id: 's1', tenantId: 't1', name: 'Masaje relajante', category: 'masajes', priceUsd: 30, durationMins: 60, active: true };
+  installPrismaMocks({ services: [massage], serviceById: { s1: massage } });
   const unknownConv = { ...CONV, clientId: null, labels: [] };
 
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: unknownConv, incoming: { type: 'text', text: { body: 'Hola Almita, quiero reservar un masaje relajante' } } });
 
-  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_service');
-  assert.match(sent.at(-1).body, /elige tu servicio/i);
+  assert.equal(state.getFlowState(CONV.customerWaId).booking?.step, 'select_date');
+  assert.match(sent.at(-1).body, /qué día/i);
   assert.doesNotMatch(sent.at(-1).body, /nombre completo|dirección|cédula/i);
 });
 
 test('una reserva nueva reemplaza el onboarding antiguo persistido', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ services: [{ id: 's1', name: 'Masaje relajante', category: 'masajes', durationMins: 60, active: true }] });
+  const massage = { id: 's1', tenantId: 't1', name: 'Masaje relajante', category: 'masajes', priceUsd: 30, durationMins: 60, active: true };
+  installPrismaMocks({ services: [massage], serviceById: { s1: massage } });
   const unknownConv = { ...CONV, clientId: null, labels: [] };
   state.setFlowState(CONV.customerWaId, { flow: 'new_client', newClient: { step: 'address', fullName: 'Texto incorrecto' }, tone: 'tu' });
   await bot.handleInboundMessage({
@@ -145,7 +147,7 @@ test('una reserva nueva reemplaza el onboarding antiguo persistido', async () =>
   });
 
   const flow = state.getFlowState(CONV.customerWaId);
-  assert.equal(flow.booking?.step, 'select_service');
+  assert.equal(flow.booking?.step, 'select_date');
   assert.equal(flow.newClient, null);
   assert.doesNotMatch(sent.at(-1).body, /cédula/i);
 });
@@ -249,7 +251,7 @@ test('"Menú principal" cancela cualquier flujo y vuelve al menú real', async (
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'text');
-  assert.match(sent[0].body, /Qué le gustaría explorar ahora/i);
+  assert.match(sent[0].body, /Qué necesita/i);
   const nextState = state.getFlowState(CONV.customerWaId);
   assert.equal(nextState.flow, 'menu');
   assert.equal(nextState.booking, null);
@@ -331,7 +333,7 @@ test('promociones deja visible el menú para elegir otra opción', async () => {
   assert.equal(sent.length, 2);
   assert.match(sent[0].body, /instagram\.com\/alma_spaholistica/i);
   assert.equal(sent[1].kind, 'text');
-  assert.match(sent[1].body, /Qué te gustaría hacer hoy/i);
+  assert.match(sent[1].body, /Qué necesitas/i);
 });
 
 test('consulta de citas disponibles pide servicio antes de mostrar horarios', async () => {
@@ -386,8 +388,8 @@ test('menú principal se envía directamente como texto', async () => {
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'text');
-  assert.match(sent[0].body, /🌿 Ver servicios/);
-  assert.match(sent[0].body, /💬 Hablar con recepción/);
+  assert.match(sent[0].body, /📅 Reservar cita/);
+  assert.match(sent[0].body, /💬 Contactar a un asesor/);
 });
 
 test('opciones del menú funcionan por nombre sin IA', async () => {
@@ -538,7 +540,7 @@ test('"Mi cita" con cita próxima → devuelve detalles', async () => {
   assert.match(body, /confirmada/i);
 });
 
-test('"Hablar con recepción" marca escalada + envía confirmación', async () => {
+test('"Contactar a un asesor" marca escalada + envía confirmación', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -546,7 +548,7 @@ test('"Hablar con recepción" marca escalada + envía confirmación', async () =
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_escalate' } } },
   });
-  assert.match(sent[0].body, /recepción/);
+  assert.match(sent[0].body, /asesor/);
   assert.equal(state.isEscalated(CONV.customerWaId), true);
 });
 
@@ -667,10 +669,10 @@ test('texto libre sin IA y con state previo → "no logré entender" + menú', a
   assert.equal(newMessages.length, 2);
   assert.match(newMessages[0].body, /No entendí/);
   assert.equal(newMessages[1].kind, 'text');
-  assert.match(newMessages[1].body, /🌿 Ver servicios/);
+  assert.match(newMessages[1].body, /📅 Reservar cita/);
 });
 
-test('escalate incluye "recepción" y emojis', async () => {
+test('escalate incluye "asesor" y emojis', async () => {
   resetState();
   const sent = installTransportMocks();
   installPrismaMocks();
@@ -678,7 +680,7 @@ test('escalate incluye "recepción" y emojis', async () => {
     tenant: TENANT, connection: CONN, conv: CONV,
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_escalate' } } },
   });
-  assert.match(sent[0].body, /recepción/);
+  assert.match(sent[0].body, /asesor/);
   assert.match(sent[0].body, /👋/);
   assert.match(sent[0].body, /🌿/);
 });
@@ -905,7 +907,7 @@ test('booking confirm_no → cancela y vuelve a menú', async () => {
     incoming: { type: 'interactive', interactive: { button_reply: { id: 'bk_no' } } },
   });
   assert.ok(sent.some(s => s.kind === 'text' && /cancelé (tu|su) reserva/.test(s.body)));
-  const compactMenu = sent.find(s => s.kind === 'text' && /🌿 Ver servicios/.test(s.body));
+  const compactMenu = sent.find(s => s.kind === 'text' && /📅 Reservar cita/.test(s.body));
   assert.ok(compactMenu);
   assert.doesNotMatch(compactMenu.body, /Soy Almita|Bienvenida|Bienvenido/i);
 });
@@ -1025,6 +1027,7 @@ test('booking recupera botState guardado y confirma terapeuta con anticipo', asy
   const confirmation = sent.at(-1);
   assert.equal(confirmation.kind, 'interactive');
   assert.match(confirmation.payload.body.text, /Gianella/);
+  assert.match(confirmation.payload.body.text, /\$30\.00/);
   assert.match(confirmation.payload.body.text, /Anticipo pendiente de \$10\.00/);
   const persisted = conversationUpdates.at(-1).botState;
   assert.equal(persisted.booking.step, 'confirm');
@@ -1335,8 +1338,11 @@ test('categoryDisplayName mapea nombres internos a bonitos', () => {
 test('mainMenuText conserva una entrada breve con emojis y sin índices', () => {
   const text = menus.mainMenuText({ tone: 'tu', clientName: 'María Pérez' });
   assert.match(text, /Hola, María/);
-  assert.match(text, /🌿 Ver servicios/);
-  assert.match(text, /💬 Hablar con recepción/);
+  assert.match(text, /📅 Reservar cita/);
+  assert.match(text, /✨ Ayúdame a elegir/);
+  assert.match(text, /🗓️ Consultar o cambiar mi cita/);
+  assert.match(text, /💬 Contactar a un asesor/);
+  assert.doesNotMatch(text, /Reservar para otra persona|Promociones y catálogo|Ver servicios/);
   assert.doesNotMatch(text, /^\d+\./m);
 });
 
@@ -1911,7 +1917,7 @@ test('P4: "no gracias" text cancels booking', async () => {
     incoming: { type: 'text', text: { body: 'no gracias' } },
   });
   assert.ok(sent.some(s => s.kind === 'text' && /cancelé (tu|su) reserva/.test(s.body)));
-  assert.ok(sent.some(s => s.kind === 'text' && /🌿 Ver servicios/.test(s.body)));
+  assert.ok(sent.some(s => s.kind === 'text' && /📅 Reservar cita/.test(s.body)));
 });
 
 test('P4: unrecognized text in confirm step falls through to normal flow', async () => {
@@ -1970,8 +1976,8 @@ test('Ronda D: no success message if resolveAndCreateAppointment returns null', 
     });
     assert.ok(!sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)),
       'MUST NOT send success message when no appointment was created');
-    assert.ok(sent.some(s => s.kind === 'text' && /recepción/i.test(s.body)),
-      'should escalate to reception');
+    assert.ok(sent.some(s => s.kind === 'text' && /asesor/i.test(s.body)),
+      'should escalate to advisor');
   } finally {
     require('./appointmentService').resolveAndCreateAppointment = origResolve;
   }
@@ -1996,8 +2002,8 @@ test('Ronda D: no success message if resolveAndCreateAppointment returns {}', as
     });
     assert.ok(!sent.some(s => s.kind === 'text' && /reservado/i.test(s.body)),
       'MUST NOT send success message when appointment has no id');
-    assert.ok(sent.some(s => s.kind === 'text' && /recepción/i.test(s.body)),
-      'should escalate to reception');
+    assert.ok(sent.some(s => s.kind === 'text' && /asesor/i.test(s.body)),
+      'should escalate to advisor');
   } finally {
     require('./appointmentService').resolveAndCreateAppointment = origResolve;
   }

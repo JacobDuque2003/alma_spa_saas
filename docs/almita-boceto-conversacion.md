@@ -12,6 +12,17 @@ Actualizado: 2026-10-03.
 - Nunca se promete un horario sin consultar y volver a validar disponibilidad.
 - No se inventan precios, cuidados, resultados, recuerdos ni acciones realizadas.
 
+## Menú principal
+
+**Almita:** ¡Hola! Soy Almita, tu asistente en Alma Spa.
+
+📅 Reservar una cita
+✨ Ayúdame a elegir
+🗓️ Consultar o cambiar mi cita
+💬 Contactar a un asesor
+
+Las intenciones claras no vuelven al menú. Por ejemplo, “quiero reservar un masaje relajante” abre directamente ese servicio y pregunta el día. La opción de reservar para otra persona se presenta dentro de la reserva cuando corresponde.
+
 ## Reserva ideal
 
 **Clienta:** Buenos días, quiero un masaje para mañana.
@@ -108,7 +119,7 @@ La base de conocimiento debe contener datos aprobados, no conversaciones sin rev
 - anticipos, cancelaciones, tardanzas y reprogramaciones;
 - promociones vigentes con fecha de inicio y fin;
 - tono y ejemplos aprobados por Gianella;
-- preguntas frecuentes y respuestas corregidas por recepción.
+- preguntas frecuentes y respuestas corregidas por el equipo asesor.
 
 ## Información que no debe aprender automáticamente
 
