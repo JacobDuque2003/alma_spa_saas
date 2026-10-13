@@ -6,18 +6,25 @@ process.env.INTAKE_ENCRYPTION_KEY = process.env.INTAKE_ENCRYPTION_KEY || crypto.
 
 const prisma = require('../utils/prisma');
 const appointmentService = require('./appointmentService');
+require('./bookingNotifier').notifyBookingCreated = async () => {};
 
 function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, client = {}, clientIntake = {}, tenant = {}, adminAuditLog = {} } = {}) {
   const tenantMock = {
     findUnique: async () => ({ config: { businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } } } }),
     ...tenant,
   };
-  const tx = { service, room, user, appointment, client, clientIntake, tenant: tenantMock };
+  let publicClient = null;
+  const clientMock = {
+    findUnique: async () => publicClient,
+    createMany: async ({ data }) => { publicClient = { id: 'client1', tenantId: data.tenantId, whatsapp: data.whatsapp, fullName: data.fullName }; return { count: 1 }; },
+    ...client,
+  };
+  const tx = { service, room, user, appointment, client: clientMock, clientIntake, tenant: tenantMock };
   prisma.service = service;
   prisma.room = room;
   prisma.user = user;
   prisma.appointment = appointment;
-  prisma.client = client;
+  prisma.client = clientMock;
   prisma.clientIntake = clientIntake;
   prisma.tenant = tenantMock;
   prisma.adminAuditLog = adminAuditLog;
@@ -27,6 +34,7 @@ function mockPrisma({ service = {}, room = {}, user = {}, appointment = {}, clie
 const basePayload = (overrides = {}) => ({
   fullName: 'Cliente Nuevo',
   whatsapp: '+593999000001',
+  bookingConsent: true,
   selections: [{ serviceId: 'srv1', startsAt: '2099-08-01T14:00:00.000Z', modality: 'spa' }],
   ...overrides,
 });
@@ -40,6 +48,29 @@ async function withMockedNow(iso, fn) {
     Date.now = originalNow;
   }
 }
+
+test('disponibilidad comercial conserva el cliente verificado y excluye su propia cita grupal', async () => {
+  mockPrisma({
+    service: { findFirst: async () => ({ id: 'srv1', name: 'Masaje', category: 'masajes', active: true, priceUsd: 30, durationMins: 60, bufferMins: 15 }) },
+    room: { findMany: async () => [{ id: 'room1', capacity: 2 }] },
+    user: { findMany: async () => [{ id: 'staff1' }] },
+    appointment: { findMany: async () => [{ id: 'existing', clientId: 'c1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1', startsAt: new Date('2099-08-03T14:00:00Z'), endsAt: new Date('2099-08-03T15:15:00Z') }] },
+  });
+  const options = { tenantId: 't1', tenantConfig: { businessHours: { start: '09:00', end: '10:15' } }, serviceId: 'srv1', date: '2099-08-03', modality: 'spa', publicOnly: true };
+  assert.deepEqual(await appointmentService.getAvailability(options), ['2099-08-03T14:00:00.000Z']);
+  assert.deepEqual(await appointmentService.getAvailability({ ...options, clientId: 'c1' }), []);
+});
+
+test('reprogramacion comercial no ofrece dias cerrados ni los confirma', async () => {
+  const appointment = { id: 'a1', tenantId: 't1', serviceId: 'srv1', roomId: 'room1', staffId: 'staff1', clientId: 'c1', startsAt: new Date('2099-08-03T14:00:00Z'), endsAt: new Date('2099-08-03T15:15:00Z') };
+  const service = { id: 'srv1', name: 'Masaje', category: 'masajes', active: true, priceUsd: 30, durationMins: 60, bufferMins: 15 };
+  mockPrisma({ appointment: { findUnique: async () => appointment, update: async () => assert.fail('No actualizar dia cerrado') },
+    service: { findFirst: async () => service, findUnique: async () => service },
+    tenant: { findUnique: async () => ({ config: { workDays: [], businessHours: { start: '09:00', end: '12:00' } } }) },
+  });
+  assert.deepEqual(await appointmentService.getRescheduleAvailability({ tenantId: 't1', tenantConfig: { workDays: [] }, appointmentId: 'a1', date: '2099-08-03', publicOnly: true }), []);
+  await assert.rejects(() => appointmentService.updateAppointment({ role: 'dueno', tenantId: 't1' }, 'a1', { startsAt: '2099-08-03T14:00:00Z' }, { publicOnly: true }), /no está disponible para clientes/);
+});
 
 test('createPublicBooking rechaza con 400 si serviceId no pertenece al tenant', async () => {
   mockPrisma({

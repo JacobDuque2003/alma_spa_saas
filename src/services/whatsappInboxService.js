@@ -303,7 +303,7 @@ function publishConversationEvent(tenantId, event, payload) {
 function compactConversation(c) {
   if (!c) return null;
   let botStatus = c.botActive ? 'active' : 'handedOff';
-  if (c.botActive && botState.isEscalated(c.customerWaId)) botStatus = 'escalated';
+  if (c.botActive && botState.withConversation(c.tenantId, c.id, () => botState.isEscalated(c.customerWaId))) botStatus = 'escalated';
   const pendingMessageCount = Math.max(Number(c.unreadCount || 0), 0);
   return {
     id: c.id,
@@ -827,7 +827,10 @@ async function updateConversation(actor, conversationId, changes) {
 async function reactivateBot(actor, conversationId) {
   const conv = await loadConversationForActor(actor, conversationId);
   if (!conv) return null;
-  botState.clearFlowState(conv.customerWaId);
+  botState.withConversation(conv.tenantId, conv.id, () => {
+    botState.clearFlowState(conv.customerWaId);
+    botState.clearEscalated(conv.customerWaId);
+  });
   const updated = await prisma.whatsAppConversation.update({
     where: { id: conv.id },
     data: { botActive: true, botPausedUntil: null, botState: null },
@@ -864,7 +867,10 @@ async function setStatus(actor, conversationId, status) {
     data.botActive = true;
     data.botPausedUntil = null;
     data.botState = null;
-    botState.clearFlowState(conv.customerWaId);
+    botState.withConversation(conv.tenantId, conv.id, () => {
+      botState.clearFlowState(conv.customerWaId);
+      botState.clearEscalated(conv.customerWaId);
+    });
   }
   const updated = await prisma.whatsAppConversation.update({ where: { id: conv.id }, data });
   publishConversationEvent(conv.tenantId, 'conversation.status.updated', {

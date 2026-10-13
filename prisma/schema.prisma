@@ -674,12 +674,18 @@ model AlmitaConfiguration {
   @@index([tenantId, active, version(sort: Desc)])
 }
 
+enum AlmitaAudience {
+  INTERNAL
+  PUBLIC
+}
+
 model AlmitaKnowledge {
   id        String   @id @default(cuid())
   tenantId  String
   category  String
   title     String
   content   String   @db.Text
+  audience  AlmitaAudience @default(INTERNAL)
   active    Boolean  @default(true)
   priority  Int      @default(0)
   source    String
@@ -690,6 +696,7 @@ model AlmitaKnowledge {
 
   @@index([tenantId, active, priority(sort: Desc)])
   @@index([tenantId, category, active])
+  @@index([tenantId, audience, active, priority(sort: Desc)])
 }
 
 model AlmitaApprovedExample {
@@ -698,6 +705,7 @@ model AlmitaApprovedExample {
   userMessage    String   @db.Text
   expectedIntent String
   expectedReply  String   @db.Text
+  audience       AlmitaAudience @default(INTERNAL)
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -706,4 +714,5 @@ model AlmitaApprovedExample {
 
   @@index([tenantId, active, updatedAt(sort: Desc)])
   @@index([tenantId, expectedIntent, active])
+  @@index([tenantId, audience, active, updatedAt(sort: Desc)])
 }

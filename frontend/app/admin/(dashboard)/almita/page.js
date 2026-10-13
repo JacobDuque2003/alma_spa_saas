@@ -216,7 +216,7 @@ function KnowledgeTab({ rows, onChanged }) {
   async function save(draft) {
     setBusyId(draft.id || "new"); setError("");
     try {
-      const payload = { title: draft.title, category: draft.category, content: draft.content, active: draft.active, priority: draft.priority ?? 50, source: draft.source || "Centro de Almita" };
+      const payload = { title: draft.title, category: draft.category, content: draft.content, active: draft.active, audience: draft.audience, priority: draft.priority ?? 50, source: draft.source ?? "Centro de Almita" };
       const saved = await authFetch(draft.id ? `/almita-center/knowledge/${draft.id}` : "/almita-center/knowledge", { method: draft.id ? "PATCH" : "POST", body: payload });
       const item = saved.knowledge || saved.item || saved;
       onChanged(draft.id ? rows.map((row) => row.id === draft.id ? item : row) : [item, ...rows]);
@@ -228,15 +228,15 @@ function KnowledgeTab({ rows, onChanged }) {
   if (editing) return <KnowledgeForm initial={editing === "new" ? {} : editing} onCancel={() => setEditing(null)} onSave={save} saving={Boolean(busyId)} error={error} />;
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <SectionToolbar title="Información que Almita puede consultar" text="Fichas aprobadas sobre servicios, políticas y atención. Almita utiliza únicamente las relacionadas con cada pregunta." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Nueva ficha</ActionButton>} />
+      <SectionToolbar title="Información del centro" text="Fichas públicas e internas sobre servicios, políticas y atención." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Nueva ficha</ActionButton>} />
       <div style={{ display: "flex", gap: 10, padding: 14, border: `1px solid ${COLORS.line}`, borderRadius: 8, background: "#F7F3ED", color: COLORS.text, fontSize: 13, lineHeight: 1.55 }}>
         <Database size={18} style={{ flex: "0 0 auto", marginTop: 1 }} />
-        <span><strong>No entrena ni modifica el modelo original.</strong> Estas fichas funcionan como una biblioteca privada: al llegar una consulta, el sistema selecciona unas pocas fuentes relevantes para responder con información real y gastar menos tokens.</span>
+        <span><strong>Aprobación para clientes.</strong> Solo las fichas activas marcadas como públicas se envían al proveedor de IA. Las fichas internas quedan disponibles para soporte.</span>
       </div>
       <ErrorBanner message={error} />
       {rows.length === 0 ? <EmptyState icon={BookOpen} title="Aún no hay información aprobada" text="Agrega servicios, políticas, preguntas frecuentes o instrucciones operativas." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Agregar primera ficha</ActionButton>} /> : (
         <div style={{ display: "grid", border: `1px solid ${COLORS.line}`, borderRadius: 8, overflow: "hidden", background: COLORS.paper }}>
-          {rows.map((row) => <ListRow key={row.id} title={row.title || row.question || "Sin título"} subtitle={row.category || row.type || "General"} body={row.content || row.answer || row.description} active={row.active !== false} busy={busyId === row.id} onEdit={() => setEditing(row)} onDelete={() => remove(row)} />)}
+          {rows.map((row) => <ListRow key={row.id} title={row.title || row.question || "Sin título"} subtitle={`${row.category || row.type || "General"} · ${row.audience === "PUBLIC" ? "Público" : "Interno"}`} body={row.content || row.answer || row.description} active={row.active !== false} busy={busyId === row.id} onEdit={() => setEditing(row)} onDelete={() => remove(row)} />)}
         </div>
       )}
     </div>
@@ -244,11 +244,12 @@ function KnowledgeTab({ rows, onChanged }) {
 }
 
 function KnowledgeForm({ initial, onCancel, onSave, saving, error }) {
-  const [draft, setDraft] = useState({ id: initial.id, title: initial.title || initial.question || "", category: initial.category || "General", content: initial.content || initial.answer || "", active: initial.active !== false });
+  const [draft, setDraft] = useState({ id: initial.id, title: initial.title || initial.question || "", category: initial.category || "General", content: initial.content || initial.answer || "", active: initial.active !== false, audience: initial.audience === "PUBLIC" ? "PUBLIC" : "INTERNAL", priority: initial.priority ?? 50, source: initial.source ?? "Centro de Almita" });
   return <Editor title={initial.id ? "Editar ficha" : "Nueva ficha"} description="Escribe información concreta y aprobada. No incluyas contraseñas, tokens ni claves." onCancel={onCancel} onSave={() => onSave(draft)} saving={saving} valid={draft.title.trim() && draft.content.trim()} error={error}>
-    <FormField label="Título"><input style={fieldStyle} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Ej. Política de cancelaciones" /></FormField>
-    <FormField label="Categoría"><input style={fieldStyle} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="Servicios, políticas, preguntas frecuentes..." /></FormField>
-    <FormField label="Contenido aprobado" hint="Almita utilizará este texto como fuente, no como una orden del usuario."><textarea rows={9} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></FormField>
+    <AudienceField value={draft.audience} onChange={(audience) => setDraft({ ...draft, audience })} />
+    <FormField label="Título"><input maxLength={180} style={fieldStyle} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Ej. Política de cancelaciones" /></FormField>
+    <FormField label="Categoría"><input maxLength={80} style={fieldStyle} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="Servicios, políticas, preguntas frecuentes..." /></FormField>
+    <FormField label="Contenido" hint="Hasta 12.000 caracteres. Revisa también las advertencias antes de aprobarlo para clientes."><textarea maxLength={12000} rows={9} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></FormField>
     <Toggle checked={draft.active} onChange={(active) => setDraft({ ...draft, active })} label="Fuente activa" />
   </Editor>;
 }
@@ -260,7 +261,7 @@ function ExamplesTab({ rows, onChanged }) {
   async function save(draft) {
     setBusyId(draft.id || "new"); setError("");
     try {
-      const payload = { userMessage: draft.userMessage, expectedIntent: draft.expectedIntent, expectedReply: draft.expectedReply, active: draft.active };
+      const payload = { userMessage: draft.userMessage, expectedIntent: draft.expectedIntent, expectedReply: draft.expectedReply, active: draft.active, audience: draft.audience };
       const saved = await authFetch(draft.id ? `/almita-center/examples/${draft.id}` : "/almita-center/examples", { method: draft.id ? "PATCH" : "POST", body: payload });
       const item = saved.example || saved.item || saved;
       onChanged(draft.id ? rows.map((row) => row.id === draft.id ? item : row) : [item, ...rows]); setEditing(null);
@@ -278,16 +279,17 @@ function ExamplesTab({ rows, onChanged }) {
   return <div style={{ display: "grid", gap: 14 }}>
     <SectionToolbar title="Ejemplos aprobados" text="Enséñale cómo interpretar una frase y cuál sería una respuesta adecuada." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Nuevo ejemplo</ActionButton>} />
     <ErrorBanner message={error} />
-    {rows.length === 0 ? <EmptyState icon={MessageSquareText} title="No hay ejemplos todavía" text="Registra casos reales, especialmente frases ambiguas o respuestas que antes fallaron." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Crear ejemplo</ActionButton>} /> : <div style={{ display: "grid", border: `1px solid ${COLORS.line}`, borderRadius: 8, overflow: "hidden", background: COLORS.paper }}>{rows.map((row) => <ListRow key={row.id} title={row.userMessage || "Mensaje sin texto"} subtitle={`Intención: ${row.expectedIntent || "sin clasificar"}`} body={row.expectedReply} active={row.active !== false} busy={busyId === row.id} onEdit={() => setEditing(row)} onDelete={() => remove(row)} />)}</div>}
+    {rows.length === 0 ? <EmptyState icon={MessageSquareText} title="No hay ejemplos todavía" text="Usa casos ficticios o anonimizados, sin datos personales de clientes." action={<ActionButton onClick={() => setEditing("new")}><Plus size={16} />Crear ejemplo</ActionButton>} /> : <div style={{ display: "grid", border: `1px solid ${COLORS.line}`, borderRadius: 8, overflow: "hidden", background: COLORS.paper }}>{rows.map((row) => <ListRow key={row.id} title={row.userMessage || "Mensaje sin texto"} subtitle={`Intención: ${row.expectedIntent || "sin clasificar"} · ${row.audience === "PUBLIC" ? "Público" : "Interno"}`} body={row.expectedReply} active={row.active !== false} busy={busyId === row.id} onEdit={() => setEditing(row)} onDelete={() => remove(row)} />)}</div>}
   </div>;
 }
 
 function ExampleForm({ initial, onCancel, onSave, saving, error }) {
-  const [draft, setDraft] = useState({ id: initial.id, userMessage: initial.userMessage || "", expectedIntent: initial.expectedIntent || "unclear", expectedReply: initial.expectedReply || "", active: initial.active !== false });
-  return <Editor title={initial.id ? "Editar ejemplo" : "Nuevo ejemplo"} description="Usa una frase real y una respuesta breve, útil y segura." onCancel={onCancel} onSave={() => onSave(draft)} saving={saving} valid={draft.userMessage.trim() && draft.expectedIntent.trim() && draft.expectedReply.trim()} error={error}>
-    <FormField label="Mensaje del cliente"><textarea rows={3} style={{ ...fieldStyle, resize: "vertical" }} value={draft.userMessage} onChange={(e) => setDraft({ ...draft, userMessage: e.target.value })} placeholder="Quiero reservar un masaje relajante" /></FormField>
+  const [draft, setDraft] = useState({ id: initial.id, userMessage: initial.userMessage || "", expectedIntent: initial.expectedIntent || "unclear", expectedReply: initial.expectedReply || "", active: initial.active !== false, audience: initial.audience === "PUBLIC" ? "PUBLIC" : "INTERNAL" });
+  return <Editor title={initial.id ? "Editar ejemplo" : "Nuevo ejemplo"} description="Usa casos ficticios o anonimizados, sin datos personales ni secretos." onCancel={onCancel} onSave={() => onSave(draft)} saving={saving} valid={draft.userMessage.trim() && draft.expectedIntent.trim() && draft.expectedReply.trim()} error={error}>
+    <AudienceField value={draft.audience} onChange={(audience) => setDraft({ ...draft, audience })} />
+    <FormField label="Mensaje del cliente"><textarea maxLength={2000} rows={3} style={{ ...fieldStyle, resize: "vertical" }} value={draft.userMessage} onChange={(e) => setDraft({ ...draft, userMessage: e.target.value })} placeholder="Quiero reservar un masaje relajante" /></FormField>
     <FormField label="Intención esperada"><select style={fieldStyle} value={draft.expectedIntent} onChange={(e) => setDraft({ ...draft, expectedIntent: e.target.value })}>{["greeting", "list_services", "service_info", "suggest_service", "book_start", "book_service", "my_appointment", "reschedule", "cancel", "business_hours", "location", "farewell", "escalate", "chitchat", "unclear"].map((intent) => <option key={intent} value={intent}>{intent}</option>)}</select></FormField>
-    <FormField label="Respuesta ideal"><textarea rows={7} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.expectedReply} onChange={(e) => setDraft({ ...draft, expectedReply: e.target.value })} /></FormField>
+    <FormField label="Respuesta ideal"><textarea maxLength={4000} rows={7} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.expectedReply} onChange={(e) => setDraft({ ...draft, expectedReply: e.target.value })} /></FormField>
     <Toggle checked={draft.active} onChange={(active) => setDraft({ ...draft, active })} label="Ejemplo activo" />
   </Editor>;
 }
@@ -361,9 +363,9 @@ function SettingsTab({ config, onSaved }) {
   return <div style={{ display: "grid", gap: 16 }}>
     <div style={{ padding: 16, display: "flex", gap: 10, border: `1px solid ${COLORS.line}`, borderRadius: 8, background: "#F7F3ED", color: COLORS.text, fontSize: 13, lineHeight: 1.55 }}><ShieldCheck size={19} style={{ flex: "0 0 auto" }} /><span>Solo soporte técnico puede ver y editar esta configuración. Esta pantalla nunca muestra claves, tokens ni secretos de integración.</span></div>
     <section style={{ display: "grid", gap: 16, padding: 20, border: `1px solid ${COLORS.line}`, borderRadius: 8, background: COLORS.paper }}>
-      <FormField label="Personalidad y tono"><textarea rows={4} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.personality || ""} onChange={(e) => setDraft({ ...draft, personality: e.target.value })} /></FormField>
-      <FormField label="Instrucciones permanentes" hint="Define límites y criterios. No pegues credenciales."><textarea rows={7} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.instructions || ""} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} /></FormField>
-      <FormField label="Briefing diario" hint="Información operativa que debe revisar cada día: prioridades, campañas y avisos temporales."><textarea rows={6} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.dailyBriefing || ""} onChange={(e) => setDraft({ ...draft, dailyBriefing: e.target.value })} /></FormField>
+      <FormField label="Personalidad y tono"><textarea maxLength={5000} rows={4} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.personality || ""} onChange={(e) => setDraft({ ...draft, personality: e.target.value })} /></FormField>
+      <FormField label="Instrucciones permanentes" hint="Hasta 12.000 caracteres. Horarios, precios y reglas operativas tienen prioridad. No pegues credenciales ni información privada."><textarea maxLength={12000} rows={7} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.instructions || ""} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} /></FormField>
+      <FormField label="Briefing diario" hint="Hasta 5.000 caracteres de avisos aprobados para clientes; no incluyas información interna."><textarea maxLength={5000} rows={6} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.55 }} value={draft.dailyBriefing || ""} onChange={(e) => setDraft({ ...draft, dailyBriefing: e.target.value })} /></FormField>
       <Toggle checked={draft.active !== false} onChange={(active) => setDraft({ ...draft, active })} label="Configuración activa" />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><span style={{ color: status.type === "error" ? COLORS.danger : COLORS.success, fontSize: 13, fontWeight: 700 }}>{status.message}</span><ActionButton onClick={save} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Guardar ajustes</ActionButton></div>
     </section>
@@ -377,6 +379,10 @@ function ListRow({ title, subtitle, body, active, busy, onEdit, onDelete }) { re
 function Editor({ title, description, onCancel, onSave, saving, valid, error, children }) { return <section style={{ display: "grid", gap: 16, maxWidth: 820, padding: 20, border: `1px solid ${COLORS.line}`, borderRadius: 8, background: COLORS.paper }}><div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}><div><h2 style={{ margin: 0, color: COLORS.text, fontSize: 19 }}>{title}</h2><p style={{ margin: "5px 0 0", color: COLORS.muted, fontSize: 13 }}>{description}</p></div><ActionButton variant="ghost" onClick={onCancel} aria-label="Cerrar editor" style={{ minWidth: 38, padding: 0 }}><X size={17} /></ActionButton></div><ErrorBanner message={error} />{children}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}><ActionButton variant="secondary" onClick={onCancel}>Cancelar</ActionButton><ActionButton onClick={onSave} disabled={!valid || saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Guardar</ActionButton></div></section>; }
 
 function FormField({ label, hint, children }) { return <label style={{ display: "grid", gap: 6, color: COLORS.text, fontSize: 12, fontWeight: 800 }}>{label}{children}{hint && <span style={{ color: COLORS.muted, fontSize: 11, fontWeight: 500, lineHeight: 1.45 }}>{hint}</span>}</label>; }
+
+function AudienceField({ value, onChange }) {
+  return <FormField label="Audiencia" hint={value === "PUBLIC" ? "Aprobado para clientes: puede enviarse al proveedor de IA y aparecer en respuestas." : "Solo soporte: no se envía al proveedor de IA ni se usa en respuestas."}><select style={fieldStyle} value={value} onChange={(event) => onChange(event.target.value)}><option value="INTERNAL">Interno</option><option value="PUBLIC">Público</option></select></FormField>;
+}
 
 function Toggle({ checked, onChange, label }) { return <label style={{ display: "inline-flex", alignItems: "center", gap: 9, color: COLORS.text, fontSize: 13, fontWeight: 700, cursor: "pointer" }}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: 17, height: 17, accentColor: COLORS.accent }} />{label}</label>; }
 

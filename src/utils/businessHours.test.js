@@ -1,8 +1,34 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalize, totalHours, iterateHours, isRangeInsideBusinessHours, validateShape } = require('./businessHours');
+const { normalize, totalHours, iterateHours, isRangeInsideBusinessHours, validateShape, formatSchedule } = require('./businessHours');
 
 // --- normalize ---
+
+test('formatSchedule: configured weekdays and split hours, no Saturday default', () => {
+  const config = { workDays: [5, 1, 2, 3, 4, 1], businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } } };
+  const snapshot = structuredClone(config);
+  assert.equal(formatSchedule(config), 'Atención: lunes a viernes, 09:00-12:00 y 15:00-20:00.');
+  assert.deepEqual(config, snapshot);
+});
+
+test('formatSchedule: old hours, nonconsecutive days, Sunday ISO=7 and legacy=0', () => {
+  assert.equal(formatSchedule({ workDays: [1, 3, 5], businessHours: { start: '10:00', end: '18:00' } }), 'Atención: lunes, miércoles, viernes, 10:00-18:00.');
+  assert.equal(formatSchedule({ workDays: [0], businessHours: { morning: null, afternoon: { start: '15:00', end: '19:00' } } }), 'Atención: domingo, 15:00-19:00.');
+  assert.equal(formatSchedule({ workDays: [7], businessHours: { morning: null, afternoon: { start: '15:00', end: '19:00' } } }), 'Atención: domingo, 15:00-19:00.');
+  assert.equal(formatSchedule({ workDays: [0, 7], businessHours: { start: '10:00', end: '14:00' } }), 'Atención: domingo, 10:00-14:00.');
+  assert.equal(formatSchedule({ workDays: [6, 0], businessHours: { start: '10:00', end: '14:00' } }), 'Atención: sábado a domingo, 10:00-14:00.');
+  assert.equal(formatSchedule({ workDays: [1, 2, 3, 4, 5, 6, 7], businessHours: { start: '10:00', end: '14:00' } }), 'Atención: lunes a domingo, 10:00-14:00.');
+});
+
+test('formatSchedule: missing or invalid config does not invent schedule', () => {
+  for (const config of [undefined, null, {}, { workDays: [1] }, { businessHours: { start: '09:00', end: '12:00' } },
+    { workDays: [8], businessHours: {} }, { workDays: [null], businessHours: {} }, { workDays: ['1'], businessHours: {} },
+    { workDays: [1], businessHours: { morning: { start: '27:00', end: '28:00' } } }]) {
+    assert.equal(formatSchedule(config), 'Horario a confirmar con un asesor.');
+  }
+  assert.equal(formatSchedule({ workDays: [], businessHours: {} }), 'Sin días de atención configurados.');
+  assert.equal(formatSchedule({ workDays: [1], businessHours: { morning: null, afternoon: null } }), 'Sin franjas de atención configuradas.');
+});
 
 test('normalize: shape antiguo {start,end} → morning único, afternoon null', () => {
   const n = normalize({ start: '09:00', end: '19:00' });

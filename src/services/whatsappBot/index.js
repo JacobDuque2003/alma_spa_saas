@@ -5,7 +5,7 @@
 //
 // Resolución en 3 niveles:
 //  Tier 1: botones interactivos → determinístico, sin costo.
-//  Tier 2: caché de intenciones → texto normalizado → intent mapeado previamente.
+//  Tier 2: fichas públicas vigentes y ejemplos aprobados, sin respuestas personales compartidas.
 //  Tier 3: Claude Haiku 4.5 conversacional → contexto + historial → JSON estructurado.
 //
 // Si la IA no está disponible (sin ANTHROPIC_API_KEY), el bot funciona solo
@@ -24,7 +24,7 @@ const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
 const menus = require('./menus');
-const intentCache = require('./intentCache');
+const { isCustomerService, hasConfirmedPrice, formatCustomerPrice } = require('../../utils/customerServicePolicy');
 const crmEvents = require('../crmEventBus');
 const { normalizePhone, isValidE164, waIdToPhone } = require('../../utils/phone');
 const { SlotUnavailableError } = require('../../utils/errors');
@@ -33,8 +33,10 @@ const { getTenantTimezone } = require('../../utils/timezone');
 
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
-const HIDDEN_SERVICE_NAMES = new Set(['cumpleanos', 'cumpleaños', 'valoracion', 'valoración']);
 const DEFAULT_BOT_DEPOSIT_REQUIRED = true;
+const CANCEL_APPOINTMENT_PREFIX = 'cancel_appointment:';
+const CANCEL_YES = 'cancel_appointment_yes';
+const CANCEL_NO = 'cancel_appointment_no';
 const WEEKDAY_INDEX = {
   domingo: 0,
   lunes: 1,
@@ -202,7 +204,7 @@ function isReceptionOpenNow(tenantConfig = {}, now = new Date()) {
     .format(now).toLowerCase();
   const weekdayIndex = WEEKDAY_NAME_TO_INDEX[weekday];
   const workDays = Array.isArray(tenantConfig?.workDays)
-    ? tenantConfig.workDays.map(Number)
+    ? tenantConfig.workDays.map((day) => Number(day) === 0 ? 7 : Number(day))
     : [1, 2, 3, 4, 5, 6];
   if (!workDays.includes(weekdayIndex)) return false;
 
@@ -228,6 +230,7 @@ function detectDeterministicIntent(text) {
 
   if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (isReceptionRequest(t)) return 'escalate';
+  if (/\b(cancelar|cancelo|anular)\b.*\b(cita|reserva|turno)\b/.test(t)) return 'cancel';
   if (/^(1|servicio|servicios|catalogo|catalogo de servicios|precios|precio)$/.test(t)) return 'list_services';
   if (hasAnyApproxToken(t, SERVICE_INTENT_WORDS, 2) && hasAnyApproxToken(t, QUESTION_INTENT_WORDS, 1)) return 'list_services';
   if (hasAnyApproxToken(t, RESCHEDULE_WORDS, 2) && /\b(cita|reserva|turno|hora|espacio)\b/.test(t)) return 'reschedule';
@@ -604,11 +607,7 @@ function resolveBookingDate(params = {}, userMessage = null, options = {}) {
 }
 
 function isBotVisibleService(service) {
-  const category = normalizeSearchText(service?.category);
-  const name = normalizeSearchText(service?.name);
-  return service?.active !== false
-    && !menus.HIDDEN_CATEGORIES.has(category)
-    && !HIDDEN_SERVICE_NAMES.has(name);
+  return isCustomerService(service);
 }
 
 async function loadVisibleServicesForBot(tenantId, { category, parentServiceId } = {}) {
@@ -980,19 +979,47 @@ async function matchServiceByQuery(tenantId, query) {
   const q = normalizeSearchText(query);
   if (!q) return null;
   const services = await loadVisibleServicesForBot(tenantId);
-  const direct = services.find(s => normalizeSearchText(s.name).includes(q))
-    || services.find(s => q.includes(normalizeSearchText(s.name)));
+  const direct = services.find(s => normalizeSearchText(s.name) === q);
   if (direct) return direct;
 
   const scored = services
     .map((service) => ({ service, score: serviceMatchScore(q, service.name) }))
     .sort((a, b) => b.score - a.score);
-  return scored[0]?.score >= 0.6 ? scored[0].service : null;
+  const candidate = scored[0];
+  if (candidate && scored[1]?.score === candidate.score) return null;
+  const queryTokens = tokenizeForMatch(q).filter((token) => token.length > 2
+    && !['que', 'para', 'con', 'del', 'una', 'como', 'quiero', 'reservar', 'agendar', 'cita', 'mejor', 'prefiero', 'elegir', 'servicio', 'tratamiento', 'informacion', 'cuentame', 'explicame', 'sirve'].includes(token));
+  const nameTokens = tokenizeForMatch(candidate?.service.name || '');
+  const allTermsCovered = queryTokens.every((token) => nameTokens.some((name) => tokenLooksLike(token, name, 1)));
+  return candidate?.score >= 0.6 && allTermsCovered ? candidate.service : null;
+}
+
+async function findInformationalService(tenantId, query) {
+  let context;
+  try { context = await almitaCenter.loadRuntimeContext(tenantId, query); } catch { return null; }
+  const normalized = normalizeSearchText(query);
+  return (context.knowledge || []).filter((item) => item.audience === 'PUBLIC' && item.active === true)
+    .filter((item) => {
+      const title = normalizeSearchText(item.title).replace(/^(servicio|tratamiento)\s*[:\-]\s*/, '');
+      return title.length >= 5 && (normalized === title || normalized.includes(title));
+    }).sort((a, b) => b.title.length - a.title.length)[0] || null;
+}
+
+async function sendInformationalService({ tenant, connection, conv, waId, tone, item }) {
+  const note = tone === 'tu'
+    ? 'Este tratamiento requiere coordinación con un asesor; no lo sustituiré por otro servicio. Escribe “contactar a un asesor” para coordinarlo.'
+    : 'Este tratamiento requiere coordinación con un asesor; no lo sustituiré por otro servicio. Escriba “contactar a un asesor” para coordinarlo.';
+  return sendTextChunks({ tenant, connection, conv, waId, text: `${item.title}\n\n${item.content}\n\n${note}` });
 }
 
 // ─── Entry point ───────────────────────────────────────────────
 
 async function handleInboundMessage({ tenant, connection, conv, incoming }) {
+  if (!tenant?.id || !conv?.id || conv.tenantId !== tenant.id) return;
+  return state.withConversation(tenant.id, conv.id, () => handleScopedInboundMessage({ tenant, connection, conv, incoming }));
+}
+
+async function handleScopedInboundMessage({ tenant, connection, conv, incoming }) {
   const waId = conv.customerWaId;
   const memoryState = state.getFlowState(waId);
   const hadStoredState = conv.botState && typeof conv.botState === 'object';
@@ -1097,7 +1124,7 @@ async function handleInboundMessageCore({ tenant, connection, conv, incoming }, 
   // Aunque una conversación antigua todavía no esté enlazada a la ficha del
   // contacto, no puede interrumpir el alta de la persona para quien se está
   // reservando. Este flujo se reanuda antes del onboarding del remitente.
-  if (priorState.bookingForOther && bodyText) {
+  if (priorState.bookingForOther && bodyText && !isReceptionRequest(bodyText)) {
     return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText });
   }
 
@@ -1129,7 +1156,7 @@ async function handleInboundMessageCore({ tenant, connection, conv, incoming }, 
     return handleSelection({ tenant, connection, conv, waId, tone, selectionId });
   }
 
-  // Text message → Tier 2 (cache) then Tier 3 (AI)
+// Text message: public editorial sources before conversational AI.
   if (bodyText) {
     state.pushHistory(waId, 'user', bodyText);
     logBot('info', 'texto recibido', {
@@ -1184,6 +1211,30 @@ async function persistConversationBotState(tenantId, conv, waId) {
 
 async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyText }) {
   const flowState = state.getFlowState(waId) || {};
+  const priorityIntent = detectDeterministicIntent(bodyText);
+  const selectingTherapist = flowState.booking?.step === 'select_staff'
+    && (flowState.booking.availableStaff || []).some((person) => normalizeSearchText(person.name) === normalizeSearchText(bodyText));
+  if (priorityIntent === 'escalate' && !selectingTherapist) {
+    return handleEscalate({ tenant, connection, conv, waId, tone });
+  }
+  if (flowState.flow === 'cancel_appointment' && flowState.cancellation?.step === 'confirm') {
+    const answer = normalizeSearchText(bodyText).replace(/[.!?]+$/g, '');
+    if (/^(si|si cancelar|confirmo|confirmar|cancelar)$/.test(answer)) {
+      return confirmAppointmentCancellation({ tenant, connection, conv, waId, tone });
+    }
+    if (/^(no|no cancelar|mantener|mejor no)$/.test(answer)) {
+      state.setFlowState(waId, { cancellation: null, flow: 'menu', textChoices: null });
+      return sendTextChunks({ tenant, connection, conv, waId, text: 'La cita se mantiene sin cambios.' });
+    }
+  }
+  if (priorityIntent === 'cancel' && flowState.booking && !/\bmi cita\b/.test(normalizeSearchText(bodyText))) {
+    state.clearFlowState(waId);
+    const msg = 'Dejé de preparar esta reserva. No se ha cancelado ninguna cita ya registrada. Para cancelar una cita existente, escribe “cancelar mi cita”.';
+    return sendTextChunks({ tenant, connection, conv, waId, text: msg });
+  }
+  if (['my_appointment', 'reschedule', 'cancel', 'business_hours', 'location'].includes(priorityIntent)) {
+    return routeIntent({ tenant, connection, conv, waId, tone, intent: priorityIntent, userMessage: bodyText });
+  }
   if (flowState.bookingForOther) {
     return handleBookForOther({ tenant, connection, conv, waId, tone, bodyText });
   }
@@ -1246,17 +1297,22 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     }
   }
 
-  const priorityIntent = detectDeterministicIntent(bodyText);
+  const informational = await findInformationalService(tenant.id, bodyText);
+  if (informational && !await matchServiceByQuery(tenant.id, informational.title)) {
+    return sendInformationalService({ tenant, connection, conv, waId, tone, item: informational });
+  }
+  const questionText = normalizeSearchText(bodyText).replace(/^[¿?]+/, '');
+  if (/^(que es|de que trata|como es|para que sirve|cuanto cuesta|precio de|duracion de)\b/.test(questionText)) {
+    const query = questionText.replace(/^(que es|de que trata|como es|para que sirve|cuanto cuesta|precio de|duracion de)\s+(?:el |la |un |una )?/, '');
+    const service = await matchServiceByQuery(tenant.id, query);
+    if (service) {
+      if (flowState.booking) return sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service });
+      return handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId: service.id });
+    }
+  }
   if (priorityIntent === 'book_start') {
-    const normalizedMessage = normalizeSearchText(bodyText);
-    const serviceQuery = extractServiceQueryFromBookingText(bodyText);
-    const visibleServices = await loadVisibleServicesForBot(tenant.id);
-    const mentionedService = visibleServices.find((service) => {
-      const serviceName = normalizeSearchText(service.name);
-      return serviceName && normalizedMessage.includes(serviceName);
-    });
-    const requestedService = mentionedService
-      || (serviceQuery ? await matchServiceByQuery(tenant.id, serviceQuery) : null);
+    const serviceQuery = extractServiceQueryFromBookingText(bodyText).split(/\b(?:para (?:el|hoy|manana)|(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)|a las)\b/)[0].trim();
+    const requestedService = serviceQuery ? await matchServiceByQuery(tenant.id, serviceQuery) : null;
     if (requestedService) {
       const requestedDate = resolveBookingDate({}, bodyText);
       const requestedTime = parseRequestedTime(bodyText);
@@ -1310,7 +1366,11 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   if (flowState.booking?.serviceId && wantsCurrentServiceInfo(bodyText)) {
-    return handleBookingServiceInfo({ tenant, connection, conv, waId, tone, serviceId: flowState.booking.serviceId });
+    const requested = await matchServiceByQuery(tenant.id, normalizeSearchText(bodyText).replace(/^[¿?]+/, '').replace(/^(?:que es|de que trata|como es|para que sirve)\s+(?:el |la |un |una )?/, ''));
+    const refersToCurrent = /\b(eso|este servicio|ese servicio|este tratamiento|ese tratamiento)\b/.test(normalizeSearchText(bodyText));
+    if (requested || refersToCurrent) {
+      return handleBookingServiceInfo({ tenant, connection, conv, waId, tone, serviceId: requested?.id || flowState.booking.serviceId });
+    }
   }
 
   if (wantsCatalogInText(bodyText, flowState)) {
@@ -1339,15 +1399,17 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return showBookingTherapistPicker({ tenant, connection, conv, waId, tone });
   }
 
-  if (flowState.booking?.step === 'ask_name') {
+  const isQuestion = /[?¿]|^(que|como|cuanto|cuando|donde|cual|puedes|podria)\b/.test(normalizeSearchText(bodyText));
+  const isProfileAnswer = !isQuestion && !priorityIntent;
+  if (flowState.booking?.step === 'ask_name' && isProfileAnswer) {
     return handleNameCapture({ tenant, connection, conv, waId, tone, name: bodyText });
   }
 
-  if (flowState.booking?.step === 'ask_address') {
+  if (flowState.booking?.step === 'ask_address' && isProfileAnswer) {
     return handleBookingAddressCapture({ tenant, connection, conv, waId, tone, address: bodyText });
   }
 
-  if (flowState.booking?.step === 'ask_cedula') {
+  if (flowState.booking?.step === 'ask_cedula' && isProfileAnswer) {
     return handleBookingCedulaCapture({ tenant, connection, conv, waId, tone, cedula: bodyText });
   }
 
@@ -1395,21 +1457,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return routeIntent({ tenant, connection, conv, waId, tone, intent: deterministicIntent, userMessage: bodyText });
   }
 
-  // Tier 2: intent cache lookup
-  const canUseIntentCache = !flowState.booking && !flowState.reschedule && flowState.flow !== 'service_detail';
-  const cacheKey = `${tenant.id}:${tone}:${bodyText}`;
-  const cached = canUseIntentCache ? intentCache.get(cacheKey) : null;
-  if (cached) {
-    logBot('info', 'intención resuelta por caché', {
-      tenant: tenant.slug,
-      conversationId: conv.id,
-      intent: cached.intent,
-    });
-    await logBotInteraction(tenant.id, conv, {
-      userMessage: bodyText, intent: cached.intent, reply: cached.reply,
-    });
-    return routeIntent({ tenant, connection, conv, waId, tone, intent: cached.intent, aiReply: cached.reply, userMessage: bodyText });
-  }
+  // Generated replies and contextual intents are never shared between contacts.
 
   // Tier 3: AI (if available)
   if (!aiClient.isAvailable()) {
@@ -1459,7 +1507,10 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   const directlyReusableIntents = new Set(['greeting', 'chitchat', 'farewell', 'unclear']);
   const approvedExample = centerContext.examples.find((example) => (
-    directlyReusableIntents.has(example.expectedIntent)
+    example.audience === 'PUBLIC' && example.active === true && history.length <= 1
+    && !aiClient.hasUnapprovedUrls(example.expectedReply, { knowledge: centerContext.knowledge })
+    && !flowState.booking && !flowState.reschedule && !flowState.bookingForOther
+    && directlyReusableIntents.has(example.expectedIntent)
     && almitaCenter.normalizeSearch(example.userMessage) === almitaCenter.normalizeSearch(bodyText)
   ));
   if (approvedExample) {
@@ -1492,6 +1543,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     services,
     history,
     bookingState: flowState.booking || null,
+    tenantConfig: tenant.config,
     almitaCenter: centerContext.configuration ? {
       personality: centerContext.configuration.personality,
       instructions: centerContext.configuration.instructions,
@@ -1527,19 +1579,11 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     intent: aiResult.intent,
     hasReply: Boolean(aiResult.replyText),
     params: Object.keys(aiResult.params || {}),
-    rawAiText: String(aiResult.rawText || '').slice(0, 400),
     parseOk: Boolean(aiResult.parseOk),
     latencyMs,
     costUsd: Number((aiResult.costUsd || 0).toFixed(4)),
   });
 
-  if (canUseIntentCache) {
-    const reusableReplyIntents = new Set(['chitchat', 'farewell', 'unclear']);
-    const reusableReply = !clientName && reusableReplyIntents.has(aiResult.intent)
-      ? aiResult.replyText
-      : null;
-    intentCache.set(cacheKey, aiResult.intent, reusableReply);
-  }
 
   await logBotInteraction(tenant.id, conv, {
     userMessage: bodyText,
@@ -1623,6 +1667,19 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
       if (params?.service_query) {
         const svc = await matchServiceByQuery(tenant.id, params.service_query);
         if (svc) {
+          if (userMessage && hasExplicitBookingLanguage(userMessage) && !isGenericBookingRequest(userMessage)) {
+            const fs = state.getFlowState(waId) || {};
+            const referencesSelected = /\b(este servicio|ese servicio|el mismo servicio)\b/.test(normalizeSearchText(userMessage))
+              && [fs.booking?.serviceId, fs.lastServiceId].includes(svc.id);
+            const query = extractServiceQueryFromBookingText(userMessage)
+              .split(/\b(?:para (?:el|hoy|manana)|(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)|hoy|manana|pasado manana|a las|por la|en la)\b/)[0].trim();
+            const explicitlyMatched = query ? await matchServiceByQuery(tenant.id, query) : null;
+            if (!referencesSelected && explicitlyMatched?.id !== svc.id) {
+              return handleBook({ tenant, connection, conv, waId, tone,
+                aiReply: 'Necesito confirmar el tratamiento exacto. No he reservado ni sustituido el que pediste por otro; elige una opción del catálogo o contacta a un asesor.',
+              });
+            }
+          }
           // Un síntoma no es consentimiento para reservar: primero se informa
           // y se conserva el flujo que la clienta ya estaba siguiendo.
           if (describesWellnessNeed(userMessage) && !hasExplicitBookingLanguage(userMessage)) {
@@ -1650,8 +1707,9 @@ async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiRep
     }
 
     case 'my_appointment':
-    case 'cancel':
       return handleMyAppointment({ tenant, connection, conv, waId, tone });
+    case 'cancel':
+      return handleCancelAppointment({ tenant, connection, conv, waId, tone });
 
     case 'reschedule': {
       const date = resolveBookingDate(params, userMessage);
@@ -1711,7 +1769,7 @@ function serviceCatalogDescription(service) {
   const description = String(service.description || '').replace(/\s+/g, ' ').trim();
   const isGenericCatalogDescription = /^servicio de .+ con duraci[oó]n aproximada/i.test(description)
     || /^a[uú]n no tengo una descripci[oó]n detallada/i.test(description);
-  if (description && !isGenericCatalogDescription) return description.slice(0, 300);
+  if (description && !isGenericCatalogDescription) return description;
   return serviceInfoFallback(service);
 }
 
@@ -1741,9 +1799,7 @@ function findSlotIndexByTime(slots, requestedTime) {
 
 function serviceCatalogMeta(service) {
   const duration = `${service.durationMins || 60} min`;
-  const price = Number(service.priceUsd || 0);
-  if (price > 0) return `$${price.toFixed(2)} · ${duration}`;
-  return `valor a confirmar · ${duration}`;
+  return `${formatCustomerPrice(service.priceUsd)} · ${duration}`;
 }
 
 function buildServicesCatalogText(services, { tone } = {}) {
@@ -1774,17 +1830,16 @@ function buildServicesCatalogText(services, { tone } = {}) {
 
 function splitMessage(text, maxLength = 3500) {
   const chunks = [];
-  let current = '';
-  for (const block of String(text || '').split('\n\n')) {
-    const next = current ? `${current}\n\n${block}` : block;
-    if (next.length > maxLength && current) {
-      chunks.push(current);
-      current = block;
-    } else {
-      current = next;
-    }
+  let remaining = String(text || '');
+  while (remaining.length > maxLength) {
+    let split = remaining.lastIndexOf('\n', maxLength);
+    if (split < maxLength / 2) split = remaining.lastIndexOf(' ', maxLength);
+    if (split < maxLength / 2) split = maxLength;
+    if (/^[\uDC00-\uDFFF]$/.test(remaining[split])) split -= 1;
+    chunks.push(remaining.slice(0, split));
+    remaining = remaining.slice(split).replace(/^\s+/, '');
   }
-  if (current) chunks.push(current);
+  if (remaining) chunks.push(remaining);
   return chunks;
 }
 
@@ -1833,11 +1888,13 @@ async function handleServiceRecommendation({ tenant, connection, conv, waId, ton
 }
 
 async function handlePromotions({ tenant, connection, conv, waId, tone }) {
-  const msg = tone === 'tu'
-    ? '🌸 *Promociones y catálogo Alma Spa*\n\nDescubre nuestras promociones, novedades y bienestar en Instagram:\nhttps://www.instagram.com/alma_spaholistica/\n\n📖 *Catálogo de servicios*\nhttps://drive.google.com/file/d/12_6QAi4ZwMlLElp0QgbrGh5WmZF4WWRE/view\n\n🔗 También puedes ver todos nuestros enlaces aquí:\nhttps://linktr.ee/almaspa_02'
-    : '🌸 *Promociones y catálogo Alma Spa*\n\nDescubra nuestras promociones, novedades y bienestar en Instagram:\nhttps://www.instagram.com/alma_spaholistica/\n\n📖 *Catálogo de servicios*\nhttps://drive.google.com/file/d/12_6QAi4ZwMlLElp0QgbrGh5WmZF4WWRE/view\n\n🔗 También puede ver todos nuestros enlaces aquí:\nhttps://linktr.ee/almaspa_02';
-  const r = await transport.sendText(connection, waId, msg);
-  await recordBotMessage(tenant.id, conv, r, { body: msg });
+  let context;
+  try { context = await almitaCenter.loadRuntimeContext(tenant.id, 'promociones catalogo'); } catch { context = { knowledge: [] }; }
+  const items = context.knowledge.filter((item) => item.audience === 'PUBLIC'
+    && /promocion|catalogo/.test(normalizeSearchText(`${item.category} ${item.title}`)));
+  const text = items.length ? items.map((item) => `${item.title}\n${item.content}`).join('\n\n')
+    : 'No tengo promociones vigentes aprobadas para compartir. Puedes consultar los servicios o contactar a un asesor.';
+  await sendTextChunks({ tenant, connection, conv, waId, text });
   return sendMainMenu({ tenant, connection, conv, waId, tone, compact: true });
 }
 
@@ -1848,7 +1905,7 @@ async function sendMainMenu({ tenant, connection, conv, waId, tone, compact = fa
     ? null
     : await lookupClientByWaId(tenant.id, waId);
   const clientName = stateOrConversationName || knownClient?.fullName || null;
-  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0, clientName });
+  state.setFlowState(waId, { flow: 'menu', tone, unclearCount: 0, clientName, booking: null, reschedule: null, cancellation: null, bookingForOther: null, textChoices: null });
   const body = menus.mainMenuText({ tone, clientName, compact });
   logBot('info', 'enviando opciones principales en texto', {
     tenant: tenant.slug,
@@ -1902,7 +1959,7 @@ function textChoiceSelection(text, flowState = {}) {
 }
 
 function flowStepKey(flowState = {}) {
-  const step = flowState.booking?.step || flowState.reschedule?.step || flowState.bookingForOther?.step || '';
+  const step = flowState.cancellation?.step || flowState.booking?.step || flowState.reschedule?.step || flowState.bookingForOther?.step || '';
   return `${flowState.flow || ''}:${step}`;
 }
 
@@ -1936,6 +1993,14 @@ function textChoiceEmoji(id) {
 }
 
 async function handleSelection({ tenant, connection, conv, waId, tone, selectionId }) {
+  if (selectionId.startsWith(CANCEL_APPOINTMENT_PREFIX)) {
+    return handleCancelAppointment({ tenant, connection, conv, waId, tone, appointmentId: selectionId.slice(CANCEL_APPOINTMENT_PREFIX.length) });
+  }
+  if (selectionId === CANCEL_YES) return confirmAppointmentCancellation({ tenant, connection, conv, waId, tone });
+  if (selectionId === CANCEL_NO) {
+    state.setFlowState(waId, { cancellation: null, flow: 'menu', textChoices: null });
+    return sendTextChunks({ tenant, connection, conv, waId, text: 'La cita se mantiene sin cambios.' });
+  }
   // Booking flow selections — do NOT reset state (booking data must survive)
   if (selectionId === menus.BOOK_RECIPIENT_SELF) {
     const fs = state.getFlowState(waId) || {};
@@ -2155,7 +2220,7 @@ async function handleCategoryServices({ tenant, connection, conv, waId, tone, ca
 async function handleServiceDetail({ tenant, connection, conv, waId, tone, serviceId }) {
   const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
   const svc = await serviceService.getService(botActor, serviceId);
-  if (!svc || svc.active === false) {
+  if (!isCustomerService(svc)) {
     const msg = tone === 'tu'
       ? '😅 *Ese servicio ya no está disponible*\n\nTe muestro los que tenemos 🌿'
       : '😅 *Ese servicio ya no está disponible*\n\nLe muestro los que tenemos 🌿';
@@ -2187,22 +2252,22 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
 
   const imgRes = await serviceService.getServiceImage(botActor, serviceId);
   const image = imgRes?.image;
-  if (image?.data && image?.mimeType) {
+  if (image?.data && image?.mimeType && caption.length <= 1024) {
     const uploaded = await transport.uploadMedia(connection, image.data, image.mimeType);
     if (uploaded.ok) {
       const sent = await transport.sendImageByMediaId(connection, waId, uploaded.mediaId, caption);
       await recordBotMessage(tenant.id, conv, sent, { type: 'image', body: `[foto] ${caption.slice(0, 100)}` });
     } else {
       console.warn('[BOT] uploadMedia falló, fallback a texto:', uploaded);
-      const r = await transport.sendText(connection, waId, caption);
-      await recordBotMessage(tenant.id, conv, r, { body: caption });
+      await sendTextChunks({ tenant, connection, conv, waId, text: caption });
     }
   } else {
-    const r = await transport.sendText(connection, waId, caption);
-    await recordBotMessage(tenant.id, conv, r, { body: caption });
+    await sendTextChunks({ tenant, connection, conv, waId, text: caption });
   }
 
-  const invitation = tone === 'tu'
+  const invitation = !hasConfirmedPrice(svc)
+    ? 'El valor está pendiente de confirmar. Escribe “contactar a un asesor” para coordinar este servicio.'
+    : tone === 'tu'
     ? 'Si quieres reservarlo, escríbeme “quiero reservar este servicio”.'
     : 'Si desea reservarlo, escríbame “quiero reservar este servicio”.';
   const r2 = await transport.sendText(connection, waId, invitation);
@@ -2213,7 +2278,7 @@ async function handleServiceDetail({ tenant, connection, conv, waId, tone, servi
 async function handleBookingServiceInfo({ tenant, connection, conv, waId, tone, serviceId }) {
   const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
   const svc = await serviceService.getService(botActor, serviceId);
-  if (!svc || svc.active === false) {
+  if (!isCustomerService(svc)) {
     return handleBook({ tenant, connection, conv, waId, tone });
   }
 
@@ -2221,11 +2286,12 @@ async function handleBookingServiceInfo({ tenant, connection, conv, waId, tone, 
 }
 
 async function sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service }) {
-  const msg = tone === 'tu'
-    ? `🌿 *_${service.name}_*\n${serviceCatalogDescription(service) || serviceInfoFallback(service)}\n\n${serviceCatalogMeta(service)}\n\nCuando quieras, dime qué día te queda bien.`
-    : `🌿 *_${service.name}_*\n${serviceCatalogDescription(service) || serviceInfoFallback(service)}\n\n${serviceCatalogMeta(service)}\n\nCuando desee, dígame qué día le queda bien.`;
-  const r = await transport.sendText(connection, waId, msg);
-  await recordBotMessage(tenant.id, conv, r, { body: msg });
+  const booking = state.getFlowState(waId)?.booking;
+  const continuation = booking?.serviceId !== service.id
+    ? `Esta consulta no cambia la reserva que estás preparando para ${booking?.serviceName || 'el servicio elegido'}. Para cambiarla, escribe “quiero reservar ${service.name}”.`
+    : 'La reserva sigue en el mismo paso; no necesitas repetir los datos que ya elegiste.';
+  const msg = `🌿 *_${service.name}_*\n${serviceCatalogDescription(service) || serviceInfoFallback(service)}\n\n${serviceCatalogMeta(service)}\n\n${continuation}`;
+  return sendTextChunks({ tenant, connection, conv, waId, text: msg });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -2284,6 +2350,7 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
       requestedDate: preservedDate,
       requestedTime: preservedTime,
     },
+    cancellation: null,
     newClient: null,
     clientName: prev.clientName,
     tone,
@@ -2304,6 +2371,10 @@ async function handleBook({ tenant, connection, conv, waId, tone, aiReply, page 
 }
 
 async function handleSmartBooking({ tenant, connection, conv, waId, tone, service, date, time, aiReply }) {
+  state.setFlowState(waId, { cancellation: null, textChoices: null });
+  if (!isCustomerService(service) || !hasConfirmedPrice(service)) {
+    return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: service.id });
+  }
   const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
   const bookingClient = await lookupClientByWaId(tenant.id, waId);
   let slots;
@@ -2314,6 +2385,7 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
       serviceId: service.id,
       date,
       modality: 'spa',
+      publicOnly: true,
       clientId: bookingClient?.id || null,
     });
   } catch (err) {
@@ -2379,9 +2451,10 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
 }
 
 async function handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId }) {
+  state.setFlowState(waId, { cancellation: null, textChoices: null });
   const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
   const svc = await serviceService.getService(botActor, serviceId);
-  if (!svc || !svc.active) {
+  if (!isCustomerService(svc)) {
     const msg = tone === 'tu'
       ? '😅 *Ese servicio ya no está disponible*\n\nElige otro:'
       : '😅 *Ese servicio ya no está disponible*\n\nElija otro:';
@@ -2418,6 +2491,11 @@ async function handleBookingServiceSelected({ tenant, connection, conv, waId, to
         })),
       });
     }
+  }
+
+  if (!hasConfirmedPrice(svc)) {
+    await sendTextChunks({ tenant, connection, conv, waId, text: `${svc.name}\n\n${serviceCatalogDescription(svc)}\n\nValor a confirmar. Un asesor debe confirmar el precio antes de reservar; no se ha creado ninguna cita.` });
+    return handleEscalate({ tenant, connection, conv, waId, tone });
   }
 
   const prev = state.getFlowState(waId) || {};
@@ -2523,6 +2601,7 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
       serviceId: fs.booking.serviceId,
       date,
       modality: 'spa',
+      publicOnly: true,
       clientId: bookingClient?.id || null,
     });
   } catch (err) {
@@ -2601,6 +2680,7 @@ async function showNextAvailableBookingDates({ tenant, connection, conv, waId, t
         serviceId: fs.booking.serviceId,
         date,
         modality: 'spa',
+        publicOnly: true,
         clientId: bookingClient?.id || null,
       });
       if (slots.length > 0) availableDates.push({ date, slots: slots.length });
@@ -2934,6 +3014,10 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
     let appointment;
     let bookedClient;
     await prisma.$transaction(async (tx) => {
+      const service = await tx.service.findUnique({ where: { id: booking.serviceId } });
+      if (!isCustomerService(service) || service.tenantId !== tenant.id || !hasConfirmedPrice(service)) {
+        throw new Error('El servicio requiere confirmar su disponibilidad y precio con un asesor');
+      }
       const client = booking.clientId
         ? { id: booking.clientId }
         : await clientService.upsertClient(tx, tenant.id, {
@@ -2954,6 +3038,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
         startsAt: new Date(booking.timeSlot),
         modality: 'spa',
         status: 'pendiente_bot',
+        publicOnly: true,
         staffId: booking.staffId || undefined,
         depositStatus: booking.depositRequired ? 'pending' : 'not_required',
         depositAmountUsd: booking.depositRequired ? booking.depositAmountUsd : null,
@@ -3022,6 +3107,43 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
 
 // ─── Reprogramación de cita ─────────────────────────────────────
 
+async function handleCancelAppointment({ tenant, connection, conv, waId, tone, appointmentId }) {
+  const client = await lookupClientByWaId(tenant.id, waId);
+  const appointments = client ? await upcomingAppointmentsForClient(tenant.id, client.id) : [];
+  const appointment = appointmentId ? appointments.find((row) => row.id === appointmentId)
+    : appointments.length === 1 ? appointments[0] : null;
+  if (!appointments.length || (appointmentId && !appointment)) {
+    return sendTextChunks({ tenant, connection, conv, waId, text: 'No encuentro una cita próxima disponible para cancelar desde este número. Un asesor puede ayudarte.' });
+  }
+  state.setFlowState(waId, { flow: 'cancel_appointment', booking: null, reschedule: null,
+    cancellation: { step: appointment ? 'confirm' : 'choose_appointment', appointmentId: appointment?.id }, tone });
+  if (!appointment) {
+    return sendTextChoices({ tenant, connection, conv, waId, body: '¿Cuál de tus citas quieres cancelar?', choices: appointments.map((row) => ({
+      id: `${CANCEL_APPOINTMENT_PREFIX}${row.id}`, label: `${row.service?.name || 'Servicio'} · ${formatAppointmentDate(row.startsAt)} · ${formatAppointmentTime(row.startsAt)}`,
+    })) });
+  }
+  return sendTextChoices({ tenant, connection, conv, waId,
+    body: `¿Confirmas que deseas cancelar ${appointment.service?.name || 'tu cita'} del ${formatAppointmentDate(appointment.startsAt)} a las ${formatAppointmentTime(appointment.startsAt)}?`,
+    choices: [{ id: CANCEL_YES, label: 'Sí, cancelar' }, { id: CANCEL_NO, label: 'No, mantener mi cita' }],
+  });
+}
+
+async function confirmAppointmentCancellation({ tenant, connection, conv, waId, tone }) {
+  const flowState = state.getFlowState(waId);
+  const cancellation = flowState?.cancellation;
+  if (flowState?.flow !== 'cancel_appointment' || cancellation?.step !== 'confirm' || !cancellation.appointmentId) {
+    return handleCancelAppointment({ tenant, connection, conv, waId, tone });
+  }
+  try {
+    const cancelled = await appointmentService.cancelWhatsAppAppointment({ tenantId: tenant.id, customerWaId: waId, appointmentId: cancellation.appointmentId });
+    if (!cancelled?.id) throw new Error('Cancelacion no confirmada');
+    state.setFlowState(waId, { cancellation: null, flow: 'menu', textChoices: null });
+    return sendTextChunks({ tenant, connection, conv, waId, text: 'Tu cita ha sido cancelada. Si deseas, podemos preparar una nueva reserva.' });
+  } catch {
+    return sendTextChunks({ tenant, connection, conv, waId, text: 'No pude confirmar la cancelación. No te indicaré que está cancelada sin comprobarlo; contacta a un asesor para revisarla.' });
+  }
+}
+
 async function upcomingAppointmentsForClient(tenantId, clientId, { includeRoom = false } = {}) {
   const query = {
     where: {
@@ -3043,6 +3165,7 @@ async function upcomingAppointmentsForClient(tenantId, clientId, { includeRoom =
 }
 
 async function handleReschedule({ tenant, connection, conv, waId, tone, date = null, time = null, keepCurrentTime = false, appointmentId = null }) {
+  state.setFlowState(waId, { cancellation: null, textChoices: null });
   const phone = waIdToPhone(waId);
   const client = await prisma.client.findFirst({ where: { tenantId: tenant.id, whatsapp: phone } });
   if (!client) {
@@ -3151,6 +3274,7 @@ async function handleRescheduleDateSelected({ tenant, connection, conv, waId, to
       tenantConfig: tenantData?.config,
       appointmentId: fs.reschedule.appointmentId,
       date,
+      publicOnly: true,
     });
   } catch (err) {
     logBot('warn', 'error al buscar horarios para reprogramar', { error: err.message, date });
@@ -3290,7 +3414,8 @@ async function handleRescheduleConfirm({ tenant, connection, conv, waId, tone })
 
   try {
     const botActor = { id: 'bot', role: 'dueno', tenantId: tenant.id, email: 'bot@internal' };
-    await appointmentService.updateAppointment(botActor, reschedule.appointmentId, { startsAt: reschedule.timeSlot });
+    const updated = await appointmentService.updateAppointment(botActor, reschedule.appointmentId, { startsAt: reschedule.timeSlot }, { publicOnly: true });
+    if (!updated?.id) throw new Error('La reprogramacion no fue confirmada por el sistema');
     const slot = new Date(reschedule.timeSlot);
     const fecha = new Intl.DateTimeFormat('es-EC', {
       timeZone: menus.SPA_TZ, weekday: 'long', day: 'numeric', month: 'long',
@@ -3408,15 +3533,18 @@ async function handleEscalate({ tenant, connection, conv, waId, tone }) {
 }
 
 async function handleBusinessHours({ tenant, connection, conv, waId, tone }) {
-  const msg = tone === 'tu'
-    ? '🕐 *Nuestro horario de atención*\n\nLunes a sábado:\n🌤️ 9:00 a. m. a 12:00 p. m.\n🌙 3:00 p. m. a 8:00 p. m.\n\nDomingos descansamos 🌿'
-    : '🕐 *Nuestro horario de atención*\n\nLunes a sábado:\n🌤️ 9:00 a. m. a 12:00 p. m.\n🌙 3:00 p. m. a 8:00 p. m.\n\nDomingos descansamos 🌿';
+  const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
+  const { formatSchedule } = require('../../utils/businessHours');
+  const msg = `🕐 *Nuestro horario de atención*\n\n${formatSchedule(tenantData?.config || tenant.config)}`;
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }
 
 async function handleLocation({ tenant, connection, conv, waId }) {
-  const msg = '📍 Estamos en *Juan de Salinas y Av. Héroes de Paquisha.* 🌿';
+  let context;
+  try { context = await almitaCenter.loadRuntimeContext(tenant.id, 'ubicacion direccion'); } catch { context = { knowledge: [] }; }
+  const item = context.knowledge.find((row) => row.audience === 'PUBLIC' && /ubicacion/.test(normalizeSearchText(`${row.title} ${row.category}`)));
+  const msg = item ? `📍 ${item.content}` : '📍 Estamos en *Juan de Salinas y Av. Héroes de Paquisha.* 🌿';
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
 }
@@ -3445,6 +3573,11 @@ module.exports = {
     handleBookingServiceInfo,
     handleBook,
     handleSmartBooking,
+    handleCancelAppointment,
+    confirmAppointmentCancellation,
+    splitMessage,
+    serviceCatalogDescription,
+    findInformationalService,
     handleBookingServiceSelected,
     handleBookingDateSelected,
     handleBookingTimeSelected,

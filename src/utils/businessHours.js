@@ -140,4 +140,25 @@ function validateShape(bh) {
   return null;
 }
 
-module.exports = { normalize, totalHours, iterateHours, isRangeInsideBusinessHours, validateShape, DEFAULT_BUSINESS_HOURS_NEW };
+function formatSchedule(config = {}) {
+  const dayNames = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+  const workDays = config?.workDays;
+  const hours = config?.businessHours;
+  if (!Array.isArray(workDays) || workDays.some((day) => ![0, 1, 2, 3, 4, 5, 6, 7].includes(day))) {
+    return 'Horario a confirmar con un asesor.';
+  }
+  const days = [...new Set(workDays.map((day) => day === 0 ? 7 : day))].sort((a, b) => a - b);
+  if (!days.length) return 'Sin días de atención configurados.';
+  if (!hours || typeof hours !== 'object' || Array.isArray(hours)) return 'Horario a confirmar con un asesor.';
+  const splitHours = 'morning' in hours || 'afternoon' in hours;
+  const windows = splitHours ? [hours.morning, hours.afternoon] : [hours];
+  if (windows.some((window) => window != null && !isValidWindow(window))) return 'Horario a confirmar con un asesor.';
+  const availableWindows = windows.filter(isValidWindow);
+  if (!availableWindows.length) return 'Sin franjas de atención configuradas.';
+  const consecutive = days.length > 1 && days.every((day, index) => index === 0 || day === days[index - 1] + 1);
+  const dayText = consecutive ? `${dayNames[days[0] - 1]} a ${dayNames[days.at(-1) - 1]}` : days.map((day) => dayNames[day - 1]).join(', ');
+  const timeText = availableWindows.map((window) => `${window.start}-${window.end}`).join(' y ');
+  return `Atención: ${dayText}, ${timeText}.`;
+}
+
+module.exports = { normalize, totalHours, iterateHours, isRangeInsideBusinessHours, validateShape, DEFAULT_BUSINESS_HOURS_NEW, formatSchedule };

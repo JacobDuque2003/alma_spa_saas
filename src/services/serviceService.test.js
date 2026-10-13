@@ -10,6 +10,38 @@ function mockPrisma({ service = {}, room = {} } = {}) {
   prisma.$transaction = async (fn) => fn(prisma);
 }
 
+test('soporte sin tenant audita create y update en el tenant del servicio', async () => {
+  const logs = [];
+  const actor = { role: 'superadmin', tenantId: null, id: 'support', email: 'support@test.local' };
+  mockPrisma({ service: {
+    create: async ({ data }) => ({ id: 'srv1', ...data }),
+    findUnique: async () => ({ id: 'srv1', tenantId: 't-alma', active: true }),
+    update: async ({ data }) => ({ id: 'srv1', tenantId: 't-alma', ...data }),
+  } });
+  prisma.adminAuditLog.create = async ({ data }) => { logs.push(data); return data; };
+  await serviceService.createService(actor, { tenantId: 't-alma', name: 'Facial', category: 'Faciales', priceUsd: 30 });
+  await serviceService.updateService(actor, 'srv1', { priceUsd: 40, tenantId: 't-forged' });
+  assert.deepEqual(logs.map(({ tenantId, actorId, action }) => ({ tenantId, actorId, action })), [
+    { tenantId: 't-alma', actorId: 'support', action: 'create' },
+    { tenantId: 't-alma', actorId: 'support', action: 'update' },
+  ]);
+});
+
+test('soporte conserva listado global autorizado y filtro explicito por tenant', async () => {
+  const queries = [];
+  mockPrisma({ service: { findMany: async ({ where }) => { queries.push(where); return []; } } });
+  await serviceService.listServices({ role: 'superadmin', tenantId: null });
+  await serviceService.listServices({ role: 'superadmin', tenantId: null }, { tenantId: 't-alma' });
+  assert.deepEqual(queries, [{ active: true }, { active: true, tenantId: 't-alma' }]);
+});
+
+test('soporte necesita tenant explicito para crear', async () => {
+  mockPrisma();
+  await assert.rejects(() => serviceService.createService({ role: 'superadmin', tenantId: null }, {
+    name: 'Facial', category: 'Faciales', priceUsd: 30,
+  }), (err) => err.status === 400 && /tenantId/.test(err.message));
+});
+
 test('listServices oculta por defecto los servicios retirados', async () => {
   let whereSeen = null;
   mockPrisma({ service: { findMany: async ({ where }) => { whereSeen = where; return []; } } });

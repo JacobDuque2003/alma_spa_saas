@@ -157,6 +157,33 @@ test('listConversations: botStatus usa botActive del registro (no N+1 query)', a
   assert.equal(items[1].pendingMessageCount, 2);
 });
 
+test('listConversations: escalacion usa el tenant y la conversacion, sin fallback legacy', async (t) => {
+  const state = require('./whatsappBot/state');
+  state._reset();
+  t.after(() => state._reset());
+  const waId = '593000000001';
+  state.markEscalated(waId);
+  state.withConversation('t1', 'c1', () => state.markEscalated(waId));
+  const rows = [
+    { id: 'c1', tenantId: 't1', customerWaId: waId, botActive: true, lastMessageAt: new Date() },
+    { id: 'c2', tenantId: 't1', customerWaId: waId, botActive: true, lastMessageAt: new Date() },
+    { id: 'c1', tenantId: 't2', customerWaId: waId, botActive: true, lastMessageAt: new Date() },
+    { id: 'c2', tenantId: 't2', customerWaId: waId, botActive: false, lastMessageAt: new Date() },
+  ];
+  prisma.whatsAppConversation = {
+    findMany: async ({ where }) => rows.filter((row) => row.tenantId === where.tenantId),
+    count: async () => 2,
+  };
+  const results = await state.withConversation('unrelated', 'outer', () => Promise.all([
+    inbox.listConversations({ tenantId: 't1', role: 'personal' }, {}),
+    inbox.listConversations({ tenantId: 't2', role: 'personal' }, {}),
+  ]));
+  assert.equal(results[0].items.find((item) => item.id === 'c1').botStatus, 'escalated');
+  assert.equal(results[0].items.find((item) => item.id === 'c2').botStatus, 'active');
+  assert.equal(results[1].items.find((item) => item.id === 'c1').botStatus, 'active');
+  assert.equal(results[1].items.find((item) => item.id === 'c2').botStatus, 'handedOff');
+});
+
 test('listConversations: unread=true filtra conversaciones con mensajes pendientes', async () => {
   let convWhere = null;
   prisma.whatsAppConversation = {
@@ -179,7 +206,11 @@ test('listConversations: filter=bot_active filtra por botActive true', async () 
 
 test('reactivateBot: pone botActive=true y limpia botState', async () => {
   const botState = require('./whatsappBot/state');
-  botState.setFlowState('593999', { step: 'booking' });
+  botState.withConversation('t1', 'c1', () => {
+    botState.setFlowState('593999', { step: 'booking' });
+    botState.markEscalated('593999');
+  });
+  botState.withConversation('t2', 'c2', () => botState.setFlowState('593999', { step: 'other-tenant' }));
   let updateData = null;
   prisma.whatsAppConversation = {
     findUnique: async () => ({ id: 'c1', tenantId: 't1', customerWaId: '593999' }),
@@ -189,7 +220,11 @@ test('reactivateBot: pone botActive=true y limpia botState', async () => {
   assert.equal(updateData.botActive, true);
   assert.equal(updateData.botState, null);
   assert.equal(result.botActive, true);
-  assert.equal(botState._internals ? null : null, null); // state cleared
+  botState.withConversation('t1', 'c1', () => {
+    assert.equal(botState.getFlowState('593999'), null);
+    assert.equal(botState.isEscalated('593999'), false);
+  });
+  botState.withConversation('t2', 'c2', () => assert.equal(botState.getFlowState('593999').step, 'other-tenant'));
 });
 
 test('setStatus: resolver limpia contadores pendientes de la bandeja', async () => {

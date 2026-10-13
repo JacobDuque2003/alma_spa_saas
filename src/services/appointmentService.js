@@ -2,11 +2,12 @@ const prisma = require('../utils/prisma');
 const { assertTenantScope, resolveTenantId } = require('../utils/tenantScope');
 const { AppError, BadRequestError, SlotUnavailableError } = require('../utils/errors');
 const clientService = require('./clientService');
-const clientIntakeService = require('./clientIntakeService');
 const bookingNotifier = require('./bookingNotifier');
 const agendaEvents = require('./crmEventBus');
 const { getTenantTimezone, localDayBoundsUTC, localTimeToUTC } = require('../utils/timezone');
 const { normalize: normalizeBusinessHours, isRangeInsideBusinessHours } = require('../utils/businessHours');
+const { customerServiceWhere, isCustomerService, hasConfirmedPrice } = require('../utils/customerServicePolicy');
+const { normalizePhone, isValidE164, waIdToPhone } = require('../utils/phone');
 
 const STAFF_ROLES = ['personal', 'dueno'];
 const OPEN_STATUSES = ['pendiente', 'pendiente_bot', 'confirmado'];
@@ -300,13 +301,49 @@ function toLocalDateInTimezone(date, timezone) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null, withoutStaff = false, includeInternalHours = false, includePastSlots = false }) {
+function assertPublicService(service) {
+  if (!isCustomerService(service)) {
+    throw new BadRequestError('serviceId invalido para este tenant');
+  }
+  if (!hasConfirmedPrice(service)) {
+    throw new BadRequestError('Valor a confirmar. Reserva este servicio con un asesor.');
+  }
+}
+
+function isPublicWorkDay(tenantConfig, date) {
+  const isoDay = new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
+  return !Array.isArray(tenantConfig?.workDays)
+    || tenantConfig.workDays.some((day) => (Number(day) || 7) === isoDay);
+}
+
+async function getAvailability({ tenantId, tenantConfig, serviceId, date, modality, clientId = null, withoutStaff = false, includeInternalHours = false, includePastSlots = false, publicOnly = false }) {
+  if (publicOnly) {
+    if (typeof serviceId !== 'string' || !serviceId.trim()) {
+      throw new BadRequestError('serviceId es requerido');
+    }
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+      || !Number.isFinite(new Date(`${date}T12:00:00Z`).getTime())
+      || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) {
+      throw new BadRequestError('date debe ser una fecha valida YYYY-MM-DD');
+    }
+    if (modality !== undefined && modality !== 'spa') {
+      throw new BadRequestError('La modalidad publica debe ser spa');
+    }
+    includeInternalHours = false;
+    includePastSlots = false;
+    withoutStaff = false;
+    // The anonymous route never supplies a client; verified WhatsApp may do so.
+  }
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
   }
-  const service = await prisma.service.findFirst({ where: { id: serviceId, tenantId, active: true } });
+  const service = await prisma.service.findFirst({ where: { id: serviceId, ...(publicOnly ? customerServiceWhere(tenantId) : { tenantId, active: true }) } });
   if (!service) {
     throw new BadRequestError('serviceId inválido para este tenant');
+  }
+  if (publicOnly) {
+    assertPublicService(service);
+    if (!isPublicWorkDay(tenantConfig, date)) return [];
   }
   const rooms = await getCompatibleRooms(prisma, tenantId, service);
   const roomIds = rooms.map((r) => r.id);
@@ -363,7 +400,7 @@ async function getAvailability({ tenantId, tenantConfig, serviceId, date, modali
  * la cita actual de los conflictos y conserva la duración real de esa cita
  * puntual; si no existe, vuelve al bloque estándar del servicio.
  */
-async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId, serviceId, withoutStaff = false, includeInternalHours = false }) {
+async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId, date, roomId, staffId, serviceId, withoutStaff = false, includeInternalHours = false, publicOnly = false }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
     throw new BadRequestError('date debe tener formato YYYY-MM-DD');
   }
@@ -378,6 +415,11 @@ async function getRescheduleAvailability({ tenantId, tenantConfig, appointmentId
   });
   if (!service) {
     throw new BadRequestError('El servicio de esta cita ya no está disponible');
+  }
+  if (publicOnly) {
+    assertPublicService(service);
+    if (!isPublicWorkDay(tenantConfig, date)) return [];
+    includeInternalHours = false;
   }
 
   const roomCandidates = await getCompatibleRooms(prisma, tenantId, service);
@@ -504,6 +546,7 @@ async function resolveAndCreateAppointment(tx, {
   staffId,
   depositStatus,
   depositAmountUsd,
+  publicOnly = false,
 }) {
   if (isHomeModality(modality)) {
     throw new BadRequestError('La modalidad a domicilio no está disponible');
@@ -513,9 +556,16 @@ async function resolveAndCreateAppointment(tx, {
   }
   const mod = 'spa';
 
-  const service = await tx.service.findFirst({ where: { id: serviceId, tenantId, active: true } });
+  const service = await tx.service.findFirst({ where: { id: serviceId, ...(publicOnly ? customerServiceWhere(tenantId) : { tenantId, active: true }) } });
   if (!service) {
     throw new BadRequestError('serviceId inválido para este tenant');
+  }
+  if (publicOnly) {
+    assertPublicService(service);
+    const date = toLocalDateInTimezone(startsAt, getTenantTimezone(tenantConfig));
+    if (!isPublicWorkDay(tenantConfig, date)) {
+      throw new BadRequestError('El centro no atiende en la fecha seleccionada');
+    }
   }
   const endsAt = addMinutes(startsAt, totalBlockMins(service));
 
@@ -611,25 +661,40 @@ async function resolveAndCreateAppointment(tx, {
 }
 
 /**
- * POST /bookings público: crea/actualiza Client, opcionalmente ClientIntake,
- * y N Appointment — todo en una sola transacción (todo o nada).
+ * POST /bookings publico: preserva perfiles existentes y crea N Appointment.
+ * El consentimiento de reserva no es una firma de consentimiento clinico.
  */
 async function createPublicBooking(tenantId, payload) {
-  const { fullName, whatsapp, email, address, intake, selections } = payload;
-  if (!fullName || !whatsapp) {
+  const { fullName, whatsapp, email, address, bookingConsent, selections } = payload || {};
+  if (typeof fullName !== 'string' || !fullName.trim() || typeof whatsapp !== 'string' || !isValidE164(normalizePhone(whatsapp))) {
     throw new BadRequestError('fullName y whatsapp son requeridos');
+  }
+  if (bookingConsent !== true) {
+    throw new BadRequestError('Debes aceptar el consentimiento para reservar');
   }
   if (!Array.isArray(selections) || selections.length === 0) {
     throw new BadRequestError('selections es requerido y debe tener al menos un elemento');
   }
+  for (const selection of selections) {
+    if (!selection || typeof selection.serviceId !== 'string' || !selection.serviceId.trim()
+      || typeof selection.startsAt !== 'string' || !Number.isFinite(Date.parse(selection.startsAt))
+      || Date.parse(selection.startsAt) <= Date.now()
+      || (selection.modality !== undefined && selection.modality !== 'spa')) {
+      throw new BadRequestError('Seleccion invalida: serviceId, fecha futura y modalidad spa son requeridos; domicilio no disponible');
+    }
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { config: true } });
-    const client = await clientService.upsertClient(tx, tenantId, { fullName, whatsapp, email, address });
-
-    if (intake) {
-      await clientIntakeService.upsertIntake(tx, tenantId, client.id, intake);
+    for (const selection of selections) {
+      const service = await tx.service.findFirst({ where: { id: selection.serviceId, ...customerServiceWhere(tenantId) } });
+      assertPublicService(service);
+      const date = toLocalDateInTimezone(new Date(selection.startsAt), getTenantTimezone(tenant?.config));
+      if (!isPublicWorkDay(tenant?.config, date)) {
+        throw new BadRequestError('El centro no atiende en la fecha seleccionada');
+      }
     }
+    const client = await clientService.upsertClient(tx, tenantId, { fullName, whatsapp, email, address }, { preserveExisting: true });
 
     const appointments = [];
     for (const selection of selections) {
@@ -640,6 +705,7 @@ async function createPublicBooking(tenantId, payload) {
         serviceId: selection.serviceId,
         startsAt: new Date(selection.startsAt),
         modality: selection.modality,
+        publicOnly: true,
       });
       appointments.push(appointment);
     }
@@ -687,6 +753,40 @@ async function cancelBookingByToken(confirmationToken) {
   }
   const updated = await prisma.appointment.update({ where: { confirmationToken }, data: { status: 'cancelado' } });
   notifyAgenda(updated.tenantId, 'appointment.status.updated', updated);
+  return updated;
+}
+
+// Solo lo invoca el servidor con el remitente del webhook autenticado de WA.
+async function cancelWhatsAppAppointment({ tenantId, customerWaId, appointmentId } = {}) {
+  const unavailable = () => new BadRequestError('No se pudo cancelar la cita seleccionada');
+  if (typeof tenantId !== 'string' || !tenantId.trim()
+    || typeof customerWaId !== 'string' || !customerWaId.trim()
+    || typeof appointmentId !== 'string' || !appointmentId.trim()) {
+    throw unavailable();
+  }
+  const whatsapp = waIdToPhone(normalizePhone(customerWaId));
+  if (!isValidE164(whatsapp)) throw unavailable();
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const client = await tx.client.findFirst({
+      where: { tenantId, whatsapp, active: true },
+      select: { id: true },
+    });
+    if (!client) throw unavailable();
+    const ownership = { id: appointmentId, tenantId, clientId: client.id };
+    const result = await tx.appointment.updateMany({
+      where: { ...ownership, startsAt: { gt: new Date() }, status: { in: OPEN_STATUSES } },
+      data: { status: 'cancelado' },
+    });
+    if (result.count !== 1) throw unavailable();
+    const appointment = await tx.appointment.findFirst({
+      where: ownership,
+      select: { id: true, tenantId: true, startsAt: true, status: true },
+    });
+    if (!appointment) throw unavailable();
+    return appointment;
+  });
+  notifyAgenda(tenantId, 'appointment.status.updated', updated);
   return updated;
 }
 
@@ -932,7 +1032,7 @@ async function createManualAppointment(actor, data) {
   }
 }
 
-async function updateAppointment(actor, id, changes) {
+async function updateAppointment(actor, id, changes, { publicOnly = false } = {}) {
   const target = await prisma.appointment.findUnique({ where: { id } });
   if (!target) return null;
   assertTenantScope(actor, target.tenantId);
@@ -984,6 +1084,12 @@ async function updateAppointment(actor, id, changes) {
     assertValidAppointmentRange(startsAt, endsAt);
     data.endsAt = endsAt;
     const dateStr = toLocalDateInTimezone(startsAt, getTenantTimezone(tenant?.config));
+    if (publicOnly) {
+      assertPublicService(service);
+      if (startsAt.getTime() <= Date.now() || !isPublicWorkDay(tenant?.config, dateStr)) {
+        throw new BadRequestError('La fecha seleccionada no está disponible para clientes');
+      }
+    }
     const roomId = data.roomId !== undefined ? data.roomId : target.roomId;
     const staffId = data.staffId !== undefined ? data.staffId : target.staffId;
     const withoutStaff = changes.withoutStaff === true || (changes.withoutStaff === undefined && !target.staffId);
@@ -1100,6 +1206,7 @@ module.exports = {
   createPublicBooking,
   getBookingByToken,
   cancelBookingByToken,
+  cancelWhatsAppAppointment,
   confirmBookingByToken,
   listAppointments,
   listServiceLegend,

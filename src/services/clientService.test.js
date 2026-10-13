@@ -3,35 +3,41 @@ const assert = require('node:assert/strict');
 const prisma = require('../utils/prisma');
 const clientService = require('./clientService');
 
-test('lookupClient devuelve exists=false y requiresIntake=true cuando el cliente no existe', async () => {
-  prisma.client = { findUnique: async () => null };
-  const result = await clientService.lookupClient('t1', '+593999000001');
-  assert.deepEqual(result, { exists: false, requiresIntake: true });
+test('lookupClient responde uniformemente sin leer existencia ni consentimiento', async () => {
+  for (const record of [null, { id: 'c1', intake: null }, { id: 'c1', intake: { consentSigned: false } }, { id: 'c1', intake: { consentSigned: true } }]) {
+    let reads = 0;
+    prisma.client = { findUnique: async () => { reads += 1; return record; } };
+    const result = await clientService.lookupClient('t1', '+593999000001');
+    assert.deepEqual(result, { requiresIntake: true });
+    assert.equal(reads, 0);
+  }
 });
 
-test('lookupClient devuelve requiresIntake=true si el cliente existe pero no firmó consentimiento', async () => {
-  prisma.client = {
-    findUnique: async () => ({ id: 'c1', intake: { consentSigned: false } }),
-  };
-  const result = await clientService.lookupClient('t1', '+593999000001');
-  assert.deepEqual(result, { exists: true, requiresIntake: true });
+test('upsert publico preserva identidad y conserva solo el nombre necesario para notificar', async () => {
+  let query;
+  const tx = { client: {
+    findUnique: async (args) => { query = args; return { id: 'c1', tenantId: 't1', whatsapp: '+593999000001', fullName: 'Nombre original' }; },
+    createMany: async () => assert.fail('no crear perfil existente'),
+    upsert: async () => assert.fail('no actualizar perfil existente'),
+  } };
+  const result = await clientService.upsertClient(tx, 't1', { fullName: 'Forjado', whatsapp: '0999000001', address: 'Forjada' }, { preserveExisting: true });
+  assert.equal(result.id, 'c1');
+  assert.equal(result.fullName, 'Nombre original');
+  assert.deepEqual(query.select, { id: true, tenantId: true, whatsapp: true, fullName: true });
+  assert.deepEqual(query.where, { tenantId_whatsapp: { tenantId: 't1', whatsapp: '+593999000001' } });
 });
 
-test('lookupClient devuelve requiresIntake=false si el cliente ya firmó consentimiento', async () => {
-  prisma.client = {
-    findUnique: async () => ({ id: 'c1', intake: { consentSigned: true } }),
-  };
-  const result = await clientService.lookupClient('t1', '+593999000001');
-  assert.deepEqual(result, { exists: true, requiresIntake: false });
-});
-
-test('M-2: lookupClient NO expone clientId en la respuesta pública', async () => {
-  prisma.client = {
-    findUnique: async () => ({ id: 'clientId-secreto', intake: { consentSigned: true } }),
-  };
-  const result = await clientService.lookupClient('t1', '+593999000001');
-  assert.ok(!('clientId' in result), 'la respuesta pública NO debe incluir clientId');
-  assert.equal(result.exists, true);
+test('alta publica concurrente nunca actualiza perfil ni se trata como cliente nuevo', async () => {
+  let reads = 0;
+  let creation;
+  const tx = { client: {
+    findUnique: async () => ++reads === 1 ? null : { id: 'concurrent', tenantId: 't1', whatsapp: '+593999000001' },
+    createMany: async (args) => { creation = args; return { count: 0 }; },
+    upsert: async () => assert.fail('no actualizar perfil concurrente'),
+  } };
+  const result = await clientService.upsertClient(tx, 't1', { fullName: 'Cliente', whatsapp: '+593999000001' }, { preserveExisting: true });
+  assert.equal(creation.skipDuplicates, true);
+  assert.equal(result.id, 'concurrent');
 });
 
 

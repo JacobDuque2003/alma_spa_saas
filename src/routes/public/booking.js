@@ -4,6 +4,7 @@ const resolvePublicTenant = require('../../middleware/resolvePublicTenant');
 const { ipRateLimit, ipTenantRateLimit } = require('../../middleware/publicRateLimit');
 const clientService = require('../../services/clientService');
 const appointmentService = require('../../services/appointmentService');
+const { customerServiceWhere, isCustomerService, hasConfirmedPrice, formatCustomerPrice } = require('../../utils/customerServicePolicy');
 
 const router = express.Router({ mergeParams: true });
 
@@ -12,11 +13,15 @@ router.use(resolvePublicTenant);
 router.get('/services', ipRateLimit, async (req, res, next) => {
   try {
     const services = await prisma.service.findMany({
-      where: { tenantId: req.publicTenant.id, active: true },
+      where: customerServiceWhere(req.publicTenant.id),
       select: { id: true, name: true, category: true, parentServiceId: true, durationMins: true, bufferMins: true, colorHex: true, priceUsd: true, description: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
-    res.json(services);
+    res.json(services.filter(isCustomerService).map((service) => ({
+      ...service,
+      priceLabel: formatCustomerPrice(service.priceUsd),
+      requiresAdvisor: !hasConfirmedPrice(service),
+    })));
   } catch (err) {
     next(err);
   }
@@ -30,6 +35,7 @@ router.get('/availability', ipRateLimit, async (req, res, next) => {
       serviceId: req.query.serviceId,
       date: req.query.date,
       modality: req.query.modality,
+      publicOnly: true,
     });
     res.json({ slots });
   } catch (err) {
@@ -51,9 +57,8 @@ router.post('/clients/lookup', ipTenantRateLimit, async (req, res, next) => {
 
 router.post('/bookings', ipTenantRateLimit, async (req, res, next) => {
   try {
-    const { client, appointments } = await appointmentService.createPublicBooking(req.publicTenant.id, req.body);
+    const { appointments } = await appointmentService.createPublicBooking(req.publicTenant.id, req.body);
     res.status(201).json({
-      clientId: client.id,
       appointments: appointments.map((a) => ({
         confirmationToken: a.confirmationToken,
         startsAt: a.startsAt,

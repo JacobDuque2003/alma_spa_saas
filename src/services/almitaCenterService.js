@@ -1,11 +1,12 @@
 const prisma = require('../utils/prisma');
 const aiClient = require('./aiClient');
 const { AppError, BadRequestError } = require('../utils/errors');
+const { customerServiceWhere, isCustomerService } = require('../utils/customerServicePolicy');
 
 const DEFAULT_TENANT_SLUG = 'alma-spa';
 const CONFIG_FIELDS = ['personality', 'instructions', 'dailyBriefing', 'active'];
-const KNOWLEDGE_FIELDS = ['category', 'title', 'content', 'active', 'priority', 'source'];
-const EXAMPLE_FIELDS = ['userMessage', 'expectedIntent', 'expectedReply', 'active'];
+const KNOWLEDGE_FIELDS = ['category', 'title', 'content', 'active', 'priority', 'source', 'audience'];
+const EXAMPLE_FIELDS = ['userMessage', 'expectedIntent', 'expectedReply', 'active', 'audience'];
 
 function assertSuperadmin(actor) {
   if (actor?.role !== 'superadmin') throw new AppError('Solo superadmin puede acceder al Centro de Almita', 403);
@@ -45,6 +46,14 @@ function cleanPriority(value, optional = false) {
   return value;
 }
 
+function cleanAudience(value, partial = false) {
+  if (value === undefined) return partial ? undefined : 'INTERNAL';
+  if (!['PUBLIC', 'INTERNAL'].includes(value)) {
+    throw new BadRequestError('audience debe ser PUBLIC o INTERNAL');
+  }
+  return value;
+}
+
 function validateConfiguration(data, partial = false) {
   assertPlainObject(data);
   assertAllowedFields(data, CONFIG_FIELDS);
@@ -63,6 +72,8 @@ function validateKnowledge(data, partial = false) {
   assertPlainObject(data);
   assertAllowedFields(data, KNOWLEDGE_FIELDS);
   const result = {};
+  const audience = cleanAudience(data.audience, partial);
+  if (audience !== undefined) result.audience = audience;
   const specs = { category: 80, title: 180, content: 12000, source: 500 };
   for (const [field, max] of Object.entries(specs)) {
     const value = cleanString(data[field], field, { max, optional: partial });
@@ -80,6 +91,8 @@ function validateExample(data, partial = false) {
   assertPlainObject(data);
   assertAllowedFields(data, EXAMPLE_FIELDS);
   const result = {};
+  const audience = cleanAudience(data.audience, partial);
+  if (audience !== undefined) result.audience = audience;
   const specs = { userMessage: 2000, expectedIntent: 80, expectedReply: 4000 };
   for (const [field, max] of Object.entries(specs)) {
     const value = cleanString(data[field], field, { max, optional: partial });
@@ -166,6 +179,7 @@ async function deleteConfiguration(actor, requestedTenantId, id) {
 function listEntity(modelName, actor, tenantId, query = {}) {
   return resolveTenant(actor, tenantId).then(async (tenant) => {
     const where = { tenantId: tenant.id };
+    if (query.audience !== undefined) where.audience = cleanAudience(query.audience);
     if (query.active !== undefined) {
       if (!['true', 'false'].includes(String(query.active))) throw new BadRequestError('active debe ser true o false');
       where.active = String(query.active) === 'true';
@@ -209,23 +223,26 @@ function relevanceScore(message, row) {
 }
 
 async function loadSimulationContext(tenantId, message) {
-  const [configuration, knowledgeRows, exampleRows, services] = await Promise.all([
+  const [configuration, knowledgeRows, exampleRows, services, tenant] = await Promise.all([
     prisma.almitaConfiguration.findFirst({ where: { tenantId, active: true }, orderBy: { version: 'desc' } }),
-    prisma.almitaKnowledge.findMany({ where: { tenantId, active: true }, orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }], take: 250 }),
-    prisma.almitaApprovedExample.findMany({ where: { tenantId, active: true }, orderBy: { updatedAt: 'desc' }, take: 100 }),
+    prisma.almitaKnowledge.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }], take: 250 }),
+    prisma.almitaApprovedExample.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: { updatedAt: 'desc' }, take: 100 }),
     prisma.service.findMany({
-      where: { tenantId, active: true },
-      select: { id: true, name: true, category: true, priceUsd: true, durationMins: true, description: true },
+      where: customerServiceWhere(tenantId),
+      select: { id: true, name: true, category: true, active: true, priceUsd: true, durationMins: true, description: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 150,
     }),
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } }),
   ]);
-  const knowledge = knowledgeRows.map((row) => ({ row, score: relevanceScore(message, row) }))
+  const knowledge = knowledgeRows.filter((row) => row.audience === 'PUBLIC' && row.active === true)
+    .map((row) => ({ row, score: relevanceScore(message, row) }))
     .filter(({ score }) => score >= 1000)
     .sort((a, b) => b.score - a.score).slice(0, 6).map(({ row }) => row);
-  const examples = exampleRows.map((row) => ({ row, score: relevanceScore(message, { category: row.expectedIntent, title: row.userMessage, content: row.expectedReply }) }))
+  const examples = exampleRows.filter((row) => row.audience === 'PUBLIC' && row.active === true)
+    .map((row) => ({ row, score: relevanceScore(message, { category: row.expectedIntent, title: row.userMessage, content: row.expectedReply }) }))
     .filter(({ score }) => score >= 1000)
     .sort((a, b) => b.score - a.score).slice(0, 4).map(({ row }) => row);
-  return { configuration, knowledge, examples, services };
+  return { configuration, knowledge, examples, services: services.filter(isCustomerService), tenantConfig: tenant?.config || {} };
 }
 
 async function simulate(actor, requestedTenantId, body) {
@@ -249,6 +266,7 @@ async function simulate(actor, requestedTenantId, body) {
   const startedAt = Date.now();
   const result = await aiClient.chat(message, {
     tone,
+    tenantConfig: context.tenantConfig,
     services: context.services,
     history: cleanHistory,
     almitaCenter: context.configuration ? {

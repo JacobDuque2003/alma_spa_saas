@@ -1,4 +1,4 @@
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
@@ -25,6 +25,10 @@ const TENANT = {
 const CONN = { id: 'c1', tenantId: 't1', phoneNumberId: '999', status: 'activo' };
 const CONV = { id: 'conv1', tenantId: 't1', customerWaId: '593999111222', clientId: 'client1' };
 
+function test(name, callback) {
+  return nodeTest(name, (...args) => state.withConversation(TENANT.id, CONV.id, () => callback(...args)));
+}
+
 function installTransportMocks() {
   const sent = [];
   transport.sendText = async (conn, to, body) => { sent.push({ kind: 'text', to, body }); return { ok: true, data: { messages: [{ id: 'wamid.mock' }] } }; };
@@ -47,7 +51,9 @@ function installPrismaMocks({ humanReplied = false, services = [], serviceById =
   prisma.whatsAppConversation = { update: async ({ data }) => { conversationUpdates.push(data); return {}; } };
   prisma.service = {
     findMany: async () => services,
-    findUnique: async ({ where }) => serviceById[where.id] || null,
+    findUnique: async ({ where }) => serviceById[where.id] || (where.id === 's1'
+      ? { id: 's1', tenantId: TENANT.id, name: 'Masaje', category: 'masajes', active: true, priceUsd: 30, durationMins: 60 }
+      : null),
   };
   prisma.client = {
     findFirst: async () => clientByPhone,
@@ -392,7 +398,8 @@ test('promociones deja visible el menú para elegir otra opción', async () => {
   });
 
   assert.equal(sent.length, 2);
-  assert.match(sent[0].body, /instagram\.com\/alma_spaholistica/i);
+  assert.match(sent[0].body, /No tengo promociones vigentes aprobadas/i);
+  assert.doesNotMatch(sent[0].body, /https?:\/\//i);
   assert.equal(sent[1].kind, 'text');
   assert.match(sent[1].body, /Qué necesitas/i);
 });
@@ -1348,16 +1355,20 @@ test('en reprogramación, "el miércoles a la misma hora" conserva la hora actua
 test('Ronda I: horario responde en formato claro', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks();
+  installPrismaMocks({ tenantConfig: {
+    workDays: [1, 2, 3, 4, 5],
+    businessHours: { morning: { start: '09:00', end: '12:00' }, afternoon: { start: '15:00', end: '20:00' } },
+  } });
   await bot._internals.routeIntent({
     tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId,
     tone: 'usted', intent: 'business_hours',
   });
   assert.equal(sent.length, 1);
   assert.equal(sent[0].kind, 'text');
-  assert.match(sent[0].body, /9:00 a\. m\./);
-  assert.match(sent[0].body, /8:00 p\. m\./);
-  assert.match(sent[0].body, /Domingos descansamos/);
+  assert.match(sent[0].body, /lunes a viernes/i);
+  assert.match(sent[0].body, /09:00/);
+  assert.match(sent[0].body, /20:00/);
+  assert.doesNotMatch(sent[0].body, /s[áa]bado/i);
 });
 
 test('Ronda I: despedida cierra cálida sin mostrar menú', async () => {
@@ -1517,7 +1528,7 @@ test('handleSmartBooking con servicio+fecha+hora exacta → confirma directo', a
   await bot._internals.handleSmartBooking({
     tenant: TENANT, connection: CONN, conv: CONV,
     waId: CONV.customerWaId, tone: 'usted',
-    service: { id: 's1', name: 'Masaje Relajante' },
+    service: { id: 's1', tenantId: TENANT.id, name: 'Masaje Relajante', active: true, priceUsd: 30 },
     date: '2026-09-01', time: '15:00',
   });
 
@@ -1545,7 +1556,7 @@ test('handleSmartBooking con hora no disponible → muestra alternativas', async
   await bot._internals.handleSmartBooking({
     tenant: TENANT, connection: CONN, conv: CONV,
     waId: CONV.customerWaId, tone: 'usted',
-    service: { id: 's1', name: 'Masaje Relajante' },
+    service: { id: 's1', tenantId: TENANT.id, name: 'Masaje Relajante', active: true, priceUsd: 30 },
     date: '2026-09-01', time: '13:00',
   });
 
@@ -1567,7 +1578,7 @@ test('handleSmartBooking sin horarios → datePicker con mensaje', async () => {
   await bot._internals.handleSmartBooking({
     tenant: TENANT, connection: CONN, conv: CONV,
     waId: CONV.customerWaId, tone: 'usted',
-    service: { id: 's1', name: 'Masaje Relajante' },
+    service: { id: 's1', tenantId: TENANT.id, name: 'Masaje Relajante', active: true, priceUsd: 30 },
     date: '2026-09-01', time: '15:00',
   });
 
@@ -1871,7 +1882,7 @@ test('Ronda G: "qué servicios tienen" responde catálogo completo en texto con 
   assert.match(body, /Masaje relajante/);
   assert.match(body, /Terapias energéticas/);
   assert.match(body, /Reflexología/);
-  assert.match(body, /valor a confirmar · 60 min/);
+  assert.match(body, /valor a confirmar · 60 min/i);
   assert.doesNotMatch(body, /Cumpleaños/);
   assert.doesNotMatch(body, /\$0\.00/);
   assert.doesNotMatch(body, /Servicio de/);
@@ -1912,7 +1923,8 @@ test('Ronda G: "de qué trata eso" en reserva explica el servicio activo y no vu
   assert.equal(sent[0].kind, 'text');
   assert.match(sent[0].body, /Masaje relajante/);
   assert.match(sent[0].body, /aliviar tensión/);
-  assert.match(sent[0].body, /qué día le queda bien/);
+  assert.match(sent[0].body, /reserva sigue en el mismo paso/i);
+  assert.doesNotMatch(sent[0].body, /qué día le queda bien/i);
   assert.equal(state.getFlowState(CONV.customerWaId).booking.step, 'select_date');
 });
 
@@ -1921,7 +1933,7 @@ test('Ronda G: "de qué trata eso" en reserva explica el servicio activo y no vu
 test('P4: "confirmo" text triggers booking confirmation', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' }, serviceById: { s1: { id: 's1', tenantId: TENANT.id, name: 'Masaje', category: 'masajes', active: true, priceUsd: 30 } } });
   state.setFlowState(CONV.customerWaId, {
     flow: 'booking',
     booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
@@ -1944,7 +1956,7 @@ test('P4: "confirmo" text triggers booking confirmation', async () => {
 test('P4: "Sí" with accent triggers booking confirmation', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' }, serviceById: { s1: { id: 's1', tenantId: TENANT.id, name: 'Masaje', category: 'masajes', active: true, priceUsd: 30 } } });
   state.setFlowState(CONV.customerWaId, {
     flow: 'booking',
     booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
@@ -2021,7 +2033,7 @@ test('P7: handleMyAppointment shows "confirmada" for pendiente_bot status', asyn
 test('Ronda D: no success message if resolveAndCreateAppointment returns null', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' }, serviceById: { s1: { id: 's1', tenantId: TENANT.id, name: 'Masaje', category: 'masajes', active: true, priceUsd: 30 } } });
   state.setFlowState(CONV.customerWaId, {
     flow: 'booking',
     booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },
@@ -2047,7 +2059,7 @@ test('Ronda D: no success message if resolveAndCreateAppointment returns null', 
 test('Ronda D: no success message if resolveAndCreateAppointment returns {}', async () => {
   resetState();
   const sent = installTransportMocks();
-  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' } });
+  installPrismaMocks({ clientByPhone: { id: 'c1', fullName: 'Ana' }, serviceById: { s1: { id: 's1', tenantId: TENANT.id, name: 'Masaje', category: 'masajes', active: true, priceUsd: 30 } } });
   state.setFlowState(CONV.customerWaId, {
     flow: 'booking',
     booking: { step: 'confirm', serviceId: 's1', serviceName: 'Masaje', timeSlot: '2026-09-01T15:00:00Z', clientName: 'Ana' },

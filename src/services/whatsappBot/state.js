@@ -10,12 +10,28 @@
 //  - escalated: números que pidieron hablar con recepción. TTL 24h. El bot
 //    no responde a esas conversaciones durante ese tiempo.
 
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+const conversationScope = new AsyncLocalStorage();
 const FLOW_TTL_MS = 60 * 60 * 1000;        // 1h
 const ESCALATED_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const MAX_HISTORY = 10;
 
-const flowState = new Map();  // customerWaId -> { flow, tone, updatedAt }
-const escalated = new Map();  // customerWaId -> expiresAt
+const flowState = new Map();  // [namespace, customerWaId] -> { flow, tone, updatedAt }
+const escalated = new Map();  // [namespace, customerWaId] -> expiresAt
+
+function withConversation(tenantId, conversationId, callback) {
+  if (typeof tenantId !== 'string' || !tenantId.trim()
+    || typeof conversationId !== 'string' || !conversationId.trim()) {
+    throw new TypeError('tenantId and conversationId are required');
+  }
+  return conversationScope.run([tenantId, conversationId], callback);
+}
+
+function stateKey(waId) {
+  // Unscoped legacy calls have their own namespace; scoped reads never fall back.
+  return JSON.stringify([conversationScope.getStore() ?? null, waId]);
+}
 
 function _now() { return Date.now(); }
 
@@ -29,37 +45,44 @@ function _sweep(map, keyToRemove) {
 }
 
 function getFlowState(waId) {
-  const v = flowState.get(waId);
+  const key = stateKey(waId);
+  const v = flowState.get(key);
   if (!v) return null;
   if (_now() - v.updatedAt > FLOW_TTL_MS) {
-    flowState.delete(waId);
+    flowState.delete(key);
     return null;
   }
   return v;
 }
 
 function setFlowState(waId, partial) {
-  const prev = flowState.get(waId) || {};
+  const key = stateKey(waId);
+  const prev = flowState.get(key) || {};
   const next = { ...prev, ...partial, updatedAt: _now() };
-  flowState.set(waId, next);
+  flowState.set(key, next);
   if (flowState.size > 1000) _sweep(flowState);
   return next;
 }
 
 function clearFlowState(waId) {
-  flowState.delete(waId);
+  flowState.delete(stateKey(waId));
 }
 
 function markEscalated(waId) {
-  escalated.set(waId, _now() + ESCALATED_TTL_MS);
+  escalated.set(stateKey(waId), _now() + ESCALATED_TTL_MS);
   if (escalated.size > 5000) _sweep(escalated);
 }
 
+function clearEscalated(waId) {
+  escalated.delete(stateKey(waId));
+}
+
 function isEscalated(waId) {
-  const exp = escalated.get(waId);
+  const key = stateKey(waId);
+  const exp = escalated.get(key);
   if (!exp) return false;
   if (exp <= _now()) {
-    escalated.delete(waId);
+    escalated.delete(key);
     return false;
   }
   return true;
@@ -79,12 +102,14 @@ function getHistory(waId) {
 }
 
 module.exports = {
+  withConversation,
   getFlowState,
   setFlowState,
   clearFlowState,
   pushHistory,
   getHistory,
   markEscalated,
+  clearEscalated,
   isEscalated,
   _reset: () => { flowState.clear(); escalated.clear(); },
   FLOW_TTL_MS,

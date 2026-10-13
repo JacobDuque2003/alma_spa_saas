@@ -131,11 +131,18 @@ const pillSecondary = { padding: "10px 0", borderRadius: 999, border: "1px solid
 const cardPaddingDesktop = { padding: 28 };
 const cardPaddingMobile = { padding: 18 };
 const CONFIG_DATA_CACHE_TTL_MS = 60_000;
-const configDataCache = { savedAt: 0, services: null, rooms: null };
+const configDataCache = { scope: null, tenant: null, savedAt: 0, services: null, rooms: null };
 
-function saveConfigDataCache({ services, rooms }) {
+function saveConfigDataCache(scope, { services, rooms, tenant }) {
+  if (configDataCache.scope !== scope) {
+    configDataCache.services = null;
+    configDataCache.rooms = null;
+    configDataCache.tenant = null;
+  }
+  configDataCache.scope = scope;
   if (services !== undefined) configDataCache.services = services;
   if (rooms !== undefined) configDataCache.rooms = rooms;
+  if (tenant !== undefined) configDataCache.tenant = tenant;
   configDataCache.savedAt = Date.now();
 }
 
@@ -330,7 +337,7 @@ function ServiceListRow({ service, isSubservice = false, isMobile = false, canMo
   );
 }
 
-function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
+function ServiceFormModal({ rooms, services, tenantId, phase, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [priceUsd, setPriceUsd] = useState("");
   const [durationMins, setDurationMins] = useState("60");
@@ -381,6 +388,7 @@ function ServiceFormModal({ rooms, services, phase, onClose, onSaved }) {
       const created = await authFetch("/services", {
         method: "POST",
         body: {
+          tenantId,
           name: name.trim(),
           category: primaryArea,
           priceUsd: price,
@@ -1020,6 +1028,9 @@ export default function ConfiguracionPage() {
   const isMobile = useIsMobile();
   const toast = useToast();
   const { user } = useAuth();
+  const isSupport = user?.role === "superadmin";
+  const cacheScope = `${user?.id}:${user?.role}:${user?.tenantId || "alma-spa"}`;
+  const [selectedTenant, setSelectedTenant] = useState(null);
   const hasFullAccess = ["superadmin", "dueno"].includes(user?.role);
   const canModifyServices = hasFullAccess || !!user?.permissions?.configuracionServicios;
   const canModifySchedule = hasFullAccess || !!user?.permissions?.configuracionHorario;
@@ -1067,9 +1078,11 @@ export default function ConfiguracionPage() {
     : 0;
 
   const fetchData = useCallback(async ({ force = false } = {}) => {
-    if (!force && configDataCache.services && configDataCache.rooms && Date.now() - configDataCache.savedAt < CONFIG_DATA_CACHE_TTL_MS) {
+    if (!user?.id) return;
+    if (!force && configDataCache.scope === cacheScope && configDataCache.services && configDataCache.rooms && Date.now() - configDataCache.savedAt < CONFIG_DATA_CACHE_TTL_MS) {
       setServices(configDataCache.services);
       setRooms(configDataCache.rooms);
+      setSelectedTenant(configDataCache.tenant);
       setLoadError("");
       setLoading(false);
       return;
@@ -1077,18 +1090,29 @@ export default function ConfiguracionPage() {
     setLoading(true);
     setLoadError("");
     try {
-      const [s, r] = await Promise.all([authFetch("/services"), authFetch("/rooms")]);
+      let tenant = null;
+      if (isSupport) {
+        const data = await authFetch("/admin/tenants");
+        tenant = data.tenants?.find((item) => item.slug === "alma-spa");
+        if (!tenant?.id) throw new Error("No se encontró el negocio Alma Spa.");
+      }
+      const query = isSupport ? { tenantId: tenant.id } : undefined;
+      const [s, r] = await Promise.all([authFetch("/services", { query }), authFetch("/rooms", { query })]);
+      setSelectedTenant(tenant);
       setServices(s);
       setRooms(r);
-      saveConfigDataCache({ services: s, rooms: r });
+      saveConfigDataCache(cacheScope, { services: s, rooms: r, tenant });
     } catch (err) {
+      setSelectedTenant(null);
+      setServices([]);
+      setRooms([]);
       const friendly = friendlyConfigError(err.message, "No se pudo cargar la configuración. Recarga la página.");
       setLoadError(friendly);
       toast.error(friendly);
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, user?.id, isSupport, cacheScope]);
 
   useEffect(() => {
     fetchData();
@@ -1099,7 +1123,7 @@ export default function ConfiguracionPage() {
       const updated = await authFetch(`/services/${service.id}`, { method: "PATCH", body: changes });
       setServices((prev) => {
         const next = prev.map((s) => (s.id === service.id ? { ...s, ...updated } : s));
-        saveConfigDataCache({ services: next });
+        saveConfigDataCache(cacheScope, { services: next });
         return next;
       });
       if (changes.active === true) toast.success("Servicio activado.");
@@ -1126,7 +1150,7 @@ export default function ConfiguracionPage() {
       const updated = await authFetch(`/rooms/${room.id}`, { method: "PATCH", body: { capacity: next } });
       setRooms((prev) => {
         const nextRooms = prev.map((item) => (item.id === room.id ? { ...item, ...updated } : item));
-        saveConfigDataCache({ rooms: nextRooms });
+        saveConfigDataCache(cacheScope, { rooms: nextRooms });
         return nextRooms;
       });
       toast.info("Puestos de cabina guardados.");
@@ -1142,7 +1166,7 @@ export default function ConfiguracionPage() {
       await authFetch(`/services/${service.id}`, { method: "DELETE" });
       setServices((prev) => {
         const next = prev.filter((s) => s.id !== service.id);
-        saveConfigDataCache({ services: next });
+        saveConfigDataCache(cacheScope, { services: next });
         return next;
       });
       toast.warning(`Servicio "${service.name}" quitado de la oferta.`);
@@ -1160,6 +1184,7 @@ export default function ConfiguracionPage() {
         <div>
           <h1 className="font-heading" style={{ fontSize: isMobile ? 24 : 30, fontWeight: 600, color: "#6B5540", margin: "0 0 6px" }}>Configuración</h1>
           <p style={{ margin: 0, fontSize: 14, color: "#A89A87" }}>Servicios, precios y horario de atención del spa.</p>
+          {isSupport && selectedTenant && <p className="mt-2 text-sm text-muted-foreground">Negocio de trabajo: {selectedTenant.name} ({selectedTenant.slug})</p>}
         </div>
 
         {loadError && <div style={{ padding: 12, borderRadius: 8, background: "rgba(194,84,80,0.1)", color: "#C25450", fontSize: 13 }}>{loadError}</div>}
@@ -1176,7 +1201,7 @@ export default function ConfiguracionPage() {
               <SectionHeader
                 title="Servicios y precios"
                 subtitle="Cada servicio incluye su duración estándar, pausa, precio y cabinas permitidas."
-                onAdd={canModifyServices ? () => setShowServiceForm(true) : undefined}
+                onAdd={canModifyServices && (!isSupport || selectedTenant?.id) ? () => setShowServiceForm(true) : undefined}
                 addLabel="Añadir servicio"
               />
               <div style={{ display: "grid", gap: 12 }}>
@@ -1327,11 +1352,11 @@ export default function ConfiguracionPage() {
         )}
       </div>
 
-      {canModifyServices && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} services={services} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => {
+      {canModifyServices && (!isSupport || selectedTenant?.id) && serviceAnim.shouldRender && <ServiceFormModal rooms={rooms} services={services} tenantId={isSupport ? selectedTenant.id : user?.tenantId} phase={serviceAnim.phase} onClose={() => setShowServiceForm(false)} onSaved={(created) => {
         setShowServiceForm(false);
         setServices((prev) => {
           const next = [...prev, created];
-          saveConfigDataCache({ services: next });
+          saveConfigDataCache(cacheScope, { services: next });
           return next;
         });
       }} />}
@@ -1355,7 +1380,7 @@ export default function ConfiguracionPage() {
                 }
                 return svc;
               });
-              saveConfigDataCache({ services: next });
+              saveConfigDataCache(cacheScope, { services: next });
               return next;
             });
           }}
@@ -1379,7 +1404,7 @@ export default function ConfiguracionPage() {
             setMediaTarget(null);
             setServices((prev) => {
               const next = prev.map((svc) => (svc.id === updated.id ? { ...svc, ...updated } : svc));
-              saveConfigDataCache({ services: next });
+              saveConfigDataCache(cacheScope, { services: next });
               return next;
             });
           }}

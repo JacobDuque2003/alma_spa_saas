@@ -58,12 +58,14 @@ test('simulate devuelve intención, fuentes y consumo sin escribir efectos de ne
     };
   };
 
-  prisma.tenant = { findUnique: async () => ({ id: 't1', slug: 'alma-spa', name: 'Alma Spa' }) };
+  const tenantConfig = { workDays: [1, 2, 3, 4, 5], businessHours: { start: '09:00', end: '12:00' } };
+  prisma.tenant = { findUnique: async () => ({ id: 't1', slug: 'alma-spa', name: 'Alma Spa', config: tenantConfig }) };
   prisma.almitaConfiguration = { findFirst: async () => ({ version: 2, personality: 'Cálida', instructions: 'Sé precisa', dailyBriefing: 'Sin promociones' }) };
   prisma.almitaKnowledge = {
     findMany: async () => [
-      { id: 'k1', category: 'Servicios', title: 'Masaje relajante', content: 'Dura 60 minutos.', source: 'catálogo', priority: 10 },
-      { id: 'k2', category: 'Ubicación', title: 'Dirección', content: 'Zamora.', source: 'manual', priority: 100 },
+      { id: 'k1', audience: 'PUBLIC', active: true, category: 'Servicios', title: 'Masaje relajante', content: 'Dura 60 minutos.', source: 'catálogo', priority: 10 },
+      { id: 'k2', audience: 'PUBLIC', active: true, category: 'Ubicación', title: 'Dirección', content: 'Zamora.', source: 'manual', priority: 100 },
+      { id: 'private', audience: 'INTERNAL', active: true, category: 'Servicios', title: 'Masaje relajante', content: 'PRIVATE_SIMULATION', priority: 100 },
     ],
   };
   prisma.almitaApprovedExample = { findMany: async () => [] };
@@ -77,10 +79,94 @@ test('simulate devuelve intención, fuentes y consumo sin escribir efectos de ne
     assert.equal(result.usage.totalTokens, 140);
     assert.equal(result.configurationVersion, 2);
     assert.equal(aiContext.almitaCenter.knowledge[0].id, 'k1');
+    assert.deepEqual(aiContext.tenantConfig, tenantConfig);
+    assert.doesNotMatch(JSON.stringify(aiContext), /PRIVATE_SIMULATION/);
   } finally {
     aiClient.isAvailable = originalAvailable;
     aiClient.chat = originalChat;
   }
+});
+
+test('audience defaults to INTERNAL, validates enum, and partial edits preserve classification and metadata', () => {
+  const knowledge = { category: 'General', title: 'Ficha', content: 'Texto', source: 'manual', priority: 80 };
+  const example = { userMessage: 'hola', expectedIntent: 'greeting', expectedReply: 'Hola.' };
+  for (const [validator, body] of [[service._internals.validateKnowledge, knowledge], [service._internals.validateExample, example]]) {
+    assert.equal(validator(body).audience, 'INTERNAL');
+    assert.equal(validator({ ...body, audience: 'PUBLIC' }).audience, 'PUBLIC');
+    assert.deepEqual(validator({ audience: 'PUBLIC' }, true), { audience: 'PUBLIC' });
+    assert.ok(!Object.hasOwn(validator(body, true), 'audience'));
+    for (const audience of [null, '', 'public', 'approved', true]) assert.throws(() => validator({ ...body, audience }), /audience/);
+  }
+  assert.deepEqual(service._internals.validateKnowledge({ title: 'Título editado' }, true), { title: 'Título editado' });
+});
+
+test('configuration validators admit all supported characters and reject overflow', () => {
+  const body = { personality: 'p'.repeat(5000), instructions: 'i'.repeat(12000), dailyBriefing: 'b'.repeat(5000) };
+  assert.deepEqual(service._internals.validateConfiguration(body), body);
+  for (const field of Object.keys(body)) assert.throws(() => service._internals.validateConfiguration({ ...body, [field]: body[field] + 'x' }), /no puede superar/);
+});
+
+test('runtime scopes queries to tenant and PUBLIC active rows and filters again before selection', async () => {
+  const queries = {};
+  const tenantConfig = { workDays: [1, 2, 3, 4, 5], businessHours: { start: '10:00', end: '18:00' }, internalSecret: 'CONFIG_SECRET' };
+  prisma.tenant = { findUnique: async (args) => { queries.tenant = args; return { config: tenantConfig }; } };
+  prisma.almitaConfiguration = { findFirst: async (args) => { queries.configuration = args; return null; } };
+  const states = [
+    { audience: 'INTERNAL', active: true }, { active: true }, { audience: null, active: true },
+    { audience: 'PUBLIC', active: false }, { audience: 'PUBLIC' },
+  ];
+  prisma.almitaKnowledge = { findMany: async (args) => {
+    queries.knowledge = args;
+    return [
+      ...states.map((state, index) => ({ ...state, id: `private${index}`, title: 'masaje', category: 'Publico', content: `PRIVATE_K_${index}`, priority: 100 })),
+      { id: 'public', audience: 'PUBLIC', active: true, title: 'masaje', category: 'Interno', content: 'PUBLIC_K', priority: 1 },
+    ];
+  } };
+  prisma.almitaApprovedExample = { findMany: async (args) => {
+    queries.examples = args;
+    return [
+      ...states.map((state, index) => ({ ...state, id: `private${index}`, userMessage: 'masaje', expectedIntent: 'service_info', expectedReply: `PRIVATE_EX_${index}` })),
+      { id: 'public-example', audience: 'PUBLIC', active: true, userMessage: 'masaje', expectedIntent: 'service_info', expectedReply: 'PUBLIC_EX' },
+    ];
+  } };
+  prisma.service = { findMany: async (args) => {
+    queries.services = args;
+    return [
+      { id: 'commercial', name: 'Masaje', category: 'Masajes', active: true, priceUsd: 0 },
+      { id: 'birthday', name: 'Cumpleaños', category: 'General', active: true },
+      { id: 'shop', name: 'Producto', category: 'Tienda', active: true },
+      { id: 'reminder', name: 'Aviso', category: 'Recordatorio', active: true },
+      { id: 'paused', name: 'Masaje', category: 'Masajes', active: false },
+    ];
+  } };
+  const result = await service.loadRuntimeContext('tenant-synthetic', 'masaje');
+  for (const name of ['knowledge', 'examples']) assert.deepEqual(queries[name].where, { tenantId: 'tenant-synthetic', active: true, audience: 'PUBLIC' });
+  assert.equal(queries.configuration.where.tenantId, 'tenant-synthetic');
+  assert.deepEqual(queries.tenant, { where: { id: 'tenant-synthetic' }, select: { config: true } });
+  assert.deepEqual(queries.services.where, require('../utils/customerServicePolicy').customerServiceWhere('tenant-synthetic'));
+  assert.deepEqual(result.knowledge.map((row) => row.id), ['public']);
+  assert.deepEqual(result.examples.map((row) => row.id), ['public-example']);
+  assert.deepEqual(result.services.map((row) => row.id), ['commercial']);
+  assert.deepEqual(result.tenantConfig, tenantConfig);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_/);
+  const prompt = aiClient._internals.buildChatSystemPrompt({ tenantConfig: result.tenantConfig, services: result.services, almitaCenter: { knowledge: result.knowledge, examples: result.examples } });
+  assert.doesNotMatch(prompt, /CONFIG_SECRET|PRIVATE_/);
+});
+
+test('only superadmin may explicitly publish knowledge or examples', async () => {
+  for (const actor of [{ role: 'dueno' }, { role: 'personal' }, null]) {
+    await assert.rejects(() => service.updateKnowledge(actor, 't1', 'k1', { audience: 'PUBLIC' }), (error) => error.status === 403);
+    await assert.rejects(() => service.updateExample(actor, 't1', 'e1', { audience: 'PUBLIC' }), (error) => error.status === 403);
+  }
+  prisma.tenant = { findUnique: async () => ({ id: 't1' }) };
+  prisma.almitaKnowledge = {
+    findFirst: async ({ where }) => { assert.deepEqual(where, { id: 'k1', tenantId: 't1' }); return { id: 'k1' }; },
+    update: async (args) => { assert.deepEqual(args, { where: { id: 'k1' }, data: { audience: 'PUBLIC' } }); return { id: 'k1', audience: 'PUBLIC', priority: 90, source: 'original', content: 'Texto preservado' }; },
+  };
+  const row = await service.updateKnowledge(superadmin, 't1', 'k1', { audience: 'PUBLIC' });
+  assert.equal(row.content, 'Texto preservado');
+  assert.equal(row.priority, 90);
+  assert.equal(row.source, 'original');
 });
 
 test('validadores rechazan longitudes y prioridad fuera de rango', () => {

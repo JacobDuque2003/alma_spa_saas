@@ -93,12 +93,9 @@ async function proxyRequest(req, { params }) {
     "X-Content-Type-Options": "nosniff",
   };
   if (binary) {
-    // Respuesta binaria: respetamos el Cache-Control que el backend puso
-    // (ej. imagen de servicio con ETag + max-age=86400). Sin esto, el
-    // navegador re-descarga la imagen en cada render y el bot de WhatsApp
-    // futuro pierde el beneficio del cache.
-    const backendCC = res.headers.get("Cache-Control");
-    if (backendCC) responseHeaders["Cache-Control"] = backendCC;
+    // Authenticated files must not enter shared caches, even if upstream errs.
+    responseHeaders["Cache-Control"] = "no-store, private";
+    responseHeaders["Vary"] = "Cookie, Authorization";
     const etag = res.headers.get("ETag");
     if (etag) responseHeaders["ETag"] = etag;
     const contentDisposition = res.headers.get("Content-Disposition");

@@ -304,20 +304,9 @@ async function getClient(actor, clientId) {
   return toClientSafeDto(client);
 }
 
-async function lookupClient(tenantId, whatsapp) {
-  const client = await prisma.client.findUnique({
-    where: { tenantId_whatsapp: { tenantId, whatsapp } },
-    include: { intake: true },
-  });
-
-  if (!client) {
-    return { exists: false, requiresIntake: true };
-  }
-
-  const requiresIntake = !client.intake || !client.intake.consentSigned;
-  // M-2: no exponer clientId en respuesta pública — el server hace upsert por
-  // tenantId_whatsapp más adelante, así que el flujo público no lo necesita.
-  return { exists: true, requiresIntake };
+async function lookupClient() {
+  // Sin prueba de posesion, ni la respuesta ni el tiempo dependen de la ficha.
+  return { requiresIntake: true };
 }
 
 /**
@@ -354,11 +343,26 @@ async function getNextAvailableRecordNumber(actor) {
   return nextAvailableRecordNumber(prisma, tenantId);
 }
 
-async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address, cedula }) {
+async function upsertClient(tx, tenantId, { fullName, whatsapp, email, address, cedula }, { preserveExisting = false } = {}) {
   const normalized = normalizePhone(whatsapp);
+  const where = { tenantId_whatsapp: { tenantId, whatsapp: normalized } };
+  if (preserveExisting) {
+    const select = { id: true, tenantId: true, whatsapp: true, fullName: true };
+    const existing = await tx.client.findUnique({ where, select });
+    if (existing) return existing;
+    const recordNumber = await nextAvailableRecordNumber(tx, tenantId);
+    // skipDuplicates cubre una alta concurrente sin actualizar su perfil.
+    await tx.client.createMany({
+      data: { tenantId, ...(recordNumber ? { recordNumber } : {}), fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
+      skipDuplicates: true,
+    });
+    const client = await tx.client.findUnique({ where, select });
+    if (!client) throw new BadRequestError('No se pudo completar la reserva. Intenta nuevamente.');
+    return client;
+  }
   const recordNumber = await nextAvailableRecordNumber(tx, tenantId);
   return tx.client.upsert({
-    where: { tenantId_whatsapp: { tenantId, whatsapp: normalized } },
+    where,
     update: { fullName, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
     create: { tenantId, ...(recordNumber ? { recordNumber } : {}), fullName, whatsapp: normalized, email, ...(address !== undefined ? { address } : {}), ...(cedula !== undefined ? { cedula } : {}) },
   });

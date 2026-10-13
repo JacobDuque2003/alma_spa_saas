@@ -13,7 +13,11 @@ import { Separator } from "@/components/ui/separator";
 const STEPS = ["Servicio", "Fecha y hora", "Tus datos", "Confirmación"];
 
 function formatPrice(usd) {
-  return `$${Number(usd).toFixed(2)}`;
+  return Number.isFinite(Number(usd)) && Number(usd) > 0 ? `$${Number(usd).toFixed(2)}` : "Valor a confirmar";
+}
+
+function requiresAdvisor(service) {
+  return service?.requiresAdvisor === true || !Number.isFinite(Number(service?.priceUsd)) || Number(service?.priceUsd) <= 0;
 }
 
 function formatTime(iso) {
@@ -96,7 +100,7 @@ function ServiceStep({ services, selected, onSelect, loading }) {
                     : "border-border bg-card hover:border-primary/40"
                 }`}
               >
-                <div className="flex justify-between items-start">
+                <div className="flex flex-wrap justify-between items-start gap-y-2">
                   <div className="min-w-0">
                     <div className="font-medium text-foreground">{svc.name}</div>
                     <div className="text-sm text-muted-foreground mt-1">{svc.durationMins} min</div>
@@ -104,8 +108,9 @@ function ServiceStep({ services, selected, onSelect, loading }) {
                       <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">{svc.description}</p>
                     )}
                   </div>
-                  <div className="text-primary font-semibold shrink-0 ml-3">{formatPrice(svc.priceUsd)}</div>
+                  <div className="text-primary font-semibold">{svc.priceLabel || formatPrice(svc.priceUsd)}</div>
                 </div>
+                {requiresAdvisor(svc) && <p className="mt-2 text-sm text-muted-foreground">Reserva con un asesor del centro para confirmar el valor.</p>}
               </button>
             ))}
           </div>
@@ -224,6 +229,10 @@ function ClientStep({ form, setForm }) {
           <Label htmlFor="email">Correo electrónico</Label>
           <Input id="email" type="email" value={form.email} onChange={update("email")} placeholder="maria@email.com" />
         </div>
+        <label className="flex items-start gap-3 text-sm" htmlFor="bookingConsent">
+          <input id="bookingConsent" type="checkbox" className="mt-1 shrink-0" checked={form.bookingConsent} onChange={(e) => setForm((prev) => ({ ...prev, bookingConsent: e.target.checked }))} />
+          <span>Autorizo el uso de mis datos para gestionar esta reserva y recibir su confirmación por WhatsApp.</span>
+        </label>
       </div>
     </div>
   );
@@ -312,7 +321,7 @@ export default function BookingPage() {
   const [selectedService, setSelectedService] = useState(null);
   const [date, setDate] = useState(null);
   const [slot, setSlot] = useState(null);
-  const [form, setForm] = useState({ fullName: "", whatsapp: "", email: "" });
+  const [form, setForm] = useState({ fullName: "", whatsapp: "", email: "", bookingConsent: false });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -325,16 +334,20 @@ export default function BookingPage() {
   }, [tenantSlug]);
 
   const canAdvance = () => {
-    if (step === 0) return !!selectedService;
+    if (step === 0) return !!selectedService && !requiresAdvisor(selectedService);
     if (step === 1) return !!date && !!slot;
     if (step === 2) {
-      if (!form.fullName.trim() || !form.whatsapp.trim()) return false;
+      if (!form.fullName.trim() || !form.whatsapp.trim() || !form.bookingConsent) return false;
       return true;
     }
     return true;
   };
 
   const handleSubmit = async () => {
+    if (requiresAdvisor(selectedService) || !form.bookingConsent) {
+      setError(requiresAdvisor(selectedService) ? "Valor a confirmar. Reserva con un asesor del centro." : "Debes aceptar el consentimiento para reservar.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -342,6 +355,7 @@ export default function BookingPage() {
         fullName: form.fullName.trim(),
         whatsapp: form.whatsapp.trim(),
         email: form.email.trim() || undefined,
+        bookingConsent: form.bookingConsent,
         selections: [{
           serviceId: selectedService.id,
           startsAt: slot,
@@ -425,6 +439,10 @@ export default function BookingPage() {
 
         {error && (
           <div className="mt-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm text-center">{error}</div>
+        )}
+
+        {step === 0 && selectedService && requiresAdvisor(selectedService) && (
+          <p role="status" className="mt-4 text-center text-sm text-muted-foreground">Valor a confirmar. Contacta a un asesor del centro para reservar este tratamiento.</p>
         )}
 
         <div className="flex justify-between mt-8">

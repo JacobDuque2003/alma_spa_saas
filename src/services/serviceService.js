@@ -214,6 +214,7 @@ async function createService(actor, data) {
     });
     await writeAuditLog(tx, {
       actor,
+      tenantId: service.tenantId,
       entity: 'service',
       entityId: service.id,
       action: 'create',
@@ -298,6 +299,7 @@ async function updateService(actor, id, changes) {
     const action = resolveAction('service', data, target);
     await writeAuditLog(tx, {
       actor,
+      tenantId: target.tenantId,
       entity: 'service',
       entityId: id,
       action,

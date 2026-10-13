@@ -39,7 +39,9 @@ router.get('/:id/image', requirePermission('configuracion'), async (req, res, ne
     const { data, mimeType, updatedAt } = result.image;
     const etag = `"${req.params.id}-${updatedAt ? new Date(updatedAt).getTime() : 0}"`;
     res.set('ETag', etag);
-    res.set('Cache-Control', 'public, max-age=86400, must-revalidate');
+    res.set('Cache-Control', 'private, no-cache, must-revalidate');
+    res.vary('Authorization');
+    res.vary('Cookie');
     if (req.get('If-None-Match') === etag) {
       return res.status(304).end();
     }

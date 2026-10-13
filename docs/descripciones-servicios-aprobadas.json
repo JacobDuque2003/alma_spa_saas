@@ -1,0 +1,159 @@
+[
+  {
+    "name": "Masajes relajantes",
+    "description": "Regálate una pausa con un masaje corporal de movimientos suaves y ritmo tranquilo, pensado para descansar y disfrutar de una sensación de calma. La presión se adapta a tu comodidad. Si buscas trabajar una zona con tensión o prefieres una técnica específica, te ayudamos a elegir la opción adecuada."
+  },
+  {
+    "name": "Masaje descontracturante",
+    "description": "Masaje focalizado en zonas de tensión muscular, con trabajo manual y presión adaptada a tu tolerancia. Es una opción para quienes buscan una atención más localizada que un masaje relajante. Antes de la sesión se revisan las molestias y antecedentes; el dolor nuevo, intenso o persistente requiere valoración de salud."
+  },
+  {
+    "name": "Masaje con piedras calientes",
+    "description": "Combina masaje manual con piedras templadas para disfrutar de una experiencia cálida y envolvente. Pensado para quienes prefieren el calor como parte de su momento de descanso. La temperatura y la presión se ajustan a tu comodidad, previa valoración de si esta técnica es adecuada para ti."
+  },
+  {
+    "name": "Masaje con bambú",
+    "description": "Masaje que utiliza cañas de bambú junto con maniobras manuales para trabajar el cuerpo con movimientos y presión adaptados a tu comodidad. Una experiencia diferente para quienes disfrutan de un masaje con herramientas, orientada al descanso y a la sensación de bienestar."
+  },
+  {
+    "name": "Masaje con ventosas",
+    "description": "Sesión que incorpora ventosas para producir succión localizada sobre la piel, según valoración previa. Puede dejar marcas temporales y no es adecuada para todas las personas. Antes de la sesión se revisan tus antecedentes y se explican la técnica y sus cuidados."
+  },
+  {
+    "name": "Masaje terapéutico",
+    "description": "Sesión de masaje manual enfocada en tus necesidades de comodidad corporal, con atención a las zonas que requieren un trabajo específico. La técnica y la presión se definen tras una valoración inicial. Si tienes una lesión o una condición médica, consulta previamente con tu profesional de salud si el masaje es adecuado."
+  },
+  {
+    "name": "Masaje deportivo",
+    "description": "Masaje orientado a personas físicamente activas, con atención a los grupos musculares más utilizados en su actividad. El trabajo se adapta al momento de entrenamiento y a la comodidad de cada persona. Antes de la sesión se revisan molestias y antecedentes; no sustituye la atención de una lesión deportiva."
+  },
+  {
+    "name": "Drenaje linfático",
+    "description": "Técnica manual de presión suave y movimientos específicos que busca favorecer el desplazamiento de la linfa. Su conveniencia se evalúa antes de la sesión, especialmente si existe hinchazón o una condición de salud. No es un masaje intenso ni un tratamiento para perder grasa, y requiere personal capacitado."
+  },
+  {
+    "name": "Drenaje post-operatorio",
+    "description": "Atención manual suave para acompañar la recuperación después de una cirugía, cuando esté indicada y autorizada por el profesional tratante. La técnica, las zonas y el inicio de las sesiones dependen de la operación y de tu evolución. Requiere valoración previa y no sustituye los controles postoperatorios."
+  },
+  {
+    "name": "Corporal - Reductor",
+    "description": "Tratamiento estético corporal enfocado en el cuidado de la apariencia de la piel y del contorno de zonas específicas. El plan se define según tus objetivos y las técnicas disponibles. Los resultados varían entre personas; no equivale a pérdida de peso ni garantiza reducción de medidas."
+  },
+  {
+    "name": "Limpieza facial",
+    "description": "Cuidado facial orientado a retirar impurezas superficiales y dejar la piel con una sensación de limpieza y frescura. La sesión se adapta al tipo y sensibilidad de tu piel. Tras una evaluación inicial, el equipo define qué pasos son adecuados y si corresponde realizar una limpieza más profunda."
+  },
+  {
+    "name": "Tratamientos faciales",
+    "description": "Opciones de cuidado facial según tus necesidades de hidratación, textura y apariencia del rostro. Te orientamos para elegir el tratamiento adecuado después de evaluar tu piel y tus objetivos. Cada técnica tiene un alcance diferente y se selecciona de forma individual."
+  },
+  {
+    "name": "Tratamiento Hollywood Peel",
+    "description": "Tratamiento facial que combina una loción de carbón con láser, orientado a mejorar la apariencia de la textura y luminosidad de la piel. Requiere valoración previa para determinar si es adecuado para ti y explicar los cuidados. Los resultados dependen del equipo, el protocolo y las características de tu piel."
+  },
+  {
+    "name": "Láser anti-age",
+    "description": "Tratamiento facial con láser orientado a mejorar la apariencia de algunos signos visibles del envejecimiento, según valoración de la piel. El profesional explica los objetivos del procedimiento, el plan de sesiones y los cuidados necesarios. Los resultados varían según la tecnología utilizada y las características de cada persona."
+  },
+  {
+    "name": "Masoterapia facial",
+    "description": "Masaje manual del rostro, con movimientos adaptados a tu comodidad, pensado para disfrutar de un momento de descanso y cuidado facial. Es una alternativa para quienes prefieren una experiencia de relajación mediante el tacto. No equivale a un lifting ni sustituye otros tratamientos de la piel."
+  },
+  {
+    "name": "Tratamiento para acné",
+    "description": "Cuidado facial para piel con tendencia a brotes, adaptado a su sensibilidad y estado actual. El equipo define qué pasos cosméticos son adecuados y cuándo conviene una valoración dermatológica. No garantiza eliminar el acné; los brotes dolorosos, persistentes o con cicatrices requieren atención de salud."
+  },
+  {
+    "name": "Tratamiento para manchas",
+    "description": "Cuidado facial orientado a mejorar la apariencia de un tono desigual, previa valoración de la piel y del tipo de pigmentación. La técnica y los cuidados se eligen según cada caso. No garantiza borrar todas las manchas; una lesión nueva, cambiante o sospechosa debe revisarse con dermatología antes de tratarla."
+  },
+  {
+    "name": "Depilación con láser diodo",
+    "aliases": ["Depilación"],
+    "description": "Procedimiento orientado a reducir progresivamente el vello de la zona elegida. Antes de iniciar se evalúan la piel, el vello y los antecedentes para determinar si es adecuado. Suele requerir varias sesiones; la respuesta y las necesidades de mantenimiento varían entre personas."
+  },
+  {
+    "name": "Camilla Ceragem",
+    "description": "Sesión en camilla de masaje térmico que combina calor y masaje mecánico para disfrutar de una experiencia de descanso corporal. Los ajustes se adaptan al equipo disponible y a tu comodidad, previa valoración. No sustituye una evaluación médica ni un tratamiento de la columna."
+  },
+  {
+    "name": "Detox iónica",
+    "description": "Baño de pies con un equipo de ionización, ofrecido como una experiencia de descanso y cuidado personal. No se ha demostrado que elimine toxinas del organismo; el cambio de color del agua no indica qué sustancias salen del cuerpo. Antes de la sesión se evalúa si el equipo es adecuado para ti."
+  },
+  {
+    "name": "Reflexología",
+    "description": "Sesión de presión manual en puntos de los pies, orientada a disfrutar de una experiencia de descanso y bienestar. La intensidad se adapta a tu comodidad. No permite diagnosticar ni tratar enfermedades de los órganos; si tienes dolor, lesiones o una condición de salud, consulta previamente si es adecuada para ti."
+  },
+  {
+    "name": "Terapias energéticas",
+    "description": "Experiencias de bienestar centradas en la pausa, la relajación y la atención personal. Cada modalidad ofrece un espacio para desconectar de la rutina y disfrutar de un momento de calma. Se ofrecen como acompañamiento de bienestar y no sustituyen atención médica o psicológica."
+  },
+  {
+    "name": "Terapia neural",
+    "description": "Procedimiento complementario que utiliza aplicaciones de anestésico local y requiere valoración médica individual. El profesional responsable explica su indicación, riesgos y alternativas antes de realizarlo. No garantiza eliminar el dolor ni sustituye el diagnóstico o el tratamiento de una enfermedad."
+  },
+  {
+    "name": "Sueroterapia",
+    "description": "Procedimiento de administración de soluciones por vía intravenosa, cuya indicación y composición requieren valoración de un profesional de salud. Antes de realizarlo se revisan antecedentes, riesgos y alternativas. No tiene un beneficio universal demostrado para aumentar energía, elevar las defensas o desintoxicar el cuerpo."
+  },
+  {
+    "name": "Emo vacuna",
+    "description": "Procedimiento descrito por el centro como extracción de sangre de la propia persona y reinyección en el glúteo. No es una vacuna y no hay evidencia suficiente para afirmar que eleva las defensas. Es un procedimiento invasivo con riesgos, incluida infección, que requiere revisión médica antes de considerar su realización."
+  },
+  {
+    "name": "Tratamiento capilar",
+    "description": "Atención personalizada para tus necesidades de cuidado capilar. El tratamiento se plantea según tu objetivo y las características del cabello y cuero cabelludo. Si buscas atención por caída del cabello o una alteración del cuero cabelludo, puede ser necesaria una valoración dermatológica."
+  },
+  {
+    "name": "Aero yoga",
+    "description": "Práctica de yoga con apoyo de telas suspendidas, que combina movimiento, respiración y momentos de relajación. La sesión se adapta al nivel y a las posibilidades de cada persona. Antes de participar, informa al instructor sobre lesiones, embarazo u otras condiciones para evaluar si la actividad es adecuada."
+  },
+  {
+    "name": "Limpieza facial kids",
+    "description": "Cuidado facial para público infantil o adolescente, adaptado a la edad y sensibilidad de la piel. La sesión se coordina con su representante y los pasos se seleccionan según cada caso. No garantiza prevenir el acné ni sustituye una valoración dermatológica."
+  },
+  {
+    "name": "Limpieza facial profunda",
+    "description": "Cuidado facial con evaluación de la piel, doble limpieza, exfoliación y extracción de comedones cuando sea adecuada. Se complementa con mascarilla y masaje facial según el protocolo. Busca una sensación de limpieza y una apariencia más fresca, respetando la sensibilidad de cada piel."
+  },
+  {
+    "name": "Hidratación de labios",
+    "description": "Atención enfocada en el cuidado de los labios y en tus objetivos de apariencia y comodidad. El alcance y los cuidados dependen de la técnica y del producto utilizados. No debe confundirse automáticamente con un relleno labial ni ofrece una duración del efecto igual para todas las personas."
+  },
+  {
+    "name": "Terapia de sonido",
+    "description": "Experiencia de relajación mediante sonidos y vibraciones de instrumentos, pensada para disfrutar de una pausa y dirigir la atención al momento presente. La intensidad se adapta a tu comodidad. No sustituye atención médica o psicológica ni garantiza resolver insomnio, ansiedad u otras condiciones."
+  },
+  {
+    "name": "Paquete détox y reducción consciente",
+    "description": "Programa de cuidado corporal que reúne 4 sesiones de baño de pies con ionización, 2 de drenaje linfático con reflexología abdominal, 2 de maderoterapia y 2 de envoltura con vendas frías. Requiere valoración previa. No garantiza desintoxicación, pérdida de peso ni reducción de medidas."
+  },
+  {
+    "name": "Paquete détox facial",
+    "description": "Experiencia de cuidado facial que combina evaluación facial con equipo, exfoliación e hidrafacial, ultrasonido, oxigenación cutánea y una mascarilla adaptada. Orientada a la limpieza y al cuidado de la apariencia de la piel, respetando sus necesidades y sensibilidad. No elimina toxinas del organismo."
+  },
+  {
+    "name": "Paquete alivio profundo",
+    "description": "Ritual de bienestar para una o dos personas que incluye baño de cajón con hierbas, exfoliación corporal, masaje con aceites esenciales, baño de sonido con cuencos tibetanos y un snack. Una experiencia que reúne distintas formas de cuidado para disfrutar de una pausa de descanso."
+  },
+  {
+    "name": "Baño de cajón",
+    "description": "Experiencia de vapor en un cajón de madera, con la cabeza fuera, orientada a disfrutar del calor y de un momento de descanso. Requiere valoración previa para determinar si la exposición al calor es adecuada para ti. No es un procedimiento para perder peso ni eliminar toxinas."
+  },
+  {
+    "name": "Maderoterapia",
+    "description": "Técnica de masaje corporal con herramientas de madera, adaptada a la zona y a tu comodidad. Puede formar parte de un plan estético de cuidado corporal, según valoración previa. No garantiza eliminar grasa, celulitis o reducir medidas."
+  },
+  {
+    "name": "Envoltura corporal con vendas frías",
+    "description": "Cuidado corporal con vendas impregnadas en un producto de efecto fresco, aplicado según el protocolo del centro. Antes de la sesión se evalúan la piel y los antecedentes. Ofrece una experiencia de frescura y cuidado, sin garantizar pérdida de grasa o reducción de medidas."
+  },
+  {
+    "name": "Exfoliación corporal",
+    "description": "Cuidado de la superficie de la piel mediante exfoliación, orientado a retirar células muertas y mejorar su sensación de suavidad. La intensidad y el producto se adaptan a la sensibilidad de la zona. Si existen irritaciones o lesiones, se evalúa previamente si la sesión es adecuada."
+  },
+  {
+    "name": "Cumpleaños",
+    "description": "Registro interno para organizar recordatorios de cumpleaños y acciones de atención al cliente. No corresponde a un tratamiento ni a una cita de spa."
+  }
+]
