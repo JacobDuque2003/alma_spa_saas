@@ -221,7 +221,7 @@ function relevanceScore(message, row) {
   const ignored = new Set('que como cual cuando donde cuanto cuantos quiero quisiera necesito deseo prefiero favor gracias hola para por del los las una unos unas ese esa este esta eso esto servicio servicios trata informacion tienes tienen disponible disponibles fechas dia dias'.split(' '));
   const singular = (term) => term.length > 4 ? term.replace(/s$/, '') : term;
   const terms = new Set(normalizeSearch(message).split(' ').filter((term) => term.length >= 3 && !ignored.has(term)).map(singular));
-  const searchable = new Set(normalizeSearch(`${row.category} ${row.title} ${row.content}`).split(' ').map(singular));
+  const searchable = new Set(normalizeSearch(row.title || row.category ? `${row.category || ''} ${row.title || ''}` : row.content).split(' ').map(singular));
   let overlap = 0;
   for (const term of terms) if (searchable.has(term)) overlap += 1;
   return overlap * 1000 + Number(row.priority || 0);
@@ -245,7 +245,11 @@ async function loadSimulationContext(tenantId, message, history = []) {
   const knowledge = knowledgeRows.filter((row) => row.audience === 'PUBLIC' && row.active === true)
     .map((row) => ({ row, score: relevanceScore(lookupText, row) }))
     .filter(({ score }) => score >= 1000)
-    .sort((a, b) => b.score - a.score).slice(0, 6).map(({ row }) => row);
+    .sort((a, b) => b.score - a.score).slice(0, 3).map(({ row }) => row);
+  for (const row of knowledgeRows.filter((row) => row.audience === 'PUBLIC' && row.active === true
+    && /^(politicas?|politica general|ubicacion|horarios?)$/.test(normalizeSearch(row.category)))) {
+    if (!knowledge.some((item) => item.id === row.id)) knowledge.push(row);
+  }
   const examples = exampleRows.filter((row) => row.audience === 'PUBLIC' && row.active === true)
     .map((row) => ({ row, score: relevanceScore(message, { category: row.expectedIntent, title: row.userMessage, content: row.expectedReply }) }))
     .filter(({ score }) => score >= 1000)
@@ -304,6 +308,7 @@ async function simulate(actor, requestedTenantId, body) {
     tone,
     tenantConfig: context.tenantConfig,
     services: context.services,
+    selectedServiceId: context.services.find((service) => normalizeSearch(message).includes(normalizeSearch(service.name)))?.id,
     history: cleanHistory,
     almitaCenter: context.configuration ? {
       personality: context.configuration.personality,

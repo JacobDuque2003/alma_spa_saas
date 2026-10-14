@@ -4,6 +4,7 @@
 const https = require('node:https');
 const { randomUUID } = require('node:crypto');
 const aiUsage = require('./aiUsageService');
+const { summarizeState } = require('./whatsappBot/conversationSummary');
 const { isCustomerService, formatCustomerPrice } = require('../utils/customerServicePolicy');
 const { formatSchedule } = require('../utils/businessHours');
 
@@ -152,7 +153,7 @@ function buildServiceCatalog(services) {
   const customerServices = Array.isArray(services) ? services.filter(isCustomerService) : [];
   if (!customerServices.length) return 'No hay servicios cargados.';
   return customerServices.map(s =>
-    `- ${s.name} (${formatCustomerPrice(s.priceUsd)}, ${s.durationMins || 60} min) [${s.category || 'Otros'}]${s.description ? ` — ${String(s.description).replace(/\0/g, '').trim()}` : ''}`
+    `- ${s.name} (${formatCustomerPrice(s.priceUsd)}, ${s.durationMins || 60} min) [${s.category || 'Otros'}]`
   ).join('\n');
 }
 
@@ -170,7 +171,13 @@ function buildChatSystemBlocks(context = {}) {
   blocks.push({ type: 'text', text: `CATÁLOGO COMERCIAL OPERATIVO:\n${buildServiceCatalog(context.services)}`,
     cache_control: { type: 'ephemeral', ttl: '1h' } });
   if (center.dailyBriefing) blocks.push({ type: 'text', text: `BRIEFING VIGENTE:\n${cleanPromptText(center.dailyBriefing, 5000)}` });
-  blocks.push({ type: 'text', text: `HORARIO OPERATIVO (tenant.config): ${formatSchedule(context.tenantConfig)}\nHOY: ${new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date())}\nTrato: ${context.tone || 'usted'}\nNombre: ${context.clientName || 'no informado'}\nEstado: ${JSON.stringify(context.bookingState || {})}` });
+  blocks.push({ type: 'text', text: `HORARIO OPERATIVO (tenant.config): ${formatSchedule(context.tenantConfig)}\nHOY: ${new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date())}\nTrato: ${context.tone || 'usted'}\nResumen: ${summarizeState({ booking: context.bookingState, clientName: context.clientName, tone: context.tone, ...context.summaryState })}` });
+  const services = (context.services || []).filter(isCustomerService);
+  const selectedServices = services.filter((service) => services.length === 1 || service.id === context.bookingState?.serviceId
+    || (context.selectedServiceId && service.id === context.selectedServiceId));
+  for (const service of selectedServices) {
+    if (service.description) blocks.push({ type: 'text', text: `DESCRIPCIÓN CANÓNICA: ${service.name}\n${String(service.description).replace(/\0/g, '').trim()}` });
+  }
   const selected = buildAlmitaCenterContext({ knowledge: center.knowledge, examples: center.examples });
   if (selected) blocks.push({ type: 'text', text: selected });
   return blocks;
@@ -369,7 +376,7 @@ async function chat(userMessage, context = {}) {
   const messages = [];
 
   if (Array.isArray(context.history)) {
-    for (const m of context.history.slice(-16)) {
+    for (const m of context.history.slice(-8)) {
       if (!['user', 'assistant'].includes(m?.role) || typeof m?.content !== 'string') continue;
       messages.push({ role: m.role, content: m.content.slice(0, 500) });
     }

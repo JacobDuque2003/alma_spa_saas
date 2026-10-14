@@ -1160,7 +1160,7 @@ test('pushHistory + getHistory mantiene últimos MAX_HISTORY mensajes', async ()
   }
   const history = state.getHistory('test_wa');
   assert.equal(history.length, state.MAX_HISTORY);
-  assert.equal(history[0].content, 'msg 5');
+  assert.equal(history[0].content, `msg ${15 - state.MAX_HISTORY}`);
   assert.equal(history[history.length - 1].content, 'msg 14');
 });
 

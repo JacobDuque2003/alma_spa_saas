@@ -1490,7 +1490,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   let centerContext = { configuration: null, knowledge: [], examples: [] };
   try {
-    centerContext = await almitaCenter.loadRuntimeContext(tenant.id, bodyText);
+    centerContext = await almitaCenter.loadRuntimeContext(tenant.id, bodyText, history);
   } catch (err) {
     // La configuración editorial es complementaria: una falla no debe detener WhatsApp.
     logBot('warn', 'Centro de Almita no disponible', { tenant: tenant.slug, error: err.message });
@@ -1535,6 +1535,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     services,
     history,
     bookingState: flowState.booking || null,
+    summaryState: { lastIntent: flowState.lastIntent, tone, serviceName: flowState.serviceName },
     tenantConfig: tenant.config,
     almitaCenter: centerContext.configuration ? {
       personality: centerContext.configuration.personality,

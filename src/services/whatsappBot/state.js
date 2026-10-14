@@ -11,11 +11,12 @@
 //    no responde a esas conversaciones durante ese tiempo.
 
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { summarizeState } = require('./conversationSummary');
 
 const conversationScope = new AsyncLocalStorage();
 const FLOW_TTL_MS = 60 * 60 * 1000;        // 1h
 const ESCALATED_TTL_MS = 24 * 60 * 60 * 1000; // 24h
-const MAX_HISTORY = 10;
+const MAX_HISTORY = 8;
 
 const flowState = new Map();  // [namespace, customerWaId] -> { flow, tone, updatedAt }
 const escalated = new Map();  // [namespace, customerWaId] -> expiresAt
@@ -59,6 +60,7 @@ function setFlowState(waId, partial) {
   const key = stateKey(waId);
   const prev = flowState.get(key) || {};
   const next = { ...prev, ...partial, updatedAt: _now() };
+  next.summary = summarizeState(next);
   flowState.set(key, next);
   if (flowState.size > 1000) _sweep(flowState);
   return next;
