@@ -60,6 +60,9 @@ function setFlowState(waId, partial) {
   const key = stateKey(waId);
   const prev = flowState.get(key) || {};
   const next = { ...prev, ...partial, updatedAt: _now() };
+  if (partial.flow === 'menu') {
+    for (const branch of ['booking', 'reschedule', 'bookingForOther', 'cancellation', 'newClient', 'textChoices', 'lastServiceId', 'parentServiceId']) next[branch] = null;
+  }
   next.summary = summarizeState(next);
   flowState.set(key, next);
   if (flowState.size > 1000) _sweep(flowState);

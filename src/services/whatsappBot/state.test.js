@@ -4,6 +4,12 @@ const state = require('./state');
 
 const WA_ID = '593000000001';
 
+test('returning to menu clears every appointment branch', () => {
+  state.setFlowState(WA_ID, { booking: { step: 'confirm' }, reschedule: { step: 'time' }, bookingForOther: { step: 'name' }, cancellation: { step: 'confirm' } });
+  state.setFlowState(WA_ID, { flow: 'menu', tone: 'usted' });
+  for (const branch of ['booking', 'reschedule', 'bookingForOther', 'cancellation']) assert.equal(state.getFlowState(WA_ID)[branch], null);
+});
+
 test.beforeEach(() => state._reset());
 
 test('isolates flow, history and escalation by tenant and conversation for the same waId', () => {

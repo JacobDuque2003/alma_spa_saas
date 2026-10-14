@@ -22,6 +22,7 @@ const aiClient = require('../aiClient');
 const almitaCenter = require('../almitaCenterService');
 const intentCache = require('./intentCache');
 const { normalizeText, synonymIntent } = require('./textNormalize');
+const { firstName, safeHistory, loadCustomerContext } = require('./customerContext');
 const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
@@ -1474,14 +1475,15 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   // Build AI context
   const client = await lookupClientByWaId(tenant.id, waId);
-  const clientName = client?.fullName || flowState.clientName || null;
+  const customerContext = await loadCustomerContext(tenant.id, client);
+  const clientName = customerContext.firstName || firstName(flowState.clientName) || null;
   const services = await loadServicesForAI(tenant.id);
   const persistedHistory = await conversationMemory.loadConversationHistory({
     tenantId: tenant.id,
     conversationId: conv.id,
     currentUserMessage: bodyText,
   });
-  const history = persistedHistory.length ? persistedHistory : state.getHistory(waId);
+  const history = safeHistory(persistedHistory.length ? persistedHistory : state.getHistory(waId));
 
   let centerContext = { configuration: null, knowledge: [], examples: [] };
   try {
@@ -1533,6 +1535,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     history,
     bookingState: flowState.booking || null,
     summaryState: { lastIntent: flowState.lastIntent, tone, serviceName: flowState.serviceName },
+    lastServiceName: customerContext.lastServiceName,
     tenantConfig: tenant.config,
     almitaCenter: centerContext.configuration ? {
       personality: centerContext.configuration.personality,

@@ -179,6 +179,7 @@ function buildChatSystemBlocks(context = {}) {
     if (service.description) blocks.push({ type: 'text', text: `DESCRIPCIÓN CANÓNICA: ${service.name}\n${String(service.description).replace(/\0/g, '').trim()}` });
   }
   const selected = buildAlmitaCenterContext({ knowledge: center.knowledge, examples: center.examples });
+  if (context.lastServiceName) blocks.push({ type: 'text', text: `Último servicio realizado: ${String(context.lastServiceName).slice(0, 180)}. No implica una reserva nueva.` });
   if (selected) blocks.push({ type: 'text', text: selected });
   return blocks;
 }
