@@ -1,0 +1,19 @@
+{
+  "words": {
+    "kiero": "quiero", "qiero": "quiero", "q": "que", "k": "que", "x": "por",
+    "xfa": "por favor", "porfa": "por favor", "pls": "por favor", "d": "de",
+    "tb": "tambien", "tmb": "tambien", "xq": "porque", "pq": "porque",
+    "sita": "cita", "bolver": "volver", "ora": "hora", "asta": "hasta",
+    "aver": "a ver", "ahorita": "ahora", "mnn": "manana", "mnna": "manana",
+    "biernes": "viernes", "limpiesa": "limpieza", "relajnte": "relajante",
+    "masajito": "masaje", "relax": "relajante"
+  },
+  "intents": {
+    "reschedule": ["mover mi turno", "pasar mi cita", "correr mi cita", "otro dia para mi cita"],
+    "cancel": ["ya no voy", "no puedo ir", "borrar la cita", "anular mi turno"],
+    "location": ["como llego", "donde quedan", "direccion del local"],
+    "business_hours": ["que hora abren", "hasta que hora", "que hora atienden"],
+    "my_appointment": ["cuando es mi turno", "cuando es mi cita"],
+    "escalate": ["hablar con alguien", "hablar con una persona", "hablar con un humano"]
+  }
+}

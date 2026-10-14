@@ -2,6 +2,7 @@ const prisma = require('../utils/prisma');
 const aiClient = require('./aiClient');
 const publicDataCache = require('./whatsappBot/publicDataCache');
 const intentCache = require('./whatsappBot/intentCache');
+const { normalizeText } = require('./whatsappBot/textNormalize');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { customerServiceWhere, isCustomerService } = require('../utils/customerServicePolicy');
 const { isReceptionRequest } = require('../utils/advisorRequest');
@@ -223,7 +224,7 @@ async function deleteEntity(modelName, actor, tenantId, id) {
 }
 
 function normalizeSearch(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return normalizeText(value);
 }
 
 function relevanceScore(message, row) {

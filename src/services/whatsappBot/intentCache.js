@@ -1,9 +1,10 @@
 const TTL_MS = 24 * 60 * 60 * 1000;
+const { normalizeText } = require('./textNormalize');
 const cache = new Map();
 const stats = new Map();
 const SAFE_INTENTS = new Set(['greeting', 'list_services', 'business_hours', 'location', 'farewell']);
 function normalize(text) {
-  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  return normalizeText(text);
 }
 function key(tenantId, text) { return JSON.stringify([tenantId, normalize(text)]); }
 function get(tenantId, text) {

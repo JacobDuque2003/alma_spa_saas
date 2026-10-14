@@ -21,6 +21,7 @@ const clientService = require('../clientService');
 const aiClient = require('../aiClient');
 const almitaCenter = require('../almitaCenterService');
 const intentCache = require('./intentCache');
+const { normalizeText, synonymIntent } = require('./textNormalize');
 const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
@@ -212,11 +213,9 @@ function isReceptionOpenNow(tenantConfig = {}, now = new Date()) {
 
 function detectDeterministicIntent(text) {
   if (!text) return null;
-  const t = String(text)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
+  const t = normalizeText(text);
+  const synonym = synonymIntent(t);
+  if (synonym) return synonym;
 
   if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches|menu|menú|inicio)$/.test(t)) return 'greeting';
   if (isReceptionRequest(t)) return 'escalate';
@@ -398,12 +397,7 @@ function wellnessRecommendationQuery(text) {
 }
 
 function normalizeSearchText(text) {
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizeText(text, { preserveDatePunctuation: true });
 }
 
 function tokenizeForMatch(text) {
@@ -1294,8 +1288,8 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return sendInformationalService({ tenant, connection, conv, waId, tone, item: informational });
   }
   const questionText = normalizeSearchText(bodyText).replace(/^[¿?]+/, '');
-  if (/^(que es|de que trata|como es|para que sirve|cuanto cuesta|precio de|duracion de)\b/.test(questionText)) {
-    const query = questionText.replace(/^(que es|de que trata|como es|para que sirve|cuanto cuesta|precio de|duracion de)\s+(?:el |la |un |una )?/, '');
+  if (/^(que es|de que trata|como es|para que sirve|cuanto cuesta|cuanto sale|precio de|duracion de)\b/.test(questionText)) {
+    const query = questionText.replace(/^(que es|de que trata|como es|para que sirve|cuanto cuesta|cuanto sale|precio de|duracion de)\s+(?:el |la |un |una )?/, '');
     const service = await matchServiceByQuery(tenant.id, query);
     if (service) {
       if (flowState.booking) return sendBookingServiceInfo({ tenant, connection, conv, waId, tone, service });

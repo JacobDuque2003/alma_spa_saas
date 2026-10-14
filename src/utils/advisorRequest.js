@@ -1,6 +1,6 @@
+const { normalizeText } = require('../services/whatsappBot/textNormalize');
 function isReceptionRequest(text) {
-  const t = String(text || '').toLowerCase().normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const t = normalizeText(text);
   if (!t) return false;
   if (/\b(gianella|gianela|giannella)\b/.test(t)) return true;
   if (/^(4|humano|humana|asesor|asesora|agente|persona|alguien|recepcion|recepcionista)$/.test(t)) return true;
