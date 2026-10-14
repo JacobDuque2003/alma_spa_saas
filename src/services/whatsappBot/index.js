@@ -1463,16 +1463,6 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     return sendMainMenu({ tenant, connection, conv, waId, tone });
   }
 
-  // Cost cap check
-  const dailyCost = await getDailyCostForConversation(tenant.id, conv.id);
-  if (dailyCost >= DAILY_COST_CAP_USD) {
-    logBot('warn', 'límite diario de IA alcanzado', {
-      tenant: tenant.slug,
-      conversationId: conv.id,
-      dailyCost: Number(dailyCost.toFixed(4)),
-    });
-    return sendMainMenu({ tenant, connection, conv, waId, tone });
-  }
 
   // Build AI context
   const client = await lookupClientByWaId(tenant.id, waId);

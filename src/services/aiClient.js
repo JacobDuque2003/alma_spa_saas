@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const aiUsage = require('./aiUsageService');
 const { summarizeState } = require('./whatsappBot/conversationSummary');
 const { guardReply } = require('./whatsappBot/replySafety');
+const { canUseAi } = require('./whatsappBot/aiBudget');
 const { isCustomerService, formatCustomerPrice } = require('../utils/customerServicePolicy');
 const { formatSchedule } = require('../utils/businessHours');
 
@@ -403,6 +404,10 @@ async function chat(userMessage, context = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const started = Date.now();
     const identity = { requestId, attempt, source: context.source === 'simulator' ? 'simulator' : 'whatsapp', model: MODEL };
+    if (!await canUseAi(context.tenantId, context.tenantConfig)) {
+      await aiUsage.recordAttempt(context.tenantId, { ...identity, usageKnown: true, success: false, costUsd: 0, errorCode: 'AI_BUDGET_CAP' });
+      return { ok: false, ...totals, error: 'El presupuesto diario de IA requiere revisión; puede consultar mediante las opciones o un asesor.' };
+    }
     if (!await aiUsage.recordAttempt(context.tenantId, { ...identity, usageKnown: false, errorCode: 'AI_PENDING', costUsd: null })) {
       return { ok: false, ...totals, error: 'No se pudo registrar el consumo de IA.' };
     }
