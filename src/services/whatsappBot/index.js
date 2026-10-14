@@ -20,6 +20,7 @@ const appointmentService = require('../appointmentService');
 const clientService = require('../clientService');
 const aiClient = require('../aiClient');
 const almitaCenter = require('../almitaCenterService');
+const intentCache = require('./intentCache');
 const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
@@ -1528,6 +1529,8 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   const t0 = Date.now();
+  const cached = !flowState.booking && !flowState.reschedule && !flowState.bookingForOther ? intentCache.get(tenant.id, bodyText) : null;
+  if (cached) return routeIntent({ tenant, connection, conv, waId, tone, intent: cached.intent, params: cached.params, userMessage: bodyText });
   const aiResult = await aiClient.chat(bodyText, {
     tenantId: tenant.id,
     tone,
@@ -1565,6 +1568,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
   }
 
   const enrichedAi = { ...aiResult, latencyMs };
+  if (!flowState.booking && !flowState.reschedule && !flowState.bookingForOther) intentCache.set(tenant.id, bodyText, aiResult.intent);
 
   logBot('info', 'IA respondió', {
     tenant: tenant.slug,

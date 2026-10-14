@@ -1,49 +1,30 @@
-// In-memory intent cache — maps normalized text → { intent, reply }.
-// TTL 24h. Saves AI calls for repeated messages ("hola", "servicios", etc.).
-
 const TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_ENTRIES = 500;
-
-const cache = new Map(); // normalizedText → { intent, reply, expiresAt }
-
+const cache = new Map();
+const stats = new Map();
+const SAFE_INTENTS = new Set(['greeting', 'list_services', 'business_hours', 'location', 'farewell']);
 function normalize(text) {
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
-
-function get(rawText) {
-  const key = normalize(rawText);
-  if (!key) return null;
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    cache.delete(key);
-    return null;
+function key(tenantId, text) { return JSON.stringify([tenantId, normalize(text)]); }
+function get(tenantId, text) {
+  if (!tenantId || !normalize(text)) return null;
+  const metrics = stats.get(tenantId) || { hits: 0, misses: 0 };
+  const value = cache.get(key(tenantId, text));
+  if (!value || value.expiresAt <= Date.now()) {
+    cache.delete(key(tenantId, text)); metrics.misses++; stats.set(tenantId, metrics); return null;
   }
-  return { intent: entry.intent, reply: entry.reply };
+  metrics.hits++; stats.set(tenantId, metrics);
+  return { intent: value.intent, params: {} };
 }
-
-function set(rawText, intent, reply) {
-  const key = normalize(rawText);
-  if (!key || !intent) return;
-  cache.set(key, { intent, reply: reply || null, expiresAt: Date.now() + TTL_MS });
-  if (cache.size > MAX_ENTRIES) {
-    const oldest = cache.keys().next().value;
-    cache.delete(oldest);
-  }
+function set(tenantId, text, intent) {
+  if (!tenantId || !normalize(text) || !SAFE_INTENTS.has(intent)) return;
+  if (/\b(si|ese|esa|segundo|manana|hoy|ayer|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b|\d/.test(normalize(text))) return;
+  cache.set(key(tenantId, text), { intent, expiresAt: Date.now() + TTL_MS });
+  if (cache.size > 500) cache.delete(cache.keys().next().value);
 }
-
-function size() { return cache.size; }
-
-module.exports = {
-  get,
-  set,
-  size,
-  normalize,
-  _reset: () => cache.clear(),
-  TTL_MS,
-};
+function metrics(tenantId) {
+  const value = stats.get(tenantId) || { hits: 0, misses: 0 };
+  return { ...value, hitRate: value.hits + value.misses ? value.hits / (value.hits + value.misses) : null };
+}
+module.exports = { get, set, normalize, metrics, TTL_MS, size: () => cache.size,
+  _reset: () => { cache.clear(); stats.clear(); } };

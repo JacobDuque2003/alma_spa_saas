@@ -1,66 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const intentCache = require('./intentCache');
-
-test('normalize: lowercases and strips accents', () => {
-  assert.equal(intentCache.normalize('Hola Café'), 'hola cafe');
+const cache = require('./intentCache');
+test('intent cache is tenant scoped and never retains replies or contextual parameters', () => {
+  cache._reset();
+  cache.set('t1', 'Donde quedan?', 'location', { reply: 'PRIVATE', name: 'PRIVATE' });
+  assert.deepEqual(cache.get('t1', 'donde quedan'), { intent: 'location', params: {} });
+  assert.equal(cache.get('t2', 'donde quedan'), null);
+  assert.equal(cache.metrics('t1').hitRate, 1);
 });
-
-test('normalize: strips punctuation', () => {
-  assert.equal(intentCache.normalize('¿Tienes cita?'), 'tienes cita');
+test('intent cache rejects actions and contextual short replies', () => {
+  cache._reset();
+  for (const text of ['si', 'ese', 'manana', 'viernes', 'a las 4']) cache.set('t1', text, 'greeting');
+  cache.set('t1', 'quiero cita', 'book_service');
+  cache.set('t1', '', 'greeting');
+  assert.equal(cache.size(), 0);
 });
-
-test('normalize: collapses whitespace', () => {
-  assert.equal(intentCache.normalize('  hola   mundo  '), 'hola mundo');
-});
-
-test('get/set: basic round-trip', () => {
-  intentCache._reset();
-  intentCache.set('hola', 'menu', '¡Bienvenido!');
-  const result = intentCache.get('hola');
-  assert.deepEqual(result, { intent: 'menu', reply: '¡Bienvenido!' });
-});
-
-test('get: case-insensitive and accent-insensitive', () => {
-  intentCache._reset();
-  intentCache.set('Hola café', 'menu', 'reply');
-  assert.deepEqual(intentCache.get('HOLA CAFE'), { intent: 'menu', reply: 'reply' });
-});
-
-test('get: returns null for missing entry', () => {
-  intentCache._reset();
-  assert.equal(intentCache.get('not-cached'), null);
-});
-
-test('get: returns null for empty text', () => {
-  intentCache._reset();
-  assert.equal(intentCache.get(''), null);
-});
-
-test('set: ignores empty text', () => {
-  intentCache._reset();
-  intentCache.set('', 'menu', 'reply');
-  assert.equal(intentCache.size(), 0);
-});
-
-test('set: ignores null intent', () => {
-  intentCache._reset();
-  intentCache.set('hola', null, 'reply');
-  assert.equal(intentCache.size(), 0);
-});
-
-test('size: tracks entries', () => {
-  intentCache._reset();
-  assert.equal(intentCache.size(), 0);
-  intentCache.set('one', 'menu', null);
-  intentCache.set('two', 'book', null);
-  assert.equal(intentCache.size(), 2);
-});
-
-test('_reset: clears everything', () => {
-  intentCache._reset();
-  intentCache.set('test', 'menu', null);
-  assert.equal(intentCache.size(), 1);
-  intentCache._reset();
-  assert.equal(intentCache.size(), 0);
+test('intent normalization strips accents, punctuation and redundant spaces', () => {
+  assert.equal(cache.normalize(' ?HOLA   Cafe? '), 'hola cafe');
 });

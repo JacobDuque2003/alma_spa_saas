@@ -1,5 +1,7 @@
 const prisma = require('../utils/prisma');
 const aiClient = require('./aiClient');
+const publicDataCache = require('./whatsappBot/publicDataCache');
+const intentCache = require('./whatsappBot/intentCache');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { customerServiceWhere, isCustomerService } = require('../utils/customerServicePolicy');
 const { isReceptionRequest } = require('../utils/advisorRequest');
@@ -144,7 +146,7 @@ async function getActiveConfiguration(actor, tenantId) {
 async function createConfiguration(actor, requestedTenantId, body) {
   const tenant = await resolveTenant(actor, requestedTenantId);
   const data = validateConfiguration(body);
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const latest = await tx.almitaConfiguration.findFirst({
       where: { tenantId: tenant.id }, select: { version: true }, orderBy: { version: 'desc' },
     });
@@ -155,6 +157,8 @@ async function createConfiguration(actor, requestedTenantId, body) {
       data: { ...data, active: data.active !== false, tenantId: tenant.id, version: (latest?.version || 0) + 1, createdById: actor.id },
     });
   });
+  publicDataCache.invalidate(tenant.id);
+  return result;
 }
 
 async function updateConfiguration(actor, requestedTenantId, id, body) {
@@ -196,14 +200,18 @@ function listEntity(modelName, actor, tenantId, query = {}) {
 async function createEntity(modelName, actor, tenantId, body, validator) {
   const tenant = await resolveTenant(actor, tenantId);
   const data = validator(body);
-  return prisma[modelName].create({ data: { ...data, tenantId: tenant.id } });
+  const result = await prisma[modelName].create({ data: { ...data, tenantId: tenant.id } });
+  publicDataCache.invalidate(tenant.id);
+  return result;
 }
 
 async function updateEntity(modelName, actor, tenantId, id, body, validator) {
   const tenant = await resolveTenant(actor, tenantId);
   const existing = await prisma[modelName].findFirst({ where: { id, tenantId: tenant.id }, select: { id: true } });
   if (!existing) throw new AppError('Registro no encontrado', 404);
-  return prisma[modelName].update({ where: { id }, data: validator(body, true) });
+  const result = await prisma[modelName].update({ where: { id }, data: validator(body, true) });
+  publicDataCache.invalidate(tenant.id);
+  return result;
 }
 
 async function deleteEntity(modelName, actor, tenantId, id) {
@@ -211,6 +219,7 @@ async function deleteEntity(modelName, actor, tenantId, id) {
   const existing = await prisma[modelName].findFirst({ where: { id, tenantId: tenant.id }, select: { id: true } });
   if (!existing) throw new AppError('Registro no encontrado', 404);
   await prisma[modelName].delete({ where: { id } });
+  publicDataCache.invalidate(tenant.id);
 }
 
 function normalizeSearch(value) {
@@ -228,10 +237,12 @@ function relevanceScore(message, row) {
 }
 
 async function loadSimulationContext(tenantId, message, history = []) {
-  const [configuration, knowledgeRows, exampleRows, services, tenant] = await Promise.all([
+  const [editorial, services, tenant] = await Promise.all([
+    publicDataCache.load(tenantId, () => Promise.all([
     prisma.almitaConfiguration.findFirst({ where: { tenantId, active: true }, orderBy: { version: 'desc' } }),
     prisma.almitaKnowledge.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }], take: 250 }),
     prisma.almitaApprovedExample.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: { updatedAt: 'desc' }, take: 100 }),
+    ])),
     prisma.service.findMany({
       where: customerServiceWhere(tenantId),
       select: { id: true, name: true, category: true, active: true, priceUsd: true, durationMins: true, description: true },
@@ -239,6 +250,7 @@ async function loadSimulationContext(tenantId, message, history = []) {
     }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } }),
   ]);
+  const [configuration, knowledgeRows, exampleRows] = editorial;
   const lookupText = /\b(ese|este|eso|fechas|disponible|disponibles)\b/.test(normalizeSearch(message))
     ? `${history.filter((entry) => entry.role === 'user').slice(-3).map((entry) => entry.content).join(' ')} ${message}`
     : message;
@@ -265,6 +277,8 @@ function simulationRule(message, tone, config) {
   if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches)$/.test(text)) return {
     intent: 'greeting', reply: menus.mainMenuText({ tone }),
   };
+  if (/\b(horario|hora abren|hora atienden|hora cierran)\b/.test(text)) return { intent: 'business_hours', reply: formatSchedule(config) };
+  if (/^(ok gracias|listo gracias|gracias|adios|hasta luego|chao)$/.test(text)) return { intent: 'farewell', reply: 'Con mucho gusto.' };
   const days = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
   const requested = text.replace(/^(el |para el |este |el proximo )/, '');
   const day = days.indexOf(requested);
@@ -386,6 +400,7 @@ async function getMetrics(actor, requestedTenantId, query = {}) {
     costUsd: Number(totals._sum.costUsd || 0),
     averageLatencyMs: interactions ? Math.round((totals._sum.latencyMs || 0) / interactions) : 0,
     byIntent: byIntent.map((row) => ({ intent: row.detectedIntent || 'sin_clasificar', count: row._count._all })),
+    intentCache: intentCache.metrics(tenant.id),
   };
 }
 
