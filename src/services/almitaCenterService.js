@@ -299,6 +299,8 @@ async function simulate(actor, requestedTenantId, body) {
   if (!aiClient.isAvailable()) throw new AppError('El proveedor de IA no está configurado', 503);
   const startedAt = Date.now();
   const result = await aiClient.chat(message, {
+    tenantId: tenant.id,
+    source: 'simulator',
     tone,
     tenantConfig: context.tenantConfig,
     services: context.services,
@@ -335,6 +337,8 @@ async function simulate(actor, requestedTenantId, body) {
     usage: {
       model: result.model,
       promptTokens: result.inputTokens,
+      cacheCreationInputTokens: result.cacheCreationInputTokens || 0,
+      cacheReadInputTokens: result.cacheReadInputTokens || 0,
       completionTokens: result.outputTokens,
       totalTokens: result.totalTokens,
       costUsd: result.costUsd,

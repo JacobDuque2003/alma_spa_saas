@@ -258,7 +258,7 @@ test('chat preserves full warnings beyond 300 characters and rejects token-trunc
   t.mock.method(https, 'request', (_options, callback) => {
     const request = new EventEmitter();
     request.end = (payload) => {
-      assert.equal(JSON.parse(payload).max_tokens, 1024);
+      assert.equal(JSON.parse(payload).max_tokens, 350);
       const response = new EventEmitter();
       response.statusCode = 200;
       callback(response);
@@ -283,4 +283,19 @@ test('chat preserves full warnings beyond 300 characters and rejects token-trunc
   assert.equal(invalid.ok, false);
   assert.match(invalid.error, /JSON válido/);
   assert.equal(invalid.replyText, undefined);
+});
+
+test('cache cost accounts for writes, reads and uncached input separately', () => {
+  assert.ok(Math.abs(aiClient.calcCost(100, 20, 5000, 7000, '1h') - 0.0109) < 1e-12);
+  assert.equal(aiClient.calcCost(0, 0, 4000, 0, '5m'), 0.005);
+});
+
+test('cache prefix is identical across clients and dates stay outside it', () => {
+  const stable = { services: [{ name: 'Masaje', priceUsd: 30, durationMins: 105 }], almitaCenter: { personality: 'Serena', instructions: 'No inventar', dailyBriefing: 'Hoy normal' } };
+  const first = aiClient._internals.buildChatSystemBlocks({ ...stable, clientName: 'PRIVATE_ONE', bookingState: { step: 'select_time' }, tone: 'tu' });
+  const second = aiClient._internals.buildChatSystemBlocks({ ...stable, clientName: 'PRIVATE_TWO', bookingState: {}, tone: 'usted' });
+  const prefix = (blocks) => blocks.slice(0, blocks.findIndex((block) => block.cache_control) + 1);
+  assert.deepEqual(prefix(first), prefix(second));
+  assert.doesNotMatch(JSON.stringify(prefix(first)), /PRIVATE_|HOY:|select_time/);
+  assert.equal(prefix(first).at(-1).cache_control.ttl, '1h');
 });

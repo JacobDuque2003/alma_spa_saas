@@ -51,6 +51,7 @@ model Tenant {
   whatsappMessages      WhatsAppMessage[]
   whatsappNotes         WhatsAppNote[]
   botInteractionLogs    BotInteractionLog[]
+  aiUsageLogs           AiUsageLog[]
   almitaConfigurations AlmitaConfiguration[]
   almitaKnowledge AlmitaKnowledge[]
   almitaApprovedExamples AlmitaApprovedExample[]
@@ -558,6 +559,7 @@ model WhatsAppMessage {
   interactivePayload Json?
   templateName   String?
   templateLang   String?
+  metaCategory   MetaMessageCategory?
   mediaId        String?
   errorCode      String?
   errorTitle     String?
@@ -641,6 +643,8 @@ model BotInteractionLog {
   botReplyText     String?
   model            String?
   promptTokens     Int      @default(0)
+  cacheCreationInputTokens Int @default(0)
+  cacheReadInputTokens Int @default(0)
   completionTokens Int      @default(0)
   totalTokens      Int      @default(0)
   costUsd          Decimal  @default(0) @db.Decimal(10, 6)
@@ -651,6 +655,38 @@ model BotInteractionLog {
   conversation WhatsAppConversation @relation(fields: [conversationId], references: [id])
 
   @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+enum MetaMessageCategory {
+  service
+  utility
+  marketing
+  authentication
+}
+
+// Cost ledger: deliberately excludes messages, client and conversation identifiers.
+model AiUsageLog {
+  id                       String   @id @default(cuid())
+  tenantId                 String
+  requestId                String
+  attempt                  Int      @default(0)
+  source                   String   @default("whatsapp")
+  model                    String?
+  inputTokens              Int      @default(0)
+  cacheCreationInputTokens Int      @default(0)
+  cacheReadInputTokens     Int      @default(0)
+  outputTokens             Int      @default(0)
+  cacheTtl                 String?
+  usageKnown               Boolean  @default(false)
+  success                  Boolean  @default(false)
+  errorCode                String?
+  costUsd                  Decimal? @db.Decimal(10, 6)
+  latencyMs                Int      @default(0)
+  createdAt                DateTime @default(now())
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, requestId, attempt])
   @@index([tenantId, createdAt])
 }
 

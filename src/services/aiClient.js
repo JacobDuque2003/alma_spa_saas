@@ -2,6 +2,8 @@
 // Uses Anthropic Messages API directly (no SDK dependency).
 
 const https = require('node:https');
+const { randomUUID } = require('node:crypto');
+const aiUsage = require('./aiUsageService');
 const { isCustomerService, formatCustomerPrice } = require('../utils/customerServicePolicy');
 const { formatSchedule } = require('../utils/businessHours');
 
@@ -41,8 +43,9 @@ Reglas:
 const COST_PER_INPUT_TOKEN = 1.0 / 1_000_000;
 const COST_PER_OUTPUT_TOKEN = 5.0 / 1_000_000;
 
-function calcCost(inputTokens, outputTokens) {
-  return inputTokens * COST_PER_INPUT_TOKEN + outputTokens * COST_PER_OUTPUT_TOKEN;
+function calcCost(inputTokens, outputTokens, cacheCreation = 0, cacheRead = 0, ttl = '1h') {
+  return (inputTokens + cacheCreation * (ttl === '1h' ? 2 : 1.25) + cacheRead * 0.1) * COST_PER_INPUT_TOKEN
+    + outputTokens * COST_PER_OUTPUT_TOKEN;
 }
 
 function _post(body, timeoutMs = TIMEOUT_MS) {
@@ -71,7 +74,7 @@ function _post(body, timeoutMs = TIMEOUT_MS) {
         try {
           resolve({ status: res.statusCode, data: JSON.parse(raw) });
         } catch {
-          reject(new Error(`Anthropic non-JSON response: ${raw.slice(0, 200)}`));
+          reject(new Error('Anthropic non-JSON response'));
         }
       });
     });
@@ -153,7 +156,31 @@ function buildServiceCatalog(services) {
   ).join('\n');
 }
 
+function buildCoreRules() {
+  return buildLegacyPrompt({ services: [] }).split('\nCATÁLOGO COMERCIAL OPERATIVO')[0]
+    .replace(/^HORARIO OPERATIVO.*\n/gm, '').replace(/^HOY:.*\n/gm, '')
+    .replace(/^Trata de "usted" a la clienta\.\n/gm, '');
+}
+
+function buildChatSystemBlocks(context = {}) {
+  const center = context.almitaCenter || {};
+  const blocks = [{ type: 'text', text: buildCoreRules() }];
+  if (center.personality) blocks.push({ type: 'text', text: `PERSONALIDAD CONFIGURADA:\n${cleanPromptText(center.personality, 5000)}` });
+  if (center.instructions) blocks.push({ type: 'text', text: `INSTRUCCIONES DEL NEGOCIO:\n${cleanPromptText(center.instructions, 12000)}` });
+  blocks.push({ type: 'text', text: `CATÁLOGO COMERCIAL OPERATIVO:\n${buildServiceCatalog(context.services)}`,
+    cache_control: { type: 'ephemeral', ttl: '1h' } });
+  if (center.dailyBriefing) blocks.push({ type: 'text', text: `BRIEFING VIGENTE:\n${cleanPromptText(center.dailyBriefing, 5000)}` });
+  blocks.push({ type: 'text', text: `HORARIO OPERATIVO (tenant.config): ${formatSchedule(context.tenantConfig)}\nHOY: ${new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date())}\nTrato: ${context.tone || 'usted'}\nNombre: ${context.clientName || 'no informado'}\nEstado: ${JSON.stringify(context.bookingState || {})}` });
+  const selected = buildAlmitaCenterContext({ knowledge: center.knowledge, examples: center.examples });
+  if (selected) blocks.push({ type: 'text', text: selected });
+  return blocks;
+}
+
 function buildChatSystemPrompt(context = {}) {
+  return buildChatSystemBlocks(context).map((block) => block.text).join('\n\n');
+}
+
+function buildLegacyPrompt(context = {}) {
   const { tone = 'usted', clientName, services, bookingState, almitaCenter, tenantConfig } = context;
   const toneNote = tone === 'tu'
     ? 'La clienta usa "tú", responde también de "tú".'
@@ -335,7 +362,7 @@ function simulationError(error) {
 async function chat(userMessage, context = {}) {
   let systemPrompt;
   try {
-    systemPrompt = buildChatSystemPrompt(context);
+    systemPrompt = buildChatSystemBlocks(context);
   } catch {
     return { ok: false, error: 'El contexto de Almita supera los límites admitidos; soporte debe revisarlo.' };
   }
@@ -351,31 +378,56 @@ async function chat(userMessage, context = {}) {
 
   const body = {
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 350,
     system: systemPrompt,
     messages,
   };
 
   let lastErr;
+  const requestId = randomUUID();
+  const totals = { model: MODEL, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 0, costUsd: 0 };
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const started = Date.now();
+    const identity = { requestId, attempt, source: context.source === 'simulator' ? 'simulator' : 'whatsapp', model: MODEL };
+    if (!await aiUsage.recordAttempt(context.tenantId, { ...identity, usageKnown: false, errorCode: 'AI_PENDING', costUsd: null })) {
+      return { ok: false, ...totals, error: 'No se pudo registrar el consumo de IA.' };
+    }
     try {
       const res = await _post(body, CHAT_TIMEOUT_MS);
+      const usage = res.data?.usage;
+      const measured = {
+        inputTokens: usage?.input_tokens || 0, outputTokens: usage?.output_tokens || 0,
+        cacheCreationInputTokens: usage?.cache_creation_input_tokens || 0,
+        cacheReadInputTokens: usage?.cache_read_input_tokens || 0,
+      };
+      for (const key of Object.keys(measured)) totals[key] += measured[key];
+      const cost = calcCost(measured.inputTokens, measured.outputTokens, measured.cacheCreationInputTokens, measured.cacheReadInputTokens);
+      totals.costUsd += cost;
+      totals.totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheCreationInputTokens + totals.cacheReadInputTokens;
+      let responseValid = false;
+      try {
+        const output = JSON.parse((res.data?.content?.[0]?.text || '').match(/\{[\s\S]*\}/)?.[0] || 'null');
+        responseValid = Boolean(output && !Array.isArray(output) && typeof output.reply_text === 'string' && output.reply_text.trim());
+      } catch { /* Malformed output still consumes billable tokens. */ }
+      const usageKnown = ['input_tokens', 'output_tokens'].every((key) => Number.isInteger(usage?.[key]) && usage[key] >= 0);
+      const usagePersisted = await aiUsage.recordAttempt(context.tenantId, { ...identity,
+        ...measured, cacheTtl: '1h', usageKnown, success: res.status === 200 && res.data?.stop_reason !== 'max_tokens' && responseValid,
+        errorCode: res.status !== 200 ? `HTTP_${res.status}` : res.data?.stop_reason === 'max_tokens' ? 'AI_TRUNCATED' : !responseValid ? 'AI_FORMAT' : null,
+        costUsd: usageKnown ? cost : null, latencyMs: Date.now() - started });
+      totals.usagePersisted = usagePersisted;
       if (res.status === 429 || res.status >= 500) {
         lastErr = new Error(`Anthropic ${res.status}`);
         continue;
       }
       if (res.status !== 200) {
-        return { ok: false, error: `Anthropic ${res.status}: ${JSON.stringify(res.data?.error?.message || res.data).slice(0, 200)}` };
+        return { ok: false, ...totals, error: `Anthropic ${res.status}` };
       }
 
       if (res.data?.stop_reason === 'max_tokens') {
-        return { ok: false, error: 'La respuesta de IA quedó incompleta por el límite de salida.' };
+        return { ok: false, ...totals, error: 'La respuesta de IA quedó incompleta por el límite de salida.' };
       }
 
       const text = res.data?.content?.[0]?.text || '';
-      const usage = res.data?.usage || {};
-      const inputTokens = usage.input_tokens || 0;
-      const outputTokens = usage.output_tokens || 0;
 
       let parsed;
       let parseOk = false;
@@ -388,13 +440,13 @@ async function chat(userMessage, context = {}) {
       }
 
       if (!parseOk || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { ok: false, error: 'La respuesta de IA no contiene un objeto JSON válido.' };
+        return { ok: false, ...totals, error: 'La respuesta de IA no contiene un objeto JSON válido.' };
       }
 
       let intent = parsed?.intent && CHAT_INTENTS.includes(parsed.intent)
         ? parsed.intent : 'unclear';
       let replyText = parsed?.reply_text ? String(parsed.reply_text).replace(/\0/g, '').trim() : null;
-      if (!replyText) return { ok: false, error: 'La respuesta de IA no contiene reply_text (respuesta vacía).' };
+      if (!replyText) return { ok: false, ...totals, error: 'La respuesta de IA no contiene reply_text (respuesta vacía).' };
       let params = parsed?.params && typeof parsed.params === 'object' ? parsed.params : {};
       let needsData = parsed?.needs_data || 'none';
       let rawText = String(text).slice(0, 400);
@@ -414,17 +466,15 @@ async function chat(userMessage, context = {}) {
         needsData,
         rawText,
         parseOk,
-        model: MODEL,
-        inputTokens,
-        outputTokens,
-        totalTokens: inputTokens + outputTokens,
-        costUsd: calcCost(inputTokens, outputTokens),
+        ...totals,
       };
     } catch (err) {
       lastErr = err;
+      await aiUsage.recordAttempt(context.tenantId, { ...identity,
+        usageKnown: false, costUsd: null, errorCode: /timeout/i.test(err.message) ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE', latencyMs: Date.now() - started });
     }
   }
-  return { ok: false, error: lastErr?.message || 'unknown' };
+  return { ok: false, ...totals, error: lastErr?.message || 'unknown' };
 }
 
 function isAvailable() {
@@ -445,6 +495,7 @@ module.exports = {
   hasUnapprovedUrls,
   _internals: {
     buildChatSystemPrompt,
+    buildChatSystemBlocks,
     buildAlmitaCenterContext,
     hasUnapprovedUrls,
   },

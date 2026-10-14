@@ -640,11 +640,13 @@ async function logBotInteraction(tenantId, conv, { userMessage, intent, reply, a
         tenantId,
         conversationId: conv.id,
         customerWaId: conv.customerWaId,
-        userMessage: userMessage?.slice(0, 500) || null,
+        userMessage: null,
         detectedIntent: intent || null,
-        botReplyText: reply?.slice(0, 500) || null,
+        botReplyText: null,
         model: aiResult?.model || null,
         promptTokens: aiResult?.inputTokens || 0,
+        cacheCreationInputTokens: aiResult?.cacheCreationInputTokens || 0,
+        cacheReadInputTokens: aiResult?.cacheReadInputTokens || 0,
         completionTokens: aiResult?.outputTokens || 0,
         totalTokens: aiResult?.totalTokens || 0,
         costUsd: aiResult?.costUsd || 0,
@@ -652,7 +654,7 @@ async function logBotInteraction(tenantId, conv, { userMessage, intent, reply, a
       },
     });
   } catch (err) {
-    console.warn('[BOT] falla al registrar BotInteractionLog:', err.message);
+    console.warn('[BOT] falla al registrar BotInteractionLog');
   }
 }
 
@@ -1527,6 +1529,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   const t0 = Date.now();
   const aiResult = await aiClient.chat(bodyText, {
+    tenantId: tenant.id,
     tone,
     clientName,
     services,
