@@ -87,6 +87,61 @@ test('simulate devuelve intención, fuentes y consumo sin escribir efectos de ne
   }
 });
 
+test('simulation rules handle advisor, greetings and closed days without claiming real actions', () => {
+  const rule = service._internals.simulationRule;
+  const config = { workDays: [1, 2, 3, 4, 5], businessHours: { start: '09:00', end: '19:00' } };
+  assert.equal(rule('Hola!', 'tu', config).intent, 'greeting');
+  assert.match(rule('prefiero a una persona', 'tu', config).reply, /no se envían avisos/);
+  assert.equal(rule('contactar a un asesor', 'tu', config).intent, 'escalate');
+  assert.match(rule('el sábado', 'tu', config).reply, /lunes a viernes/);
+  assert.equal(rule('el sábado', 'tu', { ...config, workDays: [6] }), null);
+  assert.equal(rule('quiero un masaje relajante', 'tu', config), null);
+  assert.equal(rule('no puedo el sábado', 'tu', config), null);
+});
+
+test('source ranking ignores generic words and matches whole meaningful tokens', () => {
+  const score = service._internals.relevanceScore;
+  const row = { category: 'Ubicación', title: 'Mapa', content: 'Cuando alguien pregunte dónde queda el spa, indicar esta dirección.', priority: 100 };
+  assert.ok(score('de qué trata ese servicio', row) < 1000);
+  assert.ok(score('masaje', { content: 'masajes relajantes' }) >= 1000);
+  assert.ok(score('mas', { content: 'masajes relajantes' }) < 1000);
+});
+
+test('simulator deduplicates the current turn and preserves catalog and public-source context', async (t) => {
+  const history = [{ role: 'user', content: 'quiero un masaje relajante' }, { role: 'assistant', content: '¿Qué desea conocer?' }, { role: 'user', content: 'de qué trata ese servicio' }];
+  prisma.tenant = { findUnique: async () => ({ id: 't1', config: { workDays: [1, 2, 3, 4, 5] } }) };
+  prisma.almitaConfiguration = { findFirst: async () => ({ version: 1 }) };
+  prisma.almitaKnowledge = { findMany: async () => [{ id: 'k1', title: 'Masajes relajantes', content: 'Descripción aprobada', audience: 'PUBLIC', active: true }] };
+  prisma.almitaApprovedExample = { findMany: async () => [] };
+  prisma.service = { findMany: async () => [{ id: 's1', name: 'Masajes relajantes', priceUsd: 30, durationMins: 105 }] };
+  t.mock.method(aiClient, 'isAvailable', () => true);
+  t.mock.method(aiClient, 'chat', async (message, context) => {
+    assert.equal(context.history.length, 2);
+    assert.equal(context.almitaCenter.knowledge[0].id, 'k1');
+    return { ok: true, intent: 'service_info', replyText: 'Descripción.', params: { service_query: 'Masaje relajante' } };
+  });
+  const result = await service.simulate(superadmin, undefined, { message: 'de qué trata ese servicio', history });
+  assert.ok(result.sources.some((row) => row.id === 's1' && row.source === 'Catálogo de servicios'));
+  t.mock.method(aiClient, 'isAvailable', () => false);
+  t.mock.method(aiClient, 'chat', async () => { throw new Error('No AI calls expected'); });
+  for (const message of ['hola', 'el sábado', 'prefiero a una persona']) {
+    const fast = await service.simulate(superadmin, undefined, { message });
+    assert.equal(fast.handler, 'Reglas');
+    assert.equal(fast.usage.totalTokens, 0);
+    assert.equal(fast.usage.costUsd, 0);
+  }
+});
+
+test('provider failures have safe actionable diagnostics without leaking the raw error', async (t) => {
+  t.mock.method(aiClient, 'isAvailable', () => true);
+  t.mock.method(aiClient, 'chat', async () => ({ ok: false, error: 'Anthropic request timeout SECRET' }));
+  const warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  await assert.rejects(service.simulate(superadmin, undefined, { message: 'quiero un masaje relajante' }), (error) => error.status === 504 && /tardó demasiado/.test(error.message) && !/SECRET/.test(error.message));
+  assert.equal(warnings[0][1].code, 'AI_TIMEOUT');
+  assert.doesNotMatch(JSON.stringify(warnings), /SECRET|masaje/);
+});
+
 test('audience defaults to INTERNAL, validates enum, and partial edits preserve classification and metadata', () => {
   const knowledge = { category: 'General', title: 'Ficha', content: 'Texto', source: 'manual', priority: 80 };
   const example = { userMessage: 'hola', expectedIntent: 'greeting', expectedReply: 'Hola.' };

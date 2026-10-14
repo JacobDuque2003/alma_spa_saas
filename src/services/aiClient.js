@@ -9,6 +9,7 @@ const MODEL = 'claude-haiku-4-5-20251001';
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 8_000;
 const MAX_RETRIES = 1;
+const CHAT_TIMEOUT_MS = 20_000;
 
 const INTENT_ENUM = [
   'menu', 'list_services', 'service_info', 'book',
@@ -44,7 +45,7 @@ function calcCost(inputTokens, outputTokens) {
   return inputTokens * COST_PER_INPUT_TOKEN + outputTokens * COST_PER_OUTPUT_TOKEN;
 }
 
-function _post(body) {
+function _post(body, timeoutMs = TIMEOUT_MS) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return Promise.reject(new Error('ANTHROPIC_API_KEY not set'));
 
@@ -61,7 +62,7 @@ function _post(body) {
         'anthropic-version': '2023-06-01',
         'Content-Length': Buffer.byteLength(payload),
       },
-      timeout: TIMEOUT_MS,
+      timeout: timeoutMs,
     }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
@@ -201,6 +202,8 @@ REGLAS INQUEBRANTABLES:
 - NUNCA mostrar datos de otras clientas
 - NUNCA afirmar que una cita está reservada, confirmada, agendada o lista. Solo el sistema puede confirmar reservas.
 - NUNCA sugerir horarios ni fechas de disponibilidad concretas. Solo el sistema de reservas conoce la disponibilidad real.
+- No ofrezcas días fuera de tenant.config, tampoco como pregunta o ejemplo. Solo ofrece fines de semana si están configurados como días de atención. Si solicitan un día cerrado, explica el horario operativo sin inventar excepciones.
+- Si piden hablar con una persona, usa escalate antes de continuar cualquier reserva o pregunta de datos. No afirmes que ya avisaste, transferiste o notificaste a un asesor.
 - Interpreta mensajes con faltas ortográficas, tildes omitidas, letras repetidas, abreviaturas y gramática informal. Usa el contexto antes de pedir que repitan.
 - En saludos normales, NO menciones el día actual, "domingo", "cerrado" ni "reabrimos". Solo saluda y pregunta cómo puedes ayudar.
 - Solo menciona horarios o días cerrados si la clienta pregunta explícitamente por horarios/atención.
@@ -319,6 +322,16 @@ function containsUnapprovedUrl(value, center) {
   return false;
 }
 
+function simulationError(error) {
+  const text = String(error || '');
+  if (/401|api key is invalid|authentication/i.test(text)) return { code: 'AI_AUTH', status: 503, message: 'La clave del proveedor de IA no es válida. Soporte debe revisar la configuración de IA.' };
+  if (/timeout|timed out|ETIMEDOUT/i.test(text)) return { code: 'AI_TIMEOUT', status: 504, message: 'La IA tardó demasiado en responder. Puede reintentar el mensaje; no se creó ninguna cita.' };
+  if (/429/i.test(text)) return { code: 'AI_RATE_LIMIT', status: 503, message: 'El proveedor de IA alcanzó su límite de solicitudes. Espere unos segundos y reintente.' };
+  if (/incompleta|límite de salida/i.test(text)) return { code: 'AI_TRUNCATED', status: 502, message: 'La IA devolvió una respuesta incompleta. Reintente el mensaje; no se creó ninguna cita.' };
+  if (/JSON|respuesta vacía/i.test(text)) return { code: 'AI_FORMAT', status: 502, message: 'La IA devolvió una respuesta con formato inválido. Reintente el mensaje; no se creó ninguna cita.' };
+  return { code: 'AI_UNAVAILABLE', status: 502, message: 'No se pudo completar la simulación con el proveedor de IA. Reintente el mensaje; no se creó ninguna cita.' };
+}
+
 async function chat(userMessage, context = {}) {
   let systemPrompt;
   try {
@@ -346,7 +359,7 @@ async function chat(userMessage, context = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await _post(body);
+      const res = await _post(body, CHAT_TIMEOUT_MS);
       if (res.status === 429 || res.status >= 500) {
         lastErr = new Error(`Anthropic ${res.status}`);
         continue;
@@ -381,6 +394,7 @@ async function chat(userMessage, context = {}) {
       let intent = parsed?.intent && CHAT_INTENTS.includes(parsed.intent)
         ? parsed.intent : 'unclear';
       let replyText = parsed?.reply_text ? String(parsed.reply_text).replace(/\0/g, '').trim() : null;
+      if (!replyText) return { ok: false, error: 'La respuesta de IA no contiene reply_text (respuesta vacía).' };
       let params = parsed?.params && typeof parsed.params === 'object' ? parsed.params : {};
       let needsData = parsed?.needs_data || 'none';
       let rawText = String(text).slice(0, 400);
@@ -427,6 +441,7 @@ module.exports = {
   COST_PER_INPUT_TOKEN,
   COST_PER_OUTPUT_TOKEN,
   calcCost,
+  simulationError,
   hasUnapprovedUrls,
   _internals: {
     buildChatSystemPrompt,

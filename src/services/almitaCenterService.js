@@ -2,6 +2,9 @@ const prisma = require('../utils/prisma');
 const aiClient = require('./aiClient');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { customerServiceWhere, isCustomerService } = require('../utils/customerServicePolicy');
+const { isReceptionRequest } = require('../utils/advisorRequest');
+const { formatSchedule } = require('../utils/businessHours');
+const menus = require('./whatsappBot/menus');
 
 const DEFAULT_TENANT_SLUG = 'alma-spa';
 const CONFIG_FIELDS = ['personality', 'instructions', 'dailyBriefing', 'active'];
@@ -215,14 +218,16 @@ function normalizeSearch(value) {
 }
 
 function relevanceScore(message, row) {
-  const terms = new Set(normalizeSearch(message).split(' ').filter((term) => term.length >= 3));
-  const searchable = normalizeSearch(`${row.category} ${row.title} ${row.content}`);
+  const ignored = new Set('que como cual cuando donde cuanto cuantos quiero quisiera necesito deseo prefiero favor gracias hola para por del los las una unos unas ese esa este esta eso esto servicio servicios trata informacion tienes tienen disponible disponibles fechas dia dias'.split(' '));
+  const singular = (term) => term.length > 4 ? term.replace(/s$/, '') : term;
+  const terms = new Set(normalizeSearch(message).split(' ').filter((term) => term.length >= 3 && !ignored.has(term)).map(singular));
+  const searchable = new Set(normalizeSearch(`${row.category} ${row.title} ${row.content}`).split(' ').map(singular));
   let overlap = 0;
-  for (const term of terms) if (searchable.includes(term)) overlap += 1;
+  for (const term of terms) if (searchable.has(term)) overlap += 1;
   return overlap * 1000 + Number(row.priority || 0);
 }
 
-async function loadSimulationContext(tenantId, message) {
+async function loadSimulationContext(tenantId, message, history = []) {
   const [configuration, knowledgeRows, exampleRows, services, tenant] = await Promise.all([
     prisma.almitaConfiguration.findFirst({ where: { tenantId, active: true }, orderBy: { version: 'desc' } }),
     prisma.almitaKnowledge.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }], take: 250 }),
@@ -234,8 +239,11 @@ async function loadSimulationContext(tenantId, message) {
     }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } }),
   ]);
+  const lookupText = /\b(ese|este|eso|fechas|disponible|disponibles)\b/.test(normalizeSearch(message))
+    ? `${history.filter((entry) => entry.role === 'user').slice(-3).map((entry) => entry.content).join(' ')} ${message}`
+    : message;
   const knowledge = knowledgeRows.filter((row) => row.audience === 'PUBLIC' && row.active === true)
-    .map((row) => ({ row, score: relevanceScore(message, row) }))
+    .map((row) => ({ row, score: relevanceScore(lookupText, row) }))
     .filter(({ score }) => score >= 1000)
     .sort((a, b) => b.score - a.score).slice(0, 6).map(({ row }) => row);
   const examples = exampleRows.filter((row) => row.audience === 'PUBLIC' && row.active === true)
@@ -243,6 +251,25 @@ async function loadSimulationContext(tenantId, message) {
     .filter(({ score }) => score >= 1000)
     .sort((a, b) => b.score - a.score).slice(0, 4).map(({ row }) => row);
   return { configuration, knowledge, examples, services: services.filter(isCustomerService), tenantConfig: tenant?.config || {} };
+}
+
+function simulationRule(message, tone, config) {
+  const text = normalizeSearch(message);
+  if (isReceptionRequest(message)) return {
+    intent: 'escalate', reply: 'Un asesor puede ayudarle. En esta simulación no se envían avisos ni se transfiere la conversación.',
+  };
+  if (/^(hola+|ola+|buenas|buenos dias|buenas tardes|buenas noches)$/.test(text)) return {
+    intent: 'greeting', reply: menus.mainMenuText({ tone }),
+  };
+  const days = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+  const requested = text.replace(/^(el |para el |este |el proximo )/, '');
+  const day = days.indexOf(requested);
+  const workDays = config?.workDays;
+  if (day >= 0 && Array.isArray(workDays) && workDays.every((value) => Number.isInteger(value) && value >= 0 && value <= 7)
+    && !workDays.map((value) => value === 0 ? 7 : value).includes(day + 1)) return {
+    intent: 'business_hours', reply: `Ese día no hay atención. ${formatSchedule(config)} ¿Qué día de atención prefiere?`,
+  };
+  return null;
 }
 
 async function simulate(actor, requestedTenantId, body) {
@@ -260,9 +287,16 @@ async function simulate(actor, requestedTenantId, body) {
     if (!['user', 'assistant'].includes(entry.role)) throw new BadRequestError(`history[${index}].role no es válido`);
     return { role: entry.role, content: cleanString(entry.content, `history[${index}].content`, { max: 2000 }) };
   });
+  // Older panels included the current message in history as well as in message.
+  if (cleanHistory.at(-1)?.role === 'user' && cleanHistory.at(-1).content === message) cleanHistory.pop();
+  const context = await loadSimulationContext(tenant.id, message, cleanHistory);
+  const rule = simulationRule(message, tone, context.tenantConfig);
+  if (rule) return {
+    tenant, ...rule, params: {}, handler: 'Reglas', sources: [],
+    configurationVersion: context.configuration?.version || null,
+    usage: { model: null, promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0, latencyMs: 0 },
+  };
   if (!aiClient.isAvailable()) throw new AppError('El proveedor de IA no está configurado', 503);
-
-  const context = await loadSimulationContext(tenant.id, message);
   const startedAt = Date.now();
   const result = await aiClient.chat(message, {
     tone,
@@ -278,13 +312,9 @@ async function simulate(actor, requestedTenantId, body) {
     } : { knowledge: context.knowledge, examples: context.examples },
   });
   if (!result.ok) {
-    const invalidKey = /(?:401|api key is invalid|authentication)/i.test(String(result.error || ''));
-    throw new AppError(
-      invalidKey
-        ? 'La clave del proveedor de IA no es válida. Soporte debe actualizar ANTHROPIC_API_KEY en Railway y volver a desplegar.'
-        : 'No se pudo completar la simulación con el proveedor de IA.',
-      invalidKey ? 503 : 502
-    );
+    const failure = aiClient.simulationError(result.error);
+    console.warn('[ALMITA-SIMULATION]', { tenantId: tenant.id, code: failure.code });
+    throw new AppError(failure.message, failure.status);
   }
 
   return {
@@ -292,7 +322,15 @@ async function simulate(actor, requestedTenantId, body) {
     intent: result.intent,
     reply: result.replyText,
     params: result.params,
-    sources: context.knowledge.map(({ id, category, title, source }) => ({ id, category, title, source })),
+    handler: 'IA',
+    sources: [
+      ...context.knowledge.map(({ id, category, title, source }) => ({ id, category, title, source })),
+      ...context.services.filter((item) => {
+        const name = normalizeSearch(item.name).split(' ').map((word) => word.replace(/s$/, '')).join(' ');
+        const query = normalizeSearch(result.params?.service_query).split(' ').map((word) => word.replace(/s$/, '')).join(' ');
+        return name && query && name === query;
+      }).map(({ id, name, category }) => ({ id, title: name, category, source: 'Catálogo de servicios' })),
+    ],
     configurationVersion: context.configuration?.version || null,
     usage: {
       model: result.model,
@@ -355,5 +393,5 @@ module.exports = {
   simulate, getMetrics,
   loadRuntimeContext: loadSimulationContext,
   normalizeSearch,
-  _internals: { validateConfiguration, validateKnowledge, validateExample, relevanceScore },
+  _internals: { validateConfiguration, validateKnowledge, validateExample, relevanceScore, simulationRule },
 };

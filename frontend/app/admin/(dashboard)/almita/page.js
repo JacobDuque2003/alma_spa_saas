@@ -114,8 +114,8 @@ function ErrorBanner({ message, onRetry }) {
   if (!message) return null;
   return (
     <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, border: "1px solid rgba(165,72,63,.28)", borderRadius: 8, color: COLORS.danger, background: "#FFF7F5" }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700 }}><AlertCircle size={17} />{message}</span>
-      {onRetry && <ActionButton variant="secondary" onClick={onRetry}><RefreshCw size={15} />Reintentar</ActionButton>}
+      <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, fontSize: 13, fontWeight: 700 }}><AlertCircle size={17} style={{ flexShrink: 0 }} />{message}</span>
+      {onRetry && <ActionButton variant="secondary" onClick={onRetry} style={{ flexShrink: 0 }}><RefreshCw size={15} />Reintentar</ActionButton>}
     </div>
   );
 }
@@ -302,12 +302,17 @@ function SimulatorTab() {
   const [error, setError] = useState("");
   async function send() {
     const text = input.trim(); if (!text || loading) return;
-    const next = [...messages, { role: "user", text }]; setMessages(next); setInput(""); setLoading(true); setError("");
+    const previous = messages.at(-1)?.failed && messages.at(-1).text === text ? messages.slice(0, -1) : messages;
+    const next = [...previous, { role: "user", text }]; setMessages(next); setInput(""); setLoading(true); setError("");
     try {
-      const data = await authFetch("/almita-center/simulate", { method: "POST", body: { message: text, history: next.slice(-8).map(({ role, text: content }) => ({ role, content })) } });
+      const data = await authFetch("/almita-center/simulate", { method: "POST", body: { message: text, history: messages.filter((message) => !message.failed).slice(-16).map(({ role, text: content }) => ({ role, content })) } });
       const reply = data.reply || data.response || data.message || "No se generó una respuesta.";
       setMessages([...next, { role: "assistant", text: reply }]); setDiagnostic(data.diagnostic || data.debug || data);
-    } catch (err) { setError(err.message || "No se pudo ejecutar la simulación"); }
+    } catch (err) {
+      setMessages([...next.slice(0, -1), { role: "user", text, failed: true }]);
+      setInput(text); setDiagnostic(null);
+      setError(err.message || "No se pudo ejecutar la simulación");
+    }
     finally { setLoading(false); }
   }
   return <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) minmax(260px, .7fr)", gap: 16 }} className="almita-simulator-grid">
@@ -317,21 +322,21 @@ function SimulatorTab() {
         {messages.map((message, index) => <div key={`${message.role}-${index}`} style={{ alignSelf: message.role === "user" ? "flex-end" : "flex-start", maxWidth: "82%", padding: "10px 12px", borderRadius: 8, background: message.role === "user" ? COLORS.accent : "#FFFFFF", color: message.role === "user" ? "#FFFFFF" : COLORS.text, boxShadow: "0 3px 10px rgba(107,85,64,.07)", whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.5 }}>{message.text}</div>)}
         {loading && <div style={{ alignSelf: "flex-start", display: "flex", gap: 7, padding: 10, color: COLORS.muted }}><Loader2 size={16} className="animate-spin" />Almita está preparando la respuesta...</div>}
       </div>
-      <ErrorBanner message={error} />
+      <ErrorBanner message={error} onRetry={error && !loading ? send : undefined} />
       <div style={{ display: "flex", gap: 8, padding: 12, borderTop: `1px solid ${COLORS.line}` }}>
         <textarea aria-label="Mensaje de prueba" rows={2} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Ej. ¿Qué fechas tienen disponibles?" style={{ ...fieldStyle, minHeight: 48, resize: "none" }} />
         <ActionButton onClick={send} disabled={!input.trim() || loading} style={{ alignSelf: "stretch", minWidth: 48, padding: 0 }} aria-label="Enviar prueba"><Send size={17} /></ActionButton>
       </div>
     </section>
-    <DiagnosticPanel data={diagnostic} onClear={() => { setMessages([{ role: "assistant", text: "Simulación reiniciada. Escribe otro caso para probar." }]); setDiagnostic(null); setError(""); }} />
+    <DiagnosticPanel data={diagnostic} disabled={loading} onClear={() => { setMessages([{ role: "assistant", text: "Simulación reiniciada. Escribe otro caso para probar." }]); setDiagnostic(null); setError(""); setInput(""); }} />
   </div>;
 }
 
-function DiagnosticPanel({ data, onClear }) {
+function DiagnosticPanel({ data, onClear, disabled }) {
   const sources = asList(data?.sources || data?.knowledgeSources);
   const usage = data?.usage || {};
   return <aside style={{ alignSelf: "start", border: `1px solid ${COLORS.line}`, borderRadius: 8, background: COLORS.paper, overflow: "hidden" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${COLORS.line}` }}><strong style={{ color: COLORS.text }}>Diagnóstico</strong><ActionButton variant="ghost" onClick={onClear} style={{ minHeight: 30, padding: "0 6px" }} title="Limpiar simulación"><RefreshCw size={15} /></ActionButton></div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${COLORS.line}` }}><strong style={{ color: COLORS.text }}>Diagnóstico</strong><ActionButton variant="ghost" disabled={disabled} onClick={onClear} style={{ minHeight: 30, padding: "0 6px" }} title="Limpiar simulación"><RefreshCw size={15} /></ActionButton></div>
     {!data ? <div style={{ padding: 24, color: COLORS.muted, fontSize: 13, lineHeight: 1.6 }}>Aquí aparecerán la intención detectada, fuentes consultadas y consumo estimado.</div> : <div style={{ display: "grid", gap: 0 }}>
       <Diagnostic label="Intención" value={data.intent || data.detectedIntent || "No clasificada"} />
       <Diagnostic label="Ruta" value={data.handler || data.route || data.mode || "IA"} />

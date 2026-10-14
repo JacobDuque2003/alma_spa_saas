@@ -48,6 +48,15 @@ test('MODEL is claude-haiku-4-5-20251001', () => {
   assert.equal(aiClient.MODEL, 'claude-haiku-4-5-20251001');
 });
 
+test('simulator error diagnostics categorize failures without exposing provider details', () => {
+  const cases = [['Anthropic 401: SECRET', 'AI_AUTH'], ['Anthropic 429: SECRET', 'AI_RATE_LIMIT'], ['Anthropic request timeout SECRET', 'AI_TIMEOUT'], ['JSON inválido SECRET', 'AI_FORMAT'], ['respuesta incompleta SECRET', 'AI_TRUNCATED'], ['Anthropic 503: SECRET', 'AI_UNAVAILABLE']];
+  for (const [error, code] of cases) {
+    const result = aiClient.simulationError(error);
+    assert.equal(result.code, code);
+    assert.doesNotMatch(result.message, /SECRET/);
+  }
+});
+
 test('chat prompt: saludo normal no debe mencionar domingo/cerrado/reabrimos', () => {
   const prompt = aiClient._internals.buildChatSystemPrompt({ tone: 'usted', services: [] });
   assert.match(prompt, /En saludos normales, NO menciones/);
@@ -205,7 +214,8 @@ test('chat replaces AI output with unapproved URLs without making network calls'
     { intent: 'location', reply_text: 'Mapa: https://approved.example/map', params: {}, needs_data: 'none' },
     { intent: 'book_service', reply_text: 'Continuemos.', params: { link: 'https://unapproved.example/reserve' }, needs_data: 'none' },
   ];
-  t.mock.method(https, 'request', (_options, callback) => {
+  t.mock.method(https, 'request', (options, callback) => {
+    assert.equal(options.timeout, 20_000);
     const request = new EventEmitter();
     request.end = (payload) => {
       payloads.push(JSON.parse(payload));

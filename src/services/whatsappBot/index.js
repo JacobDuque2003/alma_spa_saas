@@ -30,6 +30,7 @@ const { normalizePhone, isValidE164, waIdToPhone } = require('../../utils/phone'
 const { SlotUnavailableError } = require('../../utils/errors');
 const { normalize: normalizeBusinessHours } = require('../../utils/businessHours');
 const { getTenantTimezone } = require('../../utils/timezone');
+const { isReceptionRequest } = require('../../utils/advisorRequest');
 
 const DAILY_COST_CAP_USD = 0.50;
 const MAX_UNCLEAR_BEFORE_ESCALATE = 3;
@@ -184,18 +185,6 @@ function detectTone(text) {
   if (/\b(t[uú]|contigo|tuy[oa]|tienes|puedes|quer[eé]s|querías)\b/.test(t)) return 'tu';
   if (/\busted\b/.test(t)) return 'usted';
   return null;
-}
-
-function isReceptionRequest(text) {
-  const t = normalizeSearchText(text);
-  if (!t) return false;
-  // Nombres pedidos expresamente por las clientas. Se mantienen variantes
-  // frecuentes de escritura para no depender de que la IA esté disponible.
-  if (/\b(gianella|gianela|giannella|gianella)\b/.test(t)) return true;
-  if (/^(4|humano|humana|asesor|asesora|agente|persona|alguien|recepcion|recepcionista)$/.test(t)) return true;
-  const person = '(persona|humano|humana|asesor(?:a)?|agente|recepcion(?:ista)?|alguien|equipo)';
-  return new RegExp(`\\b(hablar|comunicar|conectar|pasar|atender|atencion|quiero|quisiera|deseo|necesito|prefiero)\\b[^.!?]{0,80}\\b${person}\\b`).test(t)
-    || new RegExp(`\\b${person}\\b[^.!?]{0,80}\\b(por favor|ahora|real|de verdad)\\b`).test(t);
 }
 
 function isReceptionOpenNow(tenantConfig = {}, now = new Date()) {
