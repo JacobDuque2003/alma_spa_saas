@@ -23,6 +23,7 @@ const almitaCenter = require('../almitaCenterService');
 const intentCache = require('./intentCache');
 const { normalizeText, synonymIntent } = require('./textNormalize');
 const { firstName, safeHistory, loadCustomerContext } = require('./customerContext');
+const { guardReply } = require('./replySafety');
 const conversationMemory = require('../conversationMemoryService');
 const state = require('./state');
 const rateLimit = require('./rateLimit');
@@ -1606,6 +1607,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 // ─── Intent router ─────────────────────────────────────────────
 
 async function routeIntent({ tenant, connection, conv, waId, tone, intent, aiReply, params, userMessage }) {
+  if (aiReply) aiReply = guardReply(aiReply);
   switch (intent) {
     case 'menu':
       logBot('info', 'cayó a menú', { intent, hasReply: Boolean(aiReply), desdeHandler: 'routeIntent:menu' });

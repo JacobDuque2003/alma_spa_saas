@@ -5,6 +5,7 @@ const https = require('node:https');
 const { randomUUID } = require('node:crypto');
 const aiUsage = require('./aiUsageService');
 const { summarizeState } = require('./whatsappBot/conversationSummary');
+const { guardReply } = require('./whatsappBot/replySafety');
 const { isCustomerService, formatCustomerPrice } = require('../utils/customerServicePolicy');
 const { formatSchedule } = require('../utils/businessHours');
 
@@ -388,6 +389,11 @@ async function chat(userMessage, context = {}) {
     model: MODEL,
     max_tokens: 350,
     system: systemPrompt,
+    output_config: { format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false,
+      required: ['intent', 'params', 'reply_text', 'needs_data'], properties: {
+        intent: { type: 'string', enum: CHAT_INTENTS }, reply_text: { type: 'string' }, needs_data: { type: 'string' },
+        params: { type: 'object', additionalProperties: false, properties: { service_query: { type: 'string' }, date_text: { type: 'string' }, time: { type: 'string' } } },
+      } } } },
     messages,
   };
 
@@ -455,6 +461,7 @@ async function chat(userMessage, context = {}) {
         ? parsed.intent : 'unclear';
       let replyText = parsed?.reply_text ? String(parsed.reply_text).replace(/\0/g, '').trim() : null;
       if (!replyText) return { ok: false, ...totals, error: 'La respuesta de IA no contiene reply_text (respuesta vacía).' };
+      replyText = guardReply(replyText);
       let params = parsed?.params && typeof parsed.params === 'object' ? parsed.params : {};
       let needsData = parsed?.needs_data || 'none';
       let rawText = String(text).slice(0, 400);

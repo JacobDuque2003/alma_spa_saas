@@ -3,6 +3,8 @@ const aiClient = require('./aiClient');
 const publicDataCache = require('./whatsappBot/publicDataCache');
 const intentCache = require('./whatsappBot/intentCache');
 const { normalizeText } = require('./whatsappBot/textNormalize');
+const { readOnlyReply } = require('./whatsappBot/simulationReadOnly');
+const { guardReply } = require('./whatsappBot/replySafety');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { customerServiceWhere, isCustomerService } = require('../utils/customerServicePolicy');
 const { isReceptionRequest } = require('../utils/advisorRequest');
@@ -309,9 +311,13 @@ async function simulate(actor, requestedTenantId, body) {
   // Older panels included the current message in history as well as in message.
   if (cleanHistory.at(-1)?.role === 'user' && cleanHistory.at(-1).content === message) cleanHistory.pop();
   const context = await loadSimulationContext(tenant.id, message, cleanHistory);
-  const rule = simulationRule(message, tone, context.tenantConfig);
+  let rule = simulationRule(message, tone, context.tenantConfig);
+  if (!rule) {
+    try { rule = await readOnlyReply({ tenantId: tenant.id, ...context, message, history: cleanHistory }); }
+    catch { throw new AppError('No se pudo consultar la disponibilidad. Reintente o contacte a un asesor; no se creó ninguna cita.', 503); }
+  }
   if (rule) return {
-    tenant, ...rule, params: {}, handler: 'Reglas', sources: [],
+    tenant, ...rule, params: rule.params || {}, handler: 'Reglas', sources: [],
     configurationVersion: context.configuration?.version || null,
     usage: { model: null, promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0, latencyMs: 0 },
   };
@@ -342,7 +348,7 @@ async function simulate(actor, requestedTenantId, body) {
   return {
     tenant,
     intent: result.intent,
-    reply: result.replyText,
+    reply: guardReply(result.replyText),
     params: result.params,
     handler: 'IA',
     sources: [
