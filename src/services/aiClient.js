@@ -6,7 +6,6 @@ const { randomUUID } = require('node:crypto');
 const aiUsage = require('./aiUsageService');
 const { summarizeState } = require('./whatsappBot/conversationSummary');
 const { guardReply } = require('./whatsappBot/replySafety');
-const { canUseAi } = require('./whatsappBot/aiBudget');
 const { isCustomerService, formatCustomerPrice } = require('../utils/customerServicePolicy');
 const { formatSchedule } = require('../utils/businessHours');
 
@@ -171,7 +170,7 @@ function buildChatSystemBlocks(context = {}) {
   if (center.personality) blocks.push({ type: 'text', text: `PERSONALIDAD CONFIGURADA:\n${cleanPromptText(center.personality, 5000)}` });
   if (center.instructions) blocks.push({ type: 'text', text: `INSTRUCCIONES DEL NEGOCIO:\n${cleanPromptText(center.instructions, 12000)}` });
   blocks.push({ type: 'text', text: `CATÁLOGO COMERCIAL OPERATIVO:\n${buildServiceCatalog(context.services)}`,
-    cache_control: { type: 'ephemeral', ttl: '1h' } });
+    cache_control: { type: 'ephemeral', ttl: context.cacheTtl === '5m' ? '5m' : '1h' } });
   if (center.dailyBriefing) blocks.push({ type: 'text', text: `BRIEFING VIGENTE:\n${cleanPromptText(center.dailyBriefing, 5000)}` });
   blocks.push({ type: 'text', text: `HORARIO OPERATIVO (tenant.config): ${formatSchedule(context.tenantConfig)}\nHOY: ${new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date())}\nTrato: ${context.tone || 'usted'}\nResumen: ${summarizeState({ booking: context.bookingState, clientName: context.clientName, tone: context.tone, ...context.summaryState })}` });
   const services = (context.services || []).filter(isCustomerService);
@@ -370,6 +369,7 @@ function simulationError(error) {
 }
 
 async function chat(userMessage, context = {}) {
+  context = { ...context, cacheTtl: await aiUsage.cacheTtl(context.tenantId) };
   let systemPrompt;
   try {
     systemPrompt = buildChatSystemBlocks(context);
@@ -404,12 +404,9 @@ async function chat(userMessage, context = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const started = Date.now();
     const identity = { requestId, attempt, source: context.source === 'simulator' ? 'simulator' : 'whatsapp', model: MODEL };
-    if (!await canUseAi(context.tenantId, context.tenantConfig)) {
+    if (!await aiUsage.reserveAttempt(context.tenantId, identity, body, context.tenantConfig)) {
       await aiUsage.recordAttempt(context.tenantId, { ...identity, usageKnown: true, success: false, costUsd: 0, errorCode: 'AI_BUDGET_CAP' });
       return { ok: false, ...totals, error: 'El presupuesto diario de IA requiere revisión; puede consultar mediante las opciones o un asesor.' };
-    }
-    if (!await aiUsage.recordAttempt(context.tenantId, { ...identity, usageKnown: false, errorCode: 'AI_PENDING', costUsd: null })) {
-      return { ok: false, ...totals, error: 'No se pudo registrar el consumo de IA.' };
     }
     try {
       const res = await _post(body, CHAT_TIMEOUT_MS);
@@ -420,7 +417,7 @@ async function chat(userMessage, context = {}) {
         cacheReadInputTokens: usage?.cache_read_input_tokens || 0,
       };
       for (const key of Object.keys(measured)) totals[key] += measured[key];
-      const cost = calcCost(measured.inputTokens, measured.outputTokens, measured.cacheCreationInputTokens, measured.cacheReadInputTokens);
+      const cost = calcCost(measured.inputTokens, measured.outputTokens, measured.cacheCreationInputTokens, measured.cacheReadInputTokens, context.cacheTtl);
       totals.costUsd += cost;
       totals.totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheCreationInputTokens + totals.cacheReadInputTokens;
       let responseValid = false;
@@ -430,7 +427,7 @@ async function chat(userMessage, context = {}) {
       } catch { /* Malformed output still consumes billable tokens. */ }
       const usageKnown = ['input_tokens', 'output_tokens'].every((key) => Number.isInteger(usage?.[key]) && usage[key] >= 0);
       const usagePersisted = await aiUsage.recordAttempt(context.tenantId, { ...identity,
-        ...measured, cacheTtl: '1h', usageKnown, success: res.status === 200 && res.data?.stop_reason !== 'max_tokens' && responseValid,
+        ...measured, cacheTtl: context.cacheTtl, usageKnown, success: res.status === 200 && res.data?.stop_reason !== 'max_tokens' && responseValid,
         errorCode: res.status !== 200 ? `HTTP_${res.status}` : res.data?.stop_reason === 'max_tokens' ? 'AI_TRUNCATED' : !responseValid ? 'AI_FORMAT' : null,
         costUsd: usageKnown ? cost : null, latencyMs: Date.now() - started });
       totals.usagePersisted = usagePersisted;

@@ -397,11 +397,11 @@ test('promociones deja visible el menú para elegir otra opción', async () => {
     incoming: { type: 'interactive', interactive: { list_reply: { id: menus.MAIN_MENU_IDS.PROMOTIONS } } },
   });
 
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 1);
   assert.match(sent[0].body, /No tengo promociones vigentes aprobadas/i);
   assert.doesNotMatch(sent[0].body, /https?:\/\//i);
-  assert.equal(sent[1].kind, 'text');
-  assert.match(sent[1].body, /Qué necesitas/i);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /Qué necesitas/i);
 });
 
 test('consulta de citas disponibles pide servicio antes de mostrar horarios', async () => {
@@ -538,7 +538,8 @@ test('servicio con imagen → sube y envía image+caption; luego invita a reserv
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'svc_s1' } } },
   });
   const kinds = sent.map((s) => s.kind);
-  assert.deepEqual(kinds, ['uploadMedia', 'image', 'text']);
+  assert.deepEqual(kinds, ['uploadMedia', 'image']);
+  assert.match(sent[1].caption, /reservar/i);
   assert.match(sent[1].caption, /🧘.*Aero yoga/);
   assert.match(sent[1].caption, /Yoga en telas\./);
 });
@@ -581,8 +582,8 @@ test('"Mi cita" sin cliente → invita directamente a escoger un servicio', asyn
     incoming: { type: 'interactive', interactive: { list_reply: { id: 'menu_my_appointment' } } },
   });
   assert.match(sent[0].body, /No encontré reservas a tu nombre/);
-  assert.equal(sent[1].kind, 'text');
-  assert.match(sent[1].body, /Elige tu servicio/i);
+  assert.equal(sent[0].kind, 'text');
+  assert.match(sent[0].body, /Elige tu servicio/i);
 });
 
 test('"Mi cita" con cita próxima → devuelve detalles', async () => {
@@ -734,10 +735,10 @@ test('texto libre sin IA y con state previo → "no logré entender" + menú', a
   const afterFirst = sent.length;
   await bot.handleInboundMessage({ tenant: TENANT, connection: CONN, conv: CONV, incoming: { type: 'text', text: { body: 'quiero algo raro' } } });
   const newMessages = sent.slice(afterFirst);
-  assert.equal(newMessages.length, 2);
+  assert.equal(newMessages.length, 1);
   assert.match(newMessages[0].body, /No entendí/);
-  assert.equal(newMessages[1].kind, 'text');
-  assert.match(newMessages[1].body, /📅 Reservar cita/);
+  assert.equal(newMessages[0].kind, 'text');
+  assert.match(newMessages[0].body, /📅 Reservar cita/);
 });
 
 test('escalate incluye "asesor" y emojis', async () => {
@@ -1035,7 +1036,8 @@ test('después del día pide mañana o tarde y muestra todos los horarios de esa
   try {
     await bot._internals.handleSelection({ tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted', selectionId: 'bkd_2026-09-01' });
     assert.equal(sent.at(-1).kind, 'text');
-    assert.match(sent.at(-1).body, /🌅 Mañana/);
+    assert.match(sent.at(-1).body, /9:00 de la mañana/);
+    assert.match(sent.at(-1).body, /3:00 de la tarde/);
     await bot._internals.handleSelection({ tenant: TENANT, connection: CONN, conv: CONV, waId: CONV.customerWaId, tone: 'usted', selectionId: menus.BOOK_PERIOD_MORNING });
     assert.equal(sent.at(-1).kind, 'text');
     assert.match(sent.at(-1).body, /🕐 9:00 de la mañana/);

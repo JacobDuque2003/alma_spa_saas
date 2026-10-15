@@ -184,7 +184,8 @@ test('main generates a separate reply for identical messages from different cont
   assert.deepEqual(aiCalls[1].context.history.map((item) => item.content), ['history-second', second.incoming.text.body]);
 });
 
-test('an explicit request to talk to a therapist still escalates during staff selection', async () => {
+test('an explicit request to talk to a therapist still escalates during staff selection', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-15T15:00:00Z') });
   const input = fixture('tenant-a', 'conv');
   input.conv.botState = {
     flow: 'booking',

@@ -9,11 +9,17 @@
     "masajito": "masaje", "relax": "relajante"
   },
   "intents": {
+    "book_start": ["quiero un turno", "quiero separar", "quiero apartar", "quiero un espacio"],
     "reschedule": ["mover mi turno", "pasar mi cita", "correr mi cita", "otro dia para mi cita"],
     "cancel": ["ya no voy", "no puedo ir", "borrar la cita", "anular mi turno"],
     "location": ["como llego", "donde quedan", "direccion del local"],
     "business_hours": ["que hora abren", "hasta que hora", "que hora atienden"],
     "my_appointment": ["cuando es mi turno", "cuando es mi cita"],
     "escalate": ["hablar con alguien", "hablar con una persona", "hablar con un humano"]
+  },
+  "serviceAliases": {
+    "limpieza de cara": "limpieza facial", "piel de la cara": "facial",
+    "puntos negros": "limpieza facial", "quitar vello": "depilacion",
+    "sobada": "masaje", "cutis": "facial", "rostro": "facial", "pelitos": "depilacion"
   }
 }

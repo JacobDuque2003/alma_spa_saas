@@ -14,4 +14,11 @@ function synonymIntent(value) {
   }
   return null;
 }
-module.exports = { normalizeText, synonymIntent };
+function expandServiceQuery(value) {
+  let text = normalizeText(value);
+  for (const [phrase, replacement] of Object.entries(dictionary.serviceAliases).sort((a, b) => b[0].length - a[0].length)) {
+    text = text.replace(new RegExp(`\\b${phrase}\\b`, 'g'), replacement);
+  }
+  return text;
+}
+module.exports = { normalizeText, synonymIntent, expandServiceQuery };

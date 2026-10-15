@@ -5,6 +5,7 @@ const intentCache = require('./whatsappBot/intentCache');
 const { normalizeText } = require('./whatsappBot/textNormalize');
 const { readOnlyReply } = require('./whatsappBot/simulationReadOnly');
 const { guardReply } = require('./whatsappBot/replySafety');
+const aiUsage = require('./aiUsageService');
 const { AppError, BadRequestError } = require('../utils/errors');
 const { customerServiceWhere, isCustomerService } = require('../utils/customerServicePolicy');
 const { isReceptionRequest } = require('../utils/advisorRequest');
@@ -240,12 +241,10 @@ function relevanceScore(message, row) {
 }
 
 async function loadSimulationContext(tenantId, message, history = []) {
-  const [editorial, services, tenant] = await Promise.all([
-    publicDataCache.load(tenantId, () => Promise.all([
-    prisma.almitaConfiguration.findFirst({ where: { tenantId, active: true }, orderBy: { version: 'desc' } }),
+  const [configuration, knowledgeRows, exampleRows, services, tenant] = await Promise.all([
+    publicDataCache.load(tenantId, () => prisma.almitaConfiguration.findFirst({ where: { tenantId, active: true }, orderBy: { version: 'desc' } })),
     prisma.almitaKnowledge.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }], take: 250 }),
     prisma.almitaApprovedExample.findMany({ where: { tenantId, active: true, audience: 'PUBLIC' }, orderBy: { updatedAt: 'desc' }, take: 100 }),
-    ])),
     prisma.service.findMany({
       where: customerServiceWhere(tenantId),
       select: { id: true, name: true, category: true, active: true, priceUsd: true, durationMins: true, description: true },
@@ -253,7 +252,6 @@ async function loadSimulationContext(tenantId, message, history = []) {
     }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { config: true } }),
   ]);
-  const [configuration, knowledgeRows, exampleRows] = editorial;
   const lookupText = /\b(ese|este|eso|fechas|disponible|disponibles)\b/.test(normalizeSearch(message))
     ? `${history.filter((entry) => entry.role === 'user').slice(-3).map((entry) => entry.content).join(' ')} ${message}`
     : message;
@@ -397,14 +395,17 @@ async function getMetrics(actor, requestedTenantId, query = {}) {
     prisma.botInteractionLog.groupBy({ by: ['detectedIntent'], where, _count: { _all: true }, orderBy: { _count: { detectedIntent: 'desc' } } }),
   ]);
   const interactions = totals._count?._all || 0;
+  const accounting = await aiUsage.metrics(tenant.id, where.createdAt ? { createdAt: where.createdAt } : {});
   return {
     tenant,
     period: { from: from?.toISOString() || null, to: to?.toISOString() || null },
     interactions,
-    promptTokens: totals._sum.promptTokens || 0,
-    completionTokens: totals._sum.completionTokens || 0,
-    totalTokens: totals._sum.totalTokens || 0,
-    costUsd: Number(totals._sum.costUsd || 0),
+    accounting,
+    promptTokens: accounting.available && accounting.attempts ? (accounting.inputTokens || 0) + (accounting.cacheCreationInputTokens || 0) + (accounting.cacheReadInputTokens || 0) : totals._sum.promptTokens || 0,
+    completionTokens: accounting.available && accounting.attempts ? accounting.outputTokens || 0 : totals._sum.completionTokens || 0,
+    totalTokens: accounting.available && accounting.attempts ? (accounting.inputTokens || 0) + (accounting.cacheCreationInputTokens || 0) + (accounting.cacheReadInputTokens || 0) + (accounting.outputTokens || 0) : totals._sum.totalTokens || 0,
+    costUsd: accounting.available && accounting.attempts ? accounting.costUsd : Number(totals._sum.costUsd || 0),
+    legacyCostUsd: Number(totals._sum.costUsd || 0),
     averageLatencyMs: interactions ? Math.round((totals._sum.latencyMs || 0) / interactions) : 0,
     byIntent: byIntent.map((row) => ({ intent: row.detectedIntent || 'sin_clasificar', count: row._count._all })),
     intentCache: intentCache.metrics(tenant.id),

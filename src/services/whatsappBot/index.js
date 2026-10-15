@@ -14,14 +14,14 @@
 // Reservas se cierran 100% dentro de WhatsApp (NUNCA links externos).
 
 const prisma = require('../../utils/prisma');
-const transport = require('../whatsappTransport');
+const transport = require('./turnTransport');
 const serviceService = require('../serviceService');
 const appointmentService = require('../appointmentService');
 const clientService = require('../clientService');
 const aiClient = require('../aiClient');
 const almitaCenter = require('../almitaCenterService');
 const intentCache = require('./intentCache');
-const { normalizeText, synonymIntent } = require('./textNormalize');
+const { normalizeText, synonymIntent, expandServiceQuery } = require('./textNormalize');
 const { firstName, safeHistory, loadCustomerContext } = require('./customerContext');
 const { guardReply } = require('./replySafety');
 const conversationMemory = require('../conversationMemoryService');
@@ -125,6 +125,7 @@ async function appendConversationLabels(conv, labels) {
 }
 
 async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', body = null }) {
+  if (sendResult?.deferred) return;
   if (!sendResult?.ok) {
     logBot('warn', 'Meta rechazó respuesta', {
       conversationId: conv?.id ?? null,
@@ -145,6 +146,7 @@ async function recordBotMessage(tenantId, conv, sendResult, { type = 'text', bod
         conversationId: conv.id,
         direction: 'outbound',
         senderType: 'bot',
+        metaCategory: 'service',
         type,
         status: 'sent',
         waMessageId,
@@ -964,7 +966,7 @@ async function loadServicesForAI(tenantId) {
 
 async function matchServiceByQuery(tenantId, query) {
   if (!query) return null;
-  const q = normalizeSearchText(query);
+  const q = expandServiceQuery(query);
   if (!q) return null;
   const services = await loadVisibleServicesForBot(tenantId);
   const direct = services.find(s => normalizeSearchText(s.name) === q);
@@ -1016,7 +1018,9 @@ async function handleScopedInboundMessage({ tenant, connection, conv, incoming }
   }
 
   try {
-    return await handleInboundMessageCore({ tenant, connection, conv, incoming }, waId);
+    return await transport.withTurn(() => handleInboundMessageCore({ tenant, connection, conv, incoming }, waId),
+      (result, options) => recordBotMessage(tenant.id, conv, result, options),
+      (pendingBotPages) => state.setFlowState(waId, { pendingBotPages }));
   } finally {
     if (memoryState || hadStoredState || state.getFlowState(waId)) {
       await persistConversationBotState(tenant.id, conv, waId);
@@ -1054,6 +1058,7 @@ function depositLine(policy, tone) {
 }
 
 async function handleInboundMessageCore({ tenant, connection, conv, incoming }, waId) {
+  if (incoming.type === 'reaction') return;
   if (tenant?.billingStatus === 'suspended') {
     logBot('info', 'omitido: tenant suspendido por estado comercial', {
       tenant: tenant.slug,
@@ -1107,6 +1112,19 @@ async function handleInboundMessageCore({ tenant, connection, conv, incoming }, 
         || null
       : null;
   const priorState = state.getFlowState(waId) || {};
+  if (incoming.type === 'reaction') return;
+  if (priorState.closed && (incoming.type === 'sticker' || /^(ok|gracias|listo gracias|ok gracias|)$/.test(normalizeText(bodyText)))) return;
+  if (bodyText && priorState.pendingBotPages?.length && !isReceptionRequest(bodyText)
+    && !/^(menu|inicio|volver)$/.test(normalizeText(bodyText))) {
+    const [page, ...rest] = priorState.pendingBotPages;
+    transport.afterSent(() => state.setFlowState(waId, { pendingBotPages: rest }));
+    await transport.sendText(connection, waId, page + (rest.length ? '\n\nEscriba continuar para ver el resto.' : ''));
+    return;
+  }
+  const progress = flowStepKey(priorState);
+  const stagnantTurns = priorState.progressKey === progress ? (priorState.stagnantTurns || 0) + 1 : 0;
+  state.setFlowState(waId, { progressKey: progress, stagnantTurns });
+  if (stagnantTurns >= 8 && ['booking', 'reschedule', 'cancel_appointment', 'booking_for_other'].includes(priorState.flow)) return handleEscalate({ tenant, connection, conv, waId, tone: priorState.tone || 'usted' });
   const tone = detectTone(bodyText) || priorState.tone || 'tu';
 
   // Aunque una conversación antigua todavía no esté enlazada a la ficha del
@@ -1146,6 +1164,7 @@ async function handleInboundMessageCore({ tenant, connection, conv, incoming }, 
 
 // Text message: public editorial sources before conversational AI.
   if (bodyText) {
+    if (!/^(ok|gracias|listo gracias|ok gracias)$/.test(normalizeText(bodyText))) state.setFlowState(waId, { closed: false });
     state.pushHistory(waId, 'user', bodyText);
     logBot('info', 'texto recibido', {
       tenant: tenant.slug,
@@ -1204,6 +1223,11 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     && (flowState.booking.availableStaff || []).some((person) => normalizeSearchText(person.name) === normalizeSearchText(bodyText));
   if (priorityIntent === 'escalate' && !selectingTherapist) {
     return handleEscalate({ tenant, connection, conv, waId, tone });
+  }
+  if (flowState.booking?.step === 'ask_profile'
+    && (/\b(nombre|cedula|cédula|direccion|dirección)\s*:/i.test(bodyText)
+      || (!priorityIntent && !/[?¿]/.test(bodyText)))) {
+    return captureCombinedProfile({ tenant, connection, conv, waId, tone, bodyText, booking: flowState.booking });
   }
   if (flowState.flow === 'cancel_appointment' && flowState.cancellation?.step === 'confirm') {
     const answer = normalizeSearchText(bodyText).replace(/[.!?]+$/g, '');
@@ -1317,6 +1341,13 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
       });
     }
   }
+  if (/\b(quiero|quisiera|deseo)\b/.test(normalizeText(bodyText)) && !describesWellnessNeed(bodyText)) {
+    const query = extractServiceQueryFromBookingText(bodyText).split(/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana|a las)\b/)[0].trim();
+    const service = await matchServiceByQuery(tenant.id, query);
+    const date = resolveBookingDate({}, normalizeText(bodyText, { preserveDatePunctuation: true }));
+    if (service && date) return handleSmartBooking({ tenant, connection, conv, waId, tone, service, date, time: parseRequestedTime(bodyText) });
+    if (service) return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: service.id });
+  }
   // Un mensaje libre de reserva puede traer servicio, fecha y hora. Si la IA
   // está disponible, debe extraer esos datos para llevar la clienta directo a
   // la disponibilidad real, en vez de devolverla al selector inicial.
@@ -1389,6 +1420,9 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
 
   const isQuestion = /[?¿]|^(que|como|cuanto|cuando|donde|cual|puedes|podria)\b/.test(normalizeSearchText(bodyText));
   const isProfileAnswer = !isQuestion && !priorityIntent;
+  if (flowState.booking?.step === 'ask_profile' && isProfileAnswer) {
+    return captureCombinedProfile({ tenant, connection, conv, waId, tone, bodyText, booking: flowState.booking });
+  }
   if (flowState.booking?.step === 'ask_name' && isProfileAnswer) {
     return handleNameCapture({ tenant, connection, conv, waId, tone, name: bodyText });
   }
@@ -1524,6 +1558,7 @@ async function handleTextMessage({ tenant, connection, conv, waId, tone, bodyTex
     clientName,
     services,
     history,
+    selectedServiceId: flowState.booking?.serviceId || flowState.lastServiceId,
     bookingState: flowState.booking || null,
     summaryState: { lastIntent: flowState.lastIntent, tone, serviceName: flowState.serviceName },
     lastServiceName: customerContext.lastServiceName,
@@ -1940,6 +1975,10 @@ function textChoiceSelection(text, flowState = {}) {
   if (!choices.length || flowState.textChoicesFor !== flowStepKey(flowState)) return null;
   const value = normalizeSearchText(text).replace(/[.!?]+$/g, '').trim();
   if (!value) return null;
+  const ordinals = { primero: 0, primera: 0, segundo: 1, segunda: 1, tercero: 2, tercera: 2, cuarto: 3, cuarta: 3, quinto: 4, quinta: 4 };
+  const ordinal = value.replace(/^(el|la)\s+/, '').replace(/\s+opcion$/, '');
+  if (Object.hasOwn(ordinals, ordinal)) return choices[ordinals[ordinal]]?.id || null;
+  if (/^(ese|esa)$/.test(value) && choices.length === 1) return choices[0].id;
   const exact = choices.find((choice) => normalizeSearchText(choice.label) === value);
   return exact?.id || null;
 }
@@ -2364,6 +2403,7 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
   const tenantData = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { config: true } });
   const bookingClient = await lookupClientByWaId(tenant.id, waId);
   let slots;
+  let nextDayNote;
   try {
     slots = await appointmentService.getAvailability({
       tenantId: tenant.id,
@@ -2374,6 +2414,13 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
       publicOnly: true,
       clientId: bookingClient?.id || null,
     });
+    if (!slots.length) {
+      const next = await nextFreeBookingDate({ tenant, config: tenantData?.config, serviceId: service.id, date, clientId: bookingClient?.id });
+      if (next) {
+        nextDayNote = `No hay horarios para ${date}. Estos son los próximos disponibles, para ${next.date}:`;
+        date = next.date; slots = next.slots; time = null;
+      }
+    }
   } catch (err) {
     logBot('warn', 'smart booking: error de disponibilidad', { error: err.message, date });
     return handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId: service.id });
@@ -2418,22 +2465,22 @@ async function handleSmartBooking({ tenant, connection, conv, waId, tone, servic
     const body = `😅 *No hay horario a las ${time}* para _${service.name}_\n\nPero tengo estos:`;
     state.setFlowState(waId, {
       flow: 'booking',
-      booking: { step: 'select_period', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
+      booking: { step: 'select_time', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
       clientName: prev.clientName,
       tone,
       unclearCount: 0,
     });
-    return showBookingPeriodPicker({ tenant, connection, conv, waId, tone, body });
+    return showBookingTimeSlots({ tenant, connection, conv, waId, tone, body });
   }
 
   state.setFlowState(waId, {
     flow: 'booking',
-    booking: { step: 'select_period', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
+    booking: { step: 'select_time', serviceId: service.id, serviceName: service.name, date, allAvailableSlots: slots, availableSlots: slots },
     clientName: prev.clientName,
     tone,
     unclearCount: 0,
   });
-  return showBookingPeriodPicker({ tenant, connection, conv, waId, tone });
+  return showBookingTimeSlots({ tenant, connection, conv, waId, tone, body: nextDayNote });
 }
 
 async function handleBookingServiceSelected({ tenant, connection, conv, waId, tone, serviceId }) {
@@ -2590,6 +2637,13 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
       publicOnly: true,
       clientId: bookingClient?.id || null,
     });
+    if (!slots.length) {
+      const next = await nextFreeBookingDate({ tenant, config: tenantData?.config, serviceId: fs.booking.serviceId, date, clientId: bookingClient?.id });
+      if (next) {
+        introBody = `No hay horarios para ${date}. Estos son los próximos disponibles, para ${next.date}:`;
+        date = next.date; slots = next.slots; requestedTime = null;
+      }
+    }
   } catch (err) {
     logBot('warn', 'error al buscar disponibilidad', { error: err.message });
     const msg = '😅 *Hubo un problema al buscar horarios.*\n\nDime nuevamente qué día te queda bien.';
@@ -2607,7 +2661,7 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
 
   state.setFlowState(waId, {
     flow: 'booking',
-    booking: { ...fs.booking, step: 'select_period', date, allAvailableSlots: slots, availableSlots: slots },
+    booking: { ...fs.booking, step: 'select_time', date, allAvailableSlots: slots, availableSlots: slots },
     clientName: fs.clientName,
     tone,
     unclearCount: 0,
@@ -2620,7 +2674,7 @@ async function handleBookingDateSelected({ tenant, connection, conv, waId, tone,
   const unavailableTimeBody = requestedTime
     ? `😅 *No hay horario a las ${requestedTime}*\n\nVeamos otro momento del día:`
     : null;
-  return showBookingPeriodPicker({
+  return showBookingTimeSlots({
     tenant, connection, conv, waId, tone,
     body: [introBody, unavailableTimeBody].filter(Boolean).join('\n\n') || undefined,
   });
@@ -2643,6 +2697,16 @@ async function showBookingDatePicker({ tenant, connection, conv, waId, tone }) {
     : `📅 ¿Qué otro día le queda bien para _${fs.booking?.serviceName || 'su servicio'}_?`;
   const r = await transport.sendText(connection, waId, `${body}\n\nPuedes escribir “mañana”, “el martes” o una fecha.`);
   await recordBotMessage(tenant.id, conv, r, { body });
+}
+
+async function nextFreeBookingDate({ tenant, config, serviceId, date, clientId }) {
+  for (let offset = 1; offset <= 14; offset++) {
+    const candidate = addDaysToISO(date, offset);
+    const slots = await appointmentService.getAvailability({ tenantId: tenant.id, tenantConfig: config, serviceId,
+      date: candidate, modality: 'spa', publicOnly: true, clientId: clientId || null });
+    if (slots.length) return { date: candidate, slots };
+  }
+  return null;
 }
 
 async function showNextAvailableBookingDates({ tenant, connection, conv, waId, tone }) {
@@ -2740,14 +2804,27 @@ async function showBookingTimeSlots({ tenant, connection, conv, waId, tone, page
   if (!booking?.serviceId || !booking?.availableSlots?.length) {
     return handleBook({ tenant, connection, conv, waId, tone });
   }
-  const periodLabel = booking.period === 'morning' ? 'Mañana' : 'Tarde';
+  const periodLabel = booking.period === 'morning' ? 'Mañana' : booking.period === 'afternoon' ? 'Tarde' : 'Mañana y tarde';
   return sendTextChoices({
     tenant, connection, conv, waId,
     body: body || `${periodLabel} · horarios disponibles para _${booking.serviceName}_. ¿Cuál te queda bien?`,
-    choices: booking.availableSlots.slice(0, 20).map((slot, index) => ({
-      id: `${menus.BOOK_TIME_PREFIX}${index}`,
+    choices: (() => {
+      const morning = slotsForPeriod(booking.availableSlots, 'morning');
+      const afternoon = slotsForPeriod(booking.availableSlots, 'afternoon');
+      const ordered = [];
+      for (let i = 0; i < Math.max(morning.length, afternoon.length); i++) {
+        if (morning[i]) ordered.push(morning[i]);
+        if (afternoon[i]) ordered.push(afternoon[i]);
+      }
+      const offset = Math.max(0, page) * 8;
+      const choices = ordered.slice(offset, offset + 8).map((slot) => ({
+      id: `${menus.BOOK_TIME_PREFIX}${booking.availableSlots.indexOf(slot)}`,
       label: formatHora12(formatAppointmentTime(slot)),
-    })),
+      }));
+      if (page > 0) choices.push({ id: `${menus.BOOK_TIME_PAGE_PREFIX}${page - 1}`, label: 'Horarios anteriores' });
+      if (offset + 8 < ordered.length) choices.push({ id: `${menus.BOOK_TIME_PAGE_PREFIX}${page + 1}`, label: 'Otros horarios' });
+      return choices;
+    })(),
   });
 }
 
@@ -2799,6 +2876,16 @@ async function showBookingTherapistPicker({ tenant, connection, conv, waId, tone
   });
 }
 
+async function captureCombinedProfile({ tenant, connection, conv, waId, tone, bodyText, booking }) {
+  const nameText = bodyText.split(/\n|[,;]|\b(?:cedula|cédula|direccion|dirección)\s*:/i)[0].replace(/^nombre\s*:\s*/i, '');
+  const clientName = extractRecipientName(nameText);
+  if (!clientName) return sendTextChunks({ tenant, connection, conv, waId, text: 'Escriba su nombre completo para preparar el resumen.' });
+  const cedula = bodyText.match(/\b\d{10}\b/)?.[0] || null;
+  const address = bodyText.match(/(?:direccion|dirección)\s*:\s*([^\n;]+)/i)?.[1]?.trim() || null;
+  state.setFlowState(waId, { booking: { ...booking, step: 'confirm', clientName, cedula, address }, clientName });
+  return showBookingConfirmation({ tenant, connection, conv, waId, tone, clientName });
+}
+
 async function handleBookingStaffSelected({ tenant, connection, conv, waId, tone, staffId }) {
   const fs = state.getFlowState(waId);
   const booking = fs?.booking;
@@ -2824,7 +2911,7 @@ async function handleBookingStaffSelected({ tenant, connection, conv, waId, tone
     flow: 'booking',
     booking: {
       ...booking,
-      step: clientName ? 'confirm' : 'ask_name',
+      step: clientName ? 'confirm' : 'ask_profile',
       staffId: selectedStaff?.id || null,
       staffName: selectedStaff?.name || 'Sin preferencia',
       clientName,
@@ -2835,7 +2922,7 @@ async function handleBookingStaffSelected({ tenant, connection, conv, waId, tone
   });
 
   if (!clientName) {
-    const msg = menus.askNameText({ tone });
+    const msg = `${booking.serviceName}, ${formatAppointmentDate(booking.timeSlot)} a las ${formatAppointmentTime(booking.timeSlot)}.\nPara preparar la confirmación, escriba su nombre completo. Puede incluir cédula y dirección en el mismo mensaje; esos datos son opcionales.`;
     const r = await transport.sendText(connection, waId, msg);
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     return;
@@ -3062,7 +3149,7 @@ async function handleBookingConfirm({ tenant, connection, conv, waId, tone }) {
     await recordBotMessage(tenant.id, conv, r, { body: msg });
     await appendConversationLabels(conv, ['cita_confirmada']);
 
-    state.setFlowState(waId, { flow: 'menu', booking: null, clientName: booking.clientName, tone, unclearCount: 0 });
+    state.setFlowState(waId, { flow: 'menu', booking: null, clientName: booking.clientName, tone, unclearCount: 0, closed: true });
 
   } catch (err) {
     logBot('warn', 'error al crear reserva', { error: err.message, serviceId: booking.serviceId });
@@ -3542,7 +3629,7 @@ async function handleFarewell({ tenant, connection, conv, waId, tone }) {
   const r = await transport.sendText(connection, waId, msg);
   await recordBotMessage(tenant.id, conv, r, { body: msg });
   const prev = state.getFlowState(waId) || {};
-  state.setFlowState(waId, { flow: 'menu', clientName: prev.clientName || null, tone, unclearCount: 0 });
+  state.setFlowState(waId, { flow: 'menu', clientName: prev.clientName || null, tone, unclearCount: 0, closed: true });
 }
 
 module.exports = {

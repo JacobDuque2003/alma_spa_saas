@@ -49,6 +49,89 @@ beforeEach(() => {
 function scoped(callback) { return state.withConversation(tenant.id, conv.id, callback); }
 function inbound(body) { return bot.handleInboundMessage({ tenant, connection, conv, incoming: { type: 'text', text: { body } } }); }
 
+function installBookingCompletion() {
+  const { DateTime } = require('luxon');
+  client = { id: 'synthetic-client', tenantId: tenant.id, fullName: 'Ana Prueba' };
+  prisma.appointment.findFirst = async () => null;
+  const slot = DateTime.now().setZone('America/Guayaquil').plus({ days: 1 }).set({ hour: 16, minute: 0, second: 0, millisecond: 0 }).toUTC().toISO();
+  appointments.getAvailability = async () => [slot];
+  appointments.getAvailableStaffForSlot = async () => [{ id: 'therapist', name: 'Terapeuta' }];
+  appointments.resolveAndCreateAppointment = async () => ({ id: 'real-synthetic-appointment' });
+  require('./clientService').upsertClient = async () => client;
+  transport.sendInteractive = async (_connection, _to, payload) => { sent.push(payload.body.text); return { ok: true, data: { messages: [{ id: 'synthetic-interactive' }] }, interactivePayload: payload }; };
+}
+
+test('registered client completes normal booking in four bot messages and thanks needs no reply', async () => {
+  installBookingCompletion();
+  for (const message of ['quiero reservar masaje relajante', 'mañana', 'a las 4', 'confirmo']) {
+    const before = sent.length;
+    await inbound(message);
+    assert.equal(sent.length - before, 1);
+  }
+  assert.equal(sent.length, 4);
+  assert.match(sent.at(-1), /reservado/);
+  await inbound('gracias');
+  assert.equal(sent.length, 4);
+});
+
+test('complete shorthand booking takes only summary and real appointment confirmation', async () => {
+  installBookingCompletion();
+  await inbound('kiero masaje relajante mañana a las 4');
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Confirmo|confirmar/);
+  await inbound('confirmo');
+  assert.equal(sent.length, 2);
+  assert.match(sent[1], /reservado/);
+});
+
+test('required public warnings must be delivered before booking can advance', async () => {
+  installBookingCompletion();
+  services = [{ ...massage, description: 'Texto aprobado. '.repeat(500) + 'ADVERTENCIA_FINAL' }];
+  await inbound('cuanto cuesta masaje relajante');
+  assert.equal(sent.length, 1);
+  assert.doesNotMatch(sent[0], /ADVERTENCIA_FINAL/);
+  await inbound('quiero reservar este servicio');
+  scoped(() => assert.equal(state.getFlowState(conv.customerWaId).booking, undefined));
+  for (let count = 0; count < 10; count++) {
+    const pending = await scoped(() => state.getFlowState(conv.customerWaId)?.pendingBotPages?.length);
+    if (!pending) break;
+    await inbound('continuar');
+  }
+  assert.match(sent.join('\n'), /ADVERTENCIA_FINAL/);
+});
+
+test('a failed first delivery cannot bypass warnings or create an appointment', async () => {
+  installBookingCompletion();
+  services = [{ ...massage, description: 'Texto aprobado. '.repeat(500) + 'ADVERTENCIA_FINAL' }];
+  let created = 0, fail = true;
+  appointments.resolveAndCreateAppointment = async () => { created++; return { id: 'must-not-be-created' }; };
+  const originalSend = transport.sendText;
+  transport.sendText = async (...args) => {
+    if (fail) { fail = false; return { ok: false, status: 503 }; }
+    return originalSend(...args);
+  };
+  await inbound('quiero reservar masaje relajante');
+  for (const message of ['mañana', 'a las 4', 'confirmo']) await inbound(message);
+  assert.equal(created, 0);
+  assert.match(sent.join('\n'), /ADVERTENCIA_FINAL/);
+});
+
+test('combined name, ID and address are profile data rather than a location request', async () => {
+  installBookingCompletion();
+  const { DateTime } = require('luxon');
+  await scoped(() => state.setFlowState(conv.customerWaId, { flow: 'booking', booking: {
+    step: 'ask_profile', serviceId: massage.id, serviceName: massage.name,
+    timeSlot: DateTime.now().plus({ days: 1 }).toISO(), staffId: 'therapist',
+  } }));
+  await inbound('Nombre: Ana Prueba\nCedula: 0000000000\nDireccion: Calle Fixture');
+  scoped(() => {
+    const booking = state.getFlowState(conv.customerWaId).booking;
+    assert.equal(booking.step, 'confirm');
+    assert.equal(booking.clientName, 'Ana Prueba');
+    assert.equal(booking.address, 'Calle Fixture');
+  });
+});
+
 test('modalidad informativa no reserva el servicio base y respuestas repetidas no gastan IA', async () => {
   services = [{ ...massage, name: 'Limpieza facial' }];
   knowledge = [{ title: 'Limpieza facial kids', content: 'Cuidado infantil aprobado.', active: true, audience: 'PUBLIC' }];
@@ -96,7 +179,7 @@ test('preguntas concretas usan ficha operativa sin IA ni respuesta antigua', asy
   assert.ok(sent.some((body) => body.includes('$30.00')));
   services = [{ ...massage, priceUsd: 35 }];
   await inbound('cuanto cuesta masaje relajante');
-  assert.ok(sent.at(-2).includes('$35.00'));
+  assert.ok(sent.at(-1).includes('$35.00'));
 });
 
 test('pedir asesor no se captura como nombre, direccion o cedula', async () => {

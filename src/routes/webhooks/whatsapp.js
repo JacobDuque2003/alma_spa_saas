@@ -380,6 +380,10 @@ async function processDeliveryStatus(tenant, status) {
       AND "tenantId" = ${tenant.id}
       AND status::text = ANY(${whereStatuses})
   `;
+  const category = status.pricing?.category;
+  if (['service', 'utility', 'marketing', 'authentication'].includes(category)) {
+    await prisma.whatsAppMessage.updateMany({ where: { tenantId: tenant.id, waMessageId }, data: { metaCategory: category } });
+  }
   logWebhook('info', 'estado de entrega procesado', {
     tenant: safeTenant(tenant),
     status: nextStatus,

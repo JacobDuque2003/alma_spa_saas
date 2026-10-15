@@ -118,7 +118,9 @@ test('webhook POST: WHATSAPP_APP_SECRET no configurado → 500', async () => {
   process.env.WHATSAPP_APP_SECRET = saved;
 });
 
-test('processWebhookPayload: mismo waMessageId dos veces → un solo mensaje persistido (idempotencia)', async () => {
+test('processWebhookPayload: mismo waMessageId dos veces → un solo mensaje persistido (idempotencia)', async (t) => {
+  let botCalls = 0;
+  t.mock.method(require('../../services/whatsappBot'), 'handleInboundMessage', async () => { botCalls++; });
   process.env.WHATSAPP_PHONE_NUMBER_ID = PHONE_NUMBER_ID;
   process.env.WHATSAPP_ACCESS_TOKEN = 'test-access-token';
 
@@ -147,7 +149,8 @@ test('processWebhookPayload: mismo waMessageId dos veces → un solo mensaje per
   };
   const tenant = { id: TENANT_ID, slug: TENANT_SLUG };
   const conn = { phoneNumberId: PHONE_NUMBER_ID };
-  await processWebhookPayload(tenant, conn, payload);
+  await Promise.all([processWebhookPayload(tenant, conn, payload), processWebhookPayload(tenant, conn, payload)]);
   await processWebhookPayload(tenant, conn, payload);
   assert.equal(stored.size, 1, 'debe haber 1 mensaje persistido, no 2');
+  assert.equal(botCalls, 1, 'el mismo identificador de Meta no debe invocar dos respuestas');
 });

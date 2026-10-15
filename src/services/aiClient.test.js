@@ -288,6 +288,8 @@ test('chat preserves full warnings beyond 300 characters and rejects token-trunc
 test('cache cost accounts for writes, reads and uncached input separately', () => {
   assert.ok(Math.abs(aiClient.calcCost(100, 20, 5000, 7000, '1h') - 0.0109) < 1e-12);
   assert.equal(aiClient.calcCost(0, 0, 4000, 0, '5m'), 0.005);
+  assert.ok(Math.abs(aiClient.calcCost(1000, 200, 5000, 0, '1h') - 0.012) < 1e-12);
+  assert.ok(Math.abs(aiClient.calcCost(1000, 200, 0, 5000, '1h') - 0.0025) < 1e-12);
 });
 
 test('cache prefix is identical across clients and dates stay outside it', () => {

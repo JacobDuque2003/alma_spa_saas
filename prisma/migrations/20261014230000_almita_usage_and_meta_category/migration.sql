@@ -16,6 +16,7 @@ CREATE TABLE "AiUsageLog" (
   "outputTokens" INTEGER NOT NULL DEFAULT 0,
   "cacheTtl" TEXT,
   "usageKnown" BOOLEAN NOT NULL DEFAULT false,
+  "reservedCostUsd" DECIMAL(10,6) NOT NULL DEFAULT 0,
   "success" BOOLEAN NOT NULL DEFAULT false,
   "errorCode" TEXT,
   "costUsd" DECIMAL(10,6),
@@ -29,7 +30,7 @@ CREATE INDEX "AiUsageLog_tenantId_createdAt_idx" ON "AiUsageLog"("tenantId", "cr
 ALTER TABLE "AiUsageLog" ADD CONSTRAINT "AiUsageLog_nonnegative" CHECK (
   "attempt" >= 0 AND "inputTokens" >= 0 AND "cacheCreationInputTokens" >= 0
   AND "cacheReadInputTokens" >= 0 AND "outputTokens" >= 0 AND "latencyMs" >= 0
-  AND ("costUsd" IS NULL OR "costUsd" >= 0)
+  AND ("costUsd" IS NULL OR "costUsd" >= 0) AND "reservedCostUsd" >= 0
 );
 ALTER TABLE "AiUsageLog" ADD CONSTRAINT "AiUsageLog_source" CHECK ("source" IN ('whatsapp', 'simulator'));
 ALTER TABLE "AiUsageLog" ADD CONSTRAINT "AiUsageLog_ttl" CHECK ("cacheTtl" IS NULL OR "cacheTtl" IN ('5m', '1h'));

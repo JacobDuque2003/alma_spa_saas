@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeText, synonymIntent } = require('./textNormalize');
+const { normalizeText, synonymIntent, expandServiceQuery } = require('./textNormalize');
 test('normalization understands real spelling errors without modifying original messages', () => {
   const samples = [
     ['kiero un masaje relajnte el biernes', 'quiero un masaje relajante el viernes'],
@@ -16,4 +16,7 @@ test('configured synonyms distinguish actions from short contextual responses', 
   assert.equal(synonymIntent('no puedo ir'), 'cancel');
   assert.equal(synonymIntent('mejor el lunes'), null);
   assert.equal(synonymIntent('el de piedras calientes'), null);
+  assert.equal(expandServiceQuery('limpieza de cara'), 'limpieza facial');
+  assert.equal(expandServiceQuery('quitar vello'), 'depilacion');
+  assert.equal(expandServiceQuery('laser anti age'), 'laser anti age');
 });

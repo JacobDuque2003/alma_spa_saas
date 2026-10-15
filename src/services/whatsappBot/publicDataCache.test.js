@@ -16,3 +16,16 @@ test('failed public cache reads are not cached', async () => {
   await assert.rejects(cache.load('one', async () => { throw Error('unavailable'); }));
   assert.equal(await cache.load('one', async () => 'fresh'), 'fresh');
 });
+
+test('an invalidation during a pending read cannot republish withdrawn content', async () => {
+  cache._reset();
+  let release;
+  let calls = 0;
+  const barrier = new Promise((resolve) => { release = resolve; });
+  const fetch = async () => { calls++; if (calls === 1) { await barrier; return 'withdrawn'; } return 'approved'; };
+  const first = cache.load('one', fetch);
+  cache.invalidate('one');
+  release();
+  assert.equal(await first, 'approved');
+  assert.equal(await cache.load('one', fetch), 'approved');
+});

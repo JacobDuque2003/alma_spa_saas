@@ -236,6 +236,8 @@ test('validadores rechazan longitudes y prioridad fuera de rango', () => {
 });
 
 test('getMetrics agrega consumo únicamente para el tenant objetivo', async () => {
+  prisma.aiUsageLog = { aggregate: async () => ({ _count: { _all: 1 }, _sum: { costUsd: 0.0001, inputTokens: 100, cacheReadInputTokens: 5000, outputTokens: 20 } }), count: async () => 0,
+    groupBy: async () => [{ source: 'simulator', _count: { _all: 1 } }] };
   prisma.tenant = { findUnique: async () => ({ id: 't1', slug: 'alma-spa', name: 'Alma Spa' }) };
   let aggregateWhere;
   prisma.botInteractionLog = {
@@ -249,8 +251,9 @@ test('getMetrics agrega consumo únicamente para el tenant objetivo', async () =
   const result = await service.getMetrics(superadmin, 't1', { from: '2026-10-01', to: '2026-10-07T23:59:59.000Z' });
   assert.equal(aggregateWhere.tenantId, 't1');
   assert.equal(result.interactions, 2);
-  assert.equal(result.totalTokens, 240);
-  assert.equal(result.costUsd, 0.0004);
+  assert.equal(result.totalTokens, 5120);
+  assert.equal(result.costUsd, 0.0001);
+  assert.equal(result.legacyCostUsd, 0.0004);
   assert.equal(result.averageLatencyMs, 300);
   assert.deepEqual(result.byIntent, [{ intent: 'service_info', count: 2 }]);
 });
